@@ -1,0 +1,87 @@
+# Environments
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env/
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# SQLite databases (generated data)
+data/generated/*.db
+data/generated/*.sqlite
+data/generated/*.sqlite3
+
+# Logs and temp files
+*.log
+logs/
+ssh.log
+tunnel.log
+connect.log
+cloudflared.log
+
+# Cloudflared binaries
+cloudflared
+
+# PEM / cert files
+*.pem
+cert.pem
+key.pem
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Misc
+.pytest_cache/
+htmlcov/
+.coverage
+.tox/
+.nox/
+
+# Editor/session artifacts
+.pi_session/
+data/.pi_session/
+
+# Pyc cache dirs
+__pycache__/
+**/__pycache__/
+
+# Node dependencies (root safety net)
+node_modules/
+**/node_modules/
+dist/
+**/dist/

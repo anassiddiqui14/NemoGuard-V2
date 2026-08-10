@@ -1,0 +1,124 @@
+scenarios:
+  - scenario_type: schema_drift
+    description: "An unexpected change in source data schema causes ingest or bronze jobs to fail."
+    applicable_stages: ["ingest", "bronze"]
+    root_error_codes: ["ERR_SCHEMA_01", "ERR_COL_MISSING"]
+    symptom_patterns: ["Missing columns downstream", "Null values in key fields", "Dependency cascade failures"]
+    evidence_keys: ["schema_diff", "source_metadata"]
+    log_templates:
+      - "Schema validation failed: Column {col} missing in source data."
+      - "Type mismatch for {col}: Expected {expected}, got {actual}."
+
+  - scenario_type: missing_file
+    description: "Source file is not available in the drop zone at the scheduled time."
+    applicable_stages: ["ingest"]
+    root_error_codes: ["ERR_FILE_NOT_FOUND"]
+    symptom_patterns: ["Ingest job timeout", "Data staleness downstream"]
+    evidence_keys: ["s3_prefix_empty", "provider_sla"]
+    log_templates:
+      - "File not found at path {path}"
+      - "No new files matching pattern {pattern} in last hour"
+
+  - scenario_type: data_quality
+    description: "Data fails quality rules (e.g., uniqueness, non-null, referential integrity)."
+    applicable_stages: ["bronze", "silver", "control"]
+    root_error_codes: ["ERR_DQ_NULL", "ERR_DQ_UNIQUE"]
+    symptom_patterns: ["DQ gate job fails", "Downstream reports show anomalies"]
+    evidence_keys: ["dq_results_table", "sample_records"]
+    log_templates:
+      - "DQ check failed: {rule} violation. {count} records affected."
+      - "Assertion {assertion} failed for table {table}."
+
+  - scenario_type: credential_expired
+    description: "Authentication fails due to expired or revoked credentials."
+    applicable_stages: ["ingest", "publish"]
+    root_error_codes: ["ERR_AUTH_01", "ERR_401"]
+    symptom_patterns: ["Immediate connection failure", "Repeated retry failures"]
+    evidence_keys: ["secret_manager_logs", "auth_headers"]
+    log_templates:
+      - "Authentication failed for service {service}: Invalid credentials."
+      - "HTTP 401 Unauthorized when accessing {endpoint}."
+
+  - scenario_type: network_timeout
+    description: "Transient network issue causes connection drops or timeouts."
+    applicable_stages: ["ingest", "bronze", "silver", "gold", "publish"]
+    root_error_codes: ["ERR_TIMEOUT", "ERR_CONN_RESET"]
+    symptom_patterns: ["Intermittent job failures", "Success on retry"]
+    evidence_keys: ["network_latency_metrics", "target_system_health"]
+    log_templates:
+      - "Connection timed out after {time}s while accessing {host}."
+      - "Connection reset by peer."
+
+  - scenario_type: resource_exhaustion
+    description: "Compute cluster runs out of memory or processing time."
+    applicable_stages: ["silver", "gold"]
+    root_error_codes: ["ERR_OOM", "ERR_TIMEOUT_COMPUTE"]
+    symptom_patterns: ["Job stuck in running state", "Executor lost exceptions"]
+    evidence_keys: ["cluster_metrics", "spill_to_disk_size"]
+    log_templates:
+      - "Executor {id} killed due to OutOfMemoryError."
+      - "Job aborted: Stage {stage} failed due to executor lost."
+
+  - scenario_type: duplicate_processing
+    description: "Job processes the same data multiple times, causing duplicate records."
+    applicable_stages: ["bronze", "silver"]
+    root_error_codes: ["ERR_DUP_KEY"]
+    symptom_patterns: ["Inflated metrics", "Primary key constraint violations"]
+    evidence_keys: ["record_counts", "watermark_state"]
+    log_templates:
+      - "Primary key violation: Duplicate entry {key} for table {table}."
+      - "Found {count} duplicate records during merge."
+
+  - scenario_type: warehouse_lock
+    description: "Concurrent operations cause database deadlocks or lock timeouts."
+    applicable_stages: ["silver", "gold"]
+    root_error_codes: ["ERR_DEADLOCK", "ERR_LOCK_TIMEOUT"]
+    symptom_patterns: ["Jobs queued indefinitely", "Transaction rollbacks"]
+    evidence_keys: ["active_locks", "long_running_queries"]
+    log_templates:
+      - "Transaction {tx_id} aborted due to deadlock."
+      - "Unable to acquire lock on table {table} after {timeout}s."
+
+  - scenario_type: api_rate_limit
+    description: "External API throttles requests due to excessive volume."
+    applicable_stages: ["ingest", "publish"]
+    root_error_codes: ["ERR_429"]
+    symptom_patterns: ["Throttling exceptions", "Partial data extraction"]
+    evidence_keys: ["api_response_headers", "request_rate"]
+    log_templates:
+      - "HTTP 429 Too Many Requests from {api}. Retry after {cooldown}s."
+      - "Rate limit exceeded for endpoint {endpoint}."
+
+  - scenario_type: code_regression
+    description: "Recent code deployment introduces syntax errors or logical bugs."
+    applicable_stages: ["ingest", "bronze", "silver", "gold", "publish"]
+    root_error_codes: ["ERR_SYNTAX", "ERR_RUNTIME"]
+    symptom_patterns: ["Immediate job crash", "Stack trace in logs"]
+    evidence_keys: ["recent_deployments", "commit_history"]
+    log_templates:
+      - "SyntaxError: invalid syntax in {file} at line {line}."
+      - "TypeError: Cannot read property '{prop}' of undefined."
+
+  - scenario_type: api_5xx_spike
+    description: High volume of 5xx errors on API Gateway
+    applicable_stages: [publish]
+    root_error_codes: [API_5XX_ERROR]
+    log_templates: ["Triggered: [P3] {job_name} 5xx error rate - Prod", "Re-Triggered: {job_name} 5xx error rate high"]
+
+  - scenario_type: informatica_bad_file
+    description: Informatica session failure due to bad file
+    applicable_stages: [silver, gold, control]
+    root_error_codes: [INFA_SESSION_FAILED]
+    log_templates: ["Informatica Bad File-{job_name}", "FAILURE: Session {job_name} failed"]
+
+  - scenario_type: missing_canary
+    description: Upstream canary file not received
+    applicable_stages: [ingest]
+    root_error_codes: [CANARY_NOT_RECEIVED]
+    log_templates: ["Canary Files Not Received - {job_name}", "Timeout waiting for canary file on {job_name}"]
+
+  - scenario_type: sqs_low_volume
+    description: Low SQS message volume detected
+    applicable_stages: [publish]
+    root_error_codes: [SQS_LOW_VOLUME]
+    log_templates: ["Warn: LOW SQS MESSAGE VOLUME DETECTED", "Warn: LOW SQS MESSAGE VOLUME RECEIVED"]

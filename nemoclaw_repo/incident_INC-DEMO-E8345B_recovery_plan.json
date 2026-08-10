@@ -1,0 +1,61 @@
+{
+  "evidence": [
+    {
+      "type": "Alert",
+      "source": "Snowflake",
+      "title": "Deadlock detected on table DW.FACT_SALES",
+      "excerpt": "Deadlock detected on table DW.FACT_SALES involving sessions 12345 and 67890; query: INSERT INTO DW.FACT_SALES SELECT ..."
+    },
+    {
+      "type": "Log",
+      "source": "Informatica Powercenter",
+      "title": "Database error: Deadlock detected",
+      "excerpt": "Database error: Deadlock detected; SQLState: 40001, Message: Lock wait timeout exceeded; try restarting transaction"
+    }
+  ],
+  "hypotheses": [
+    {
+      "statement": "Deadlock in Snowflake table DW.FACT_SALES caused the nightly ETL workflow to fail, leading to stale data and latency spikes.",
+      "cause_type": "RESOURCE_EXHAUSTION",
+      "confidence": 0.95
+    }
+  ],
+  "impacts": [
+    {
+      "asset_id": "JOB_EDW_LOAD",
+      "impact_type": "Downstream Job",
+      "status": "BLOCKED",
+      "reason": "Deadlock in DW.FACT_SALES caused the ETL workflow to fail, preventing data load into the EDW",
+      "score": 0.9
+    },
+    {
+      "asset_id": "DOWNSTREAM_REPORTING",
+      "impact_type": "Downstream Job",
+      "status": "AT_RISK",
+      "reason": "Stale data in downstream reporting schema due to failed ETL load",
+      "score": 0.7
+    }
+  ],
+  "action_plan": {
+    "rationale": "The deadlock caused the ETL workflow to fail. Rerunning the workflow will process the stuck batch and resume normal data flow.",
+    "expected_outcome": "ETL workflow completes successfully, data is loaded into DW.FACT_SALES, and downstream reporting data is refreshed.",
+    "risk": "LOW",
+    "steps": [
+      {
+        "action": "Rerun the failed Airflow task 'run_informatica_workflow' for workflow DW_NIGHTLY_LOAD",
+        "tool": "airflow_trigger_dag",
+        "risk": "LOW"
+      },
+      {
+        "action": "Monitor ETL latency metric via Datadog to ensure it returns below the 1-hour threshold",
+        "tool": "datadog_monitor",
+        "risk": "LOW"
+      },
+      {
+        "action": "Verify data freshness in downstream reporting schema by checking recent timestamps",
+        "tool": "snowflake_query",
+        "risk": "LOW"
+      }
+    ]
+  }
+}

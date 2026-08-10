@@ -1,0 +1,62 @@
+name: Feature Request
+description: Propose a concrete behavior that solves a real problem.
+type: Enhancement
+labels: ["needs: triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this solve? Why does it matter?
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Desired Behavior
+      description: |
+        What should a user or contributor be able to do or observe?
+        Describe the before-and-after behavior and give one concrete example.
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints and Non-goals
+      description: List only current constraints or exclusions that materially change the solution.
+    validations:
+      required: false
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Idea
+      description: |
+        Optional, non-binding notes about the smallest direct change that might work.
+        Do not design for hypothetical future cases.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - "Feature"
+        - "Provider"
+        - "Platform"
+        - "Testing"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+        - label: I described the problem and desired behavior
+          required: true

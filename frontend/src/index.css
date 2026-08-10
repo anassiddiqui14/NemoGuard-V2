@@ -1,0 +1,292 @@
+@import "tailwindcss";
+
+@theme {
+  /* Default (dark) theme tokens */
+  --color-app-bg: #030308;
+  --color-surface: #0D0D16;
+  --color-surface-secondary: #14141F;
+  --color-surface-elevated: #191926;
+  --color-border-color: #24243380;
+  --color-border-strong: #34344a;
+  --color-text-primary: #F5F5FA;
+  --color-text-secondary: #A0A0B8;
+  --color-text-muted: #6B6B82;
+
+  --color-primary: #6366F1;
+  --color-primary-glow: rgba(99, 102, 241, 0.45);
+
+  --color-agent-active: #C026D3;
+  --color-healthy: #22D3A0;
+  --color-warning: #FBBF24;
+  --color-critical: #FB4570;
+  --color-info: #38BDF8;
+}
+
+:root {
+  --panel-bg: rgba(20, 20, 31, 0.55);
+  --panel-border: rgba(255, 255, 255, 0.06);
+  --glow-primary: rgba(99, 102, 241, 0.12);
+  --glow-agent: rgba(192, 38, 211, 0.08);
+}
+
+:root.light {
+  --color-app-bg: #F4F5FA;
+  --color-surface: #FFFFFF;
+  --color-surface-secondary: #F0F1F7;
+  --color-surface-elevated: #FFFFFF;
+  --color-border-color: #E2E4EE;
+  --color-border-strong: #C7CBDD;
+  --color-text-primary: #14141F;
+  --color-text-secondary: #4B4D63;
+  --color-text-muted: #7A7C93;
+
+  --color-primary: #5457E5;
+  --color-primary-glow: rgba(84, 87, 229, 0.25);
+
+  --color-agent-active: #A21CAF;
+  --color-healthy: #0D9C74;
+  --color-warning: #B45309;
+  --color-critical: #DC2650;
+  --color-info: #0284C7;
+
+  --panel-bg: rgba(255, 255, 255, 0.75);
+  --panel-border: rgba(20, 20, 31, 0.08);
+  --glow-primary: rgba(84, 87, 229, 0.08);
+  --glow-agent: rgba(162, 28, 175, 0.06);
+}
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  html,
+  body,
+  body * {
+    transition: background-color 220ms ease, border-color 220ms ease, color 220ms ease, box-shadow 220ms ease;
+  }
+
+  body {
+    @apply bg-app-bg text-text-primary antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 20% -10%, var(--glow-primary), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, var(--glow-agent), transparent);
+    background-attachment: fixed;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    background: var(--panel-bg);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid var(--panel-border);
+  }
+
+  .gradient-border {
+    position: relative;
+    border-radius: 1rem;
+  }
+
+  .gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.6), rgba(192, 38, 211, 0.4), transparent 70%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .text-gradient {
+    background: linear-gradient(90deg, #A5B4FC, #F0ABFC);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 24px 0 rgba(99, 102, 241, 0.25);
+  }
+
+  .glow-agent {
+    box-shadow: 0 0 24px 0 rgba(192, 38, 211, 0.25);
+  }
+
+  /* Micro-interaction helpers */
+  .press-scale {
+    transition: transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1), filter 150ms ease;
+  }
+
+  .press-scale:hover {
+    transform: translateY(-1px) scale(1.015);
+  }
+
+  .press-scale:active {
+    transform: scale(0.97);
+  }
+
+  .fade-in {
+    animation: fadeIn 300ms ease-out both;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  .shimmer {
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+}
+
+/*
+ * Light-mode overrides for "white overlay" utility classes.
+ * Throughout the app, subtle panel textures/borders are authored as bg-white/[0.0X],
+ * ring-white/[0.0X], border-white/[0.0X] — tuned to sit on top of a near-black background.
+ * In light mode the base surface is white, so a *white* overlay would be invisible;
+ * we invert these to dark overlays of the same opacity so every card, divider, and
+ * hover state still reads correctly without touching component markup.
+ */
+:root.light {
+  .bg-white\/\[0\.02\] {
+    background-color: rgba(20, 20, 31, 0.035) !important;
+  }
+
+  .bg-white\/\[0\.03\] {
+    background-color: rgba(20, 20, 31, 0.045) !important;
+  }
+
+  .bg-white\/\[0\.04\] {
+    background-color: rgba(20, 20, 31, 0.055) !important;
+  }
+
+  .bg-white\/\[0\.05\] {
+    background-color: rgba(20, 20, 31, 0.07) !important;
+  }
+
+  .bg-white\/\[0\.06\] {
+    background-color: rgba(20, 20, 31, 0.085) !important;
+  }
+
+  .hover\:bg-white\/\[0\.02\]:hover {
+    background-color: rgba(20, 20, 31, 0.05) !important;
+  }
+
+  .hover\:bg-white\/\[0\.03\]:hover {
+    background-color: rgba(20, 20, 31, 0.06) !important;
+  }
+
+  .hover\:bg-white\/\[0\.04\]:hover {
+    background-color: rgba(20, 20, 31, 0.07) !important;
+  }
+
+  .hover\:bg-white\/\[0\.05\]:hover {
+    background-color: rgba(20, 20, 31, 0.08) !important;
+  }
+
+  .hover\:bg-white\/\[0\.06\]:hover {
+    background-color: rgba(20, 20, 31, 0.09) !important;
+  }
+
+  .border-white\/\[0\.04\] {
+    border-color: rgba(20, 20, 31, 0.08) !important;
+  }
+
+  .border-white\/\[0\.05\] {
+    border-color: rgba(20, 20, 31, 0.09) !important;
+  }
+
+  .border-white\/\[0\.06\] {
+    border-color: rgba(20, 20, 31, 0.1) !important;
+  }
+
+  .ring-white\/\[0\.04\] {
+    --tw-ring-color: rgba(20, 20, 31, 0.08) !important;
+  }
+
+  .ring-white\/\[0\.05\] {
+    --tw-ring-color: rgba(20, 20, 31, 0.09) !important;
+  }
+
+  .ring-white\/\[0\.06\] {
+    --tw-ring-color: rgba(20, 20, 31, 0.1) !important;
+  }
+
+  .ring-white\/\[0\.08\] {
+    --tw-ring-color: rgba(20, 20, 31, 0.14) !important;
+  }
+
+  .ring-white\/\[0\.09\] {
+    --tw-ring-color: rgba(20, 20, 31, 0.16) !important;
+  }
+
+  .hover\:ring-white\/\[0\.08\]:hover {
+    --tw-ring-color: rgba(20, 20, 31, 0.14) !important;
+  }
+
+  .hover\:ring-white\/\[0\.09\]:hover {
+    --tw-ring-color: rgba(20, 20, 31, 0.16) !important;
+  }
+
+  /*
+   * bg-black/20 is used for "recessed" panels (side rails, code blocks) that should read as
+   * subtly darker/inset than the surrounding surface. On a near-black dark background, a black
+   * overlay makes sense; on a white light background, the same class produces a dull, washed-out
+   * gray wash rather than a proper subtle recess. Replace it with a light, warm-gray inset tint
+   * plus a hairline border so the rails still read as visually distinct without looking "faded".
+   */
+  .bg-black\/20 {
+    background-color: rgba(20, 20, 31, 0.03) !important;
+  }
+
+  .text-text-primary,
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-shadow: none;
+  }
+
+  .shimmer {
+    background: linear-gradient(90deg, transparent, rgba(20, 20, 31, 0.06), transparent);
+  }
+}

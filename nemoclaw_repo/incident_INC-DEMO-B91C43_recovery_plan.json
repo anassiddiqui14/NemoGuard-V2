@@ -1,0 +1,78 @@
+{
+  "evidence": [
+    {
+      "type": "Alert",
+      "source": "Monte Carlo",
+      "title": "NULL rate spike on transaction_amount",
+      "excerpt": "Anomaly detected on transactions_fact.transaction_amount: NULL rate is 45.2% (Historical average: 0.01%)."
+    },
+    {
+      "type": "Log",
+      "source": "payment_gateway_api",
+      "title": "Unrecognized currency format",
+      "excerpt": "Encountered 452,000 records with unrecognized currency format. Defaulting to NULL for transaction_amount."
+    }
+  ],
+  "hypotheses": [
+    {
+      "statement": "The root cause is a currency format parsing issue in the payment gateway API where unrecognized currency formats are causing transaction_amount fields to be set to NULL, leading to elevated NULL rates and downstream data quality failures.",
+      "cause_type": "DATA_QUALITY",
+      "confidence": 0.95
+    }
+  ],
+  "impacts": [
+    {
+      "asset_id": "checkout_ui",
+      "impact_type": "Downstream Job",
+      "status": "AT_RISK",
+      "reason": "Depends on Payment API which is outputting invalid currency format, leading to NULL transaction_amount in downstream data.",
+      "score": 0.8
+    },
+    {
+      "asset_id": "JOB_FINANCIAL_REPORTING",
+      "impact_type": "Downstream Job",
+      "status": "BLOCKED",
+      "reason": "Halted due to upstream data quality failure on transactions_fact (NULL transaction_amount).",
+      "score": 0.9
+    },
+    {
+      "asset_id": "transactions_fact_daily_summary",
+      "impact_type": "Data Product",
+      "status": "AT_RISK",
+      "reason": "Failed to build due to stale data because upstream transactions_fact has NULL transaction_amount.",
+      "score": 0.8
+    }
+  ],
+  "action_plan": {
+    "rationale": "The root cause is a data quality issue in the payment gateway API where unrecognized currency formats are causing transaction_amount fields to be NULL. Fixing the currency format handling and reprocessing affected data will restore normal operations.",
+    "expected_outcome": "Payment gateway API will correctly handle currency formats, transaction_amount will be populated correctly, and downstream jobs will resume normal processing.",
+    "risk": "LOW",
+    "steps": [
+      {
+        "action": "Fix currency format parsing logic in payment gateway API to handle unrecognized currency formats",
+        "tool": "code_deployment_tool",
+        "risk": "LOW"
+      },
+      {
+        "action": "Identify and correct affected transactions_fact records with NULL transaction_amount",
+        "tool": "data_correction_tool",
+        "risk": "LOW"
+      },
+      {
+        "action": "Reprocess dependent downstream jobs: JOB_FINANCIAL_REPORTING and transactions_fact_daily_summary",
+        "tool": "job_orchestrator",
+        "risk": "LOW"
+      },
+      {
+        "action": "Validate data quality after reprocessing to ensure transaction_amount accuracy",
+        "tool": "data_validation_tool",
+        "risk": "LOW"
+      },
+      {
+        "action": "Monitor NULL rate for transaction_amount to confirm return to baseline (<0.1%)",
+        "tool": "monitoring_tool",
+        "risk": "LOW"
+      }
+    ]
+  }
+}

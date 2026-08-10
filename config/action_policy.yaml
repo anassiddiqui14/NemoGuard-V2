@@ -1,0 +1,49 @@
+actions:
+  - action_id: PAUSE_RETRIES
+    description: Pause automatic retries for a job to prevent further damage or resource exhaustion.
+    risk_class: low
+    allowlisted: true
+    preconditions: []
+    idempotent: true
+  - action_id: APPLY_SCHEMA_MAPPING
+    description: Apply a dynamic schema mapping to resolve schema drift issues.
+    risk_class: medium
+    allowlisted: true
+    preconditions: ["requires_schema_drift_detection"]
+    idempotent: false
+  - action_id: RERUN_JOB
+    description: Trigger a rerun of a specific job.
+    risk_class: medium
+    allowlisted: true
+    preconditions: ["job_in_failed_state"]
+    idempotent: false
+  - action_id: RERUN_DEPENDENTS
+    description: Trigger a rerun of a job and all its downstream dependencies.
+    risk_class: medium
+    allowlisted: true
+    preconditions: ["job_success_after_failure"]
+    idempotent: false
+  - action_id: ACKNOWLEDGE_ALERTS
+    description: Acknowledge alerts related to an incident to silence paging.
+    risk_class: low
+    allowlisted: true
+    preconditions: []
+    idempotent: true
+  - action_id: SEND_STATUS_NOTICE
+    description: Send a status update notice to relevant stakeholders.
+    risk_class: low
+    allowlisted: false
+    preconditions: []
+    idempotent: false
+  - action_id: BYPASS_QUALITY_GATE
+    description: Force bypass data quality checks for a given asset.
+    risk_class: high
+    allowlisted: false
+    preconditions: ["manual_approval_required"]
+    idempotent: true
+  - action_id: RERUN_ALL_JOBS
+    description: Trigger a full rerun of all jobs in the pipeline.
+    risk_class: high
+    allowlisted: false
+    preconditions: []
+    idempotent: false

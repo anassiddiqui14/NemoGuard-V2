@@ -1,0 +1,6 @@
+{
+  "rationale": "Fix the root cause of invalid currency format causing NULL transaction_amount, clear bad data, and restart downstream processing.",
+  "expected_outcome": "Resume normal data flow with correct transaction_amount values, allowing downstream jobs to succeed.",
+  "risk": "MEDIUM",
+  "steps": 
+}

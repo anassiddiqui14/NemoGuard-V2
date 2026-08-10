@@ -1,0 +1,16 @@
+job_id,job_name,platform,domain,stage,schedule,criticality,default_duration_sec,owner_team,retry_policy,active
+JOB_AWS_EXTRACT_RESERVATION,Extract Reservation Data,Glue,Operations,ingest,hourly,5,420,PSS AWS,fixed:2,true
+JOB_AWS_CANARY_CHECK,Check Canary Files,Lambda,Platform,ingest,hourly,5,60,PSS AWS,fixed:3,true
+JOB_AWS_DQ_VALIDATION,DQ Validation Bloomberg,Databricks,Finance,bronze,hourly,4,180,PSS AWS,fixed:1,true
+JOB_AWS_PROFILE_LOAD,Load Dim Profile,Databricks,Customer,bronze,daily,4,300,PSS AWS,fixed:1,true
+JOB_AWS_PRICING_LOAD,Load Dim Pricing,Databricks,Finance,silver,daily,5,240,PSS AWS,fixed:1,true
+JOB_EDW_MDM_NSF,Load MDM NSF,Informatica,Master Data,silver,daily,5,600,PSS EDW,fixed:1,true
+JOB_EDW_CTRL_LOG,Update Process Control Log,Informatica,Platform,control,hourly,5,60,PSS EDW,fixed:2,true
+JOB_EDW_GSO_LOAD,GSO Data Load,Informatica,Operations,silver,hourly,4,300,PSS EDW,fixed:1,true
+JOB_EDW_LOYALTY_FACT,Load Fact Loyalty,Informatica,Customer,gold,daily,5,900,PSS EDW,none,true
+JOB_EDW_SURVEY_LOAD,Survey Data Load,Informatica,Customer,gold,daily,3,420,PSS EDW,none,true
+JOB_BWS_PROMO_API,Promo Services API,API Gateway,Customer,publish,every_15_min,5,30,PSS BWS,none,true
+JOB_BWS_AVAIL_API,Availability API,API Gateway,Operations,publish,every_15_min,5,30,PSS BWS,none,true
+JOB_BWS_BOOKING_API,Booking Confirm API,API Gateway,Sales,publish,every_15_min,5,45,PSS BWS,none,true
+JOB_BWS_AUTH_LAMBDA,Auth Authorizer,Lambda,Platform,control,every_15_min,5,15,PSS BWS,none,true
+JOB_BWS_SFMC_SQS,SFMC SQS Queue,SQS,Marketing,publish,hourly,4,60,PSS BWS,none,true

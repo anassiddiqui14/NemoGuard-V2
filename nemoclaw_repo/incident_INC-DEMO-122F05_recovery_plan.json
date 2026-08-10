@@ -1,0 +1,35 @@
+{
+  "finding": "Lambda function timeout due to increased batch size causing processing exceeding 15-minute limit, leading to downstream task failure and stale Snowpipe data.",
+  "steps": [
+    {
+      "action": "Increase Lambda function timeout from 15 minutes to 30 minutes",
+      "tool": "aws_lambda_update_configuration",
+      "risk": "LOW"
+    },
+    {
+      "action": "Reduce batch size back to previous safe level (e.g., 5000 records)",
+      "tool": "update_lambda_environment_variable",
+      "risk": "LOW"
+    },
+    {
+      "action": "Redeploy the Lambda function with updated configuration",
+      "tool": "aws_lambda_update_function_code",
+      "risk": "LOW"
+    },
+    {
+      "action": "Monitor next batch processing time to ensure completion within timeout",
+      "tool": "cloudwatch_metric_alarm",
+      "risk": "LOW"
+    },
+    {
+      "action": "Manually trigger downstream Snowflake load DAG to catch up",
+      "tool": "airflow_trigger_dag",
+      "risk": "LOW"
+    },
+    {
+      "action": "Verify Snowpipe resumes ingesting new files",
+      "tool": "snowflake_query",
+      "risk": "LOW"
+    }
+  ]
+}

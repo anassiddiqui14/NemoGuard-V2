@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/shared/openshell-policy-boundary.cts", "src/shared/sandbox-name.cts"],
+  "exclude": ["node_modules", "dist"]
+}

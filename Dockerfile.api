@@ -1,0 +1,10 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+COPY pyproject.toml README.md .
+COPY src/ ./src/
+# Install dependencies from pyproject.toml as well as required packages
+RUN pip install . opentelemetry-api opentelemetry-sdk temporalio psycopg2-binary
+COPY . .
+
+CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

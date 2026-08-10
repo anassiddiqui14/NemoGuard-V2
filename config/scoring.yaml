@@ -1,0 +1,16 @@
+priority_weights:
+  business_criticality: 0.30
+  sla_breach_risk: 0.25
+  downstream_asset_count: 0.20
+  incident_age: 0.15
+  alert_severity: 0.10
+
+confidence_weights:
+  error_code_match: 0.30
+  earliest_failure: 0.25
+  downstream_reachable: 0.20
+  last_success_delta: 0.15
+  retry_consistency: 0.10
+  contradiction_penalty_range:
+    min: -0.15
+    max: -0.40

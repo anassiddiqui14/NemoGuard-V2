@@ -1,0 +1,23 @@
+[
+  {
+    "asset_id": "checkout_ui",
+    "impact_type": "Downstream Job",
+    "status": "AT_RISK",
+    "reason": "Depends on Payment API which is outputting invalid currency format, leading to NULL transaction_amount in downstream data.",
+    "score": 0.8
+  },
+  {
+    "asset_id": "JOB_FINANCIAL_REPORTING",
+    "impact_type": "Downstream Job",
+    "status": "BLOCKED",
+    "reason": "Halted due to upstream data quality failure on transactions_fact (NULL transaction_amount).",
+    "score": 0.9
+  },
+  {
+    "asset_id": "transactions_fact_daily_summary",
+    "impact_type": "Data Product",
+    "status": "AT_RISK",
+    "reason": "Failed to build due to stale data because upstream transactions_fact has NULL transaction_amount.",
+    "score": 0.8
+  }
+]

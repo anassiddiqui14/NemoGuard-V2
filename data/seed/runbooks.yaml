@@ -1,0 +1,151 @@
+runbooks:
+  - runbook_id: RB_SCHEMA_DRIFT_01
+    failure_type: schema_drift
+    title: Resolve Schema Drift Incident
+    applicable_stages: ["ingest", "bronze"]
+    preconditions: ["schema_mismatch_detected"]
+    steps:
+      - action_id: PAUSE_RETRIES
+        description: Pause automated retries for failing ingest/bronze jobs
+        target_pattern: "root_job_id"
+      - action_id: APPLY_SCHEMA_MAPPING
+        description: Apply auto-generated schema mapping
+        target_pattern: "root_job_id"
+      - action_id: RERUN_JOB
+        description: Rerun the failing job
+        target_pattern: "root_job_id"
+      - action_id: RERUN_DEPENDENTS
+        description: Trigger downstream rerun upon success
+        target_pattern: "root_job_id"
+    rollback:
+      - action_id: PAUSE_RETRIES
+        description: Re-enable retries if manual intervention needed
+        target_pattern: "root_job_id"
+    risk_class: medium
+    requires_approval: false
+
+  - runbook_id: RB_MISSING_FILE_01
+    failure_type: missing_file
+    title: Handle Missing Source File
+    applicable_stages: ["ingest"]
+    preconditions: ["file_not_found"]
+    steps:
+      - action_id: PAUSE_RETRIES
+        description: Stop retrying missing file
+        target_pattern: "root_job_id"
+      - action_id: SEND_STATUS_NOTICE
+        description: Notify upstream provider
+        target_pattern: "provider"
+    rollback: []
+    risk_class: low
+    requires_approval: false
+
+  - runbook_id: RB_DATA_QUALITY_01
+    failure_type: data_quality
+    title: Address Data Quality Violation
+    applicable_stages: ["bronze", "silver", "control"]
+    preconditions: ["dq_check_failed"]
+    steps:
+      - action_id: PAUSE_RETRIES
+        description: Stop pipeline
+        target_pattern: "root_job_id"
+      - action_id: SEND_STATUS_NOTICE
+        description: Escalate to data owner
+        target_pattern: "data_owner"
+    rollback: []
+    risk_class: medium
+    requires_approval: true
+
+  - runbook_id: RB_CREDENTIAL_EXPIRED_01
+    failure_type: credential_expired
+    title: Rotate Credentials
+    applicable_stages: ["ingest", "publish"]
+    preconditions: ["auth_error"]
+    steps:
+      - action_id: PAUSE_RETRIES
+        description: Stop pipeline to avoid account lockout
+        target_pattern: "root_job_id"
+    rollback: []
+    risk_class: low
+    requires_approval: true
+
+  - runbook_id: RB_NETWORK_TIMEOUT_01
+    failure_type: network_timeout
+    title: Handle Transient Network Issue
+    applicable_stages: ["all"]
+    preconditions: ["timeout_error"]
+    steps:
+      - action_id: RERUN_JOB
+        description: Retry the job after delay
+        target_pattern: "root_job_id"
+    rollback: []
+    risk_class: low
+    requires_approval: false
+
+  - runbook_id: RB_RESOURCE_EXHAUSTION_01
+    failure_type: resource_exhaustion
+    title: Scale Compute Resources
+    applicable_stages: ["silver", "gold"]
+    preconditions: ["oom_error", "timeout"]
+    steps:
+      - action_id: RERUN_JOB
+        description: Retry job with larger instance type
+        target_pattern: "root_job_id"
+    rollback: []
+    risk_class: medium
+    requires_approval: true
+
+  - runbook_id: RB_DUPLICATE_PROCESSING_01
+    failure_type: duplicate_processing
+    title: Fix Duplicate Data
+    applicable_stages: ["bronze", "silver"]
+    preconditions: ["duplicate_key_error"]
+    steps:
+      - action_id: PAUSE_RETRIES
+        description: Pause job
+        target_pattern: "root_job_id"
+    rollback: []
+    risk_class: high
+    requires_approval: true
+
+  - runbook_id: RB_WAREHOUSE_LOCK_01
+    failure_type: warehouse_lock
+    title: Resolve Concurrency Lock
+    applicable_stages: ["silver", "gold"]
+    preconditions: ["deadlock_detected"]
+    steps:
+      - action_id: RERUN_JOB
+        description: Rerun job after clearing lock
+        target_pattern: "root_job_id"
+    rollback: []
+    risk_class: medium
+    requires_approval: false
+
+  - runbook_id: RB_API_RATE_LIMIT_01
+    failure_type: api_rate_limit
+    title: Apply Backoff
+    applicable_stages: ["ingest", "publish"]
+    preconditions: ["rate_limit_exceeded"]
+    steps:
+      - action_id: PAUSE_RETRIES
+        description: Pause for cooldown period
+        target_pattern: "root_job_id"
+      - action_id: RERUN_JOB
+        description: Resume job after cooldown
+        target_pattern: "root_job_id"
+    rollback: []
+    risk_class: low
+    requires_approval: false
+
+  - runbook_id: RB_CODE_REGRESSION_01
+    failure_type: code_regression
+    title: Rollback Code Deployment
+    applicable_stages: ["all"]
+    preconditions: ["syntax_error", "runtime_exception"]
+    steps:
+      - action_id: PAUSE_RETRIES
+        description: Stop pipeline
+        target_pattern: "root_job_id"
+    rollback: []
+    risk_class: high
+    requires_approval: true

@@ -1,0 +1,11 @@
+asset_id,asset_name,asset_type,owner,sla_minutes,criticality,communication_template
+ASSET_SALES_DASHBOARD,Hourly Sales Dashboard,dashboard,Sales Operations,90,5,sales_hourly_delay
+ASSET_FINANCE_EXTRACT,Finance Revenue Extract,extract,Finance Operations,120,5,finance_extract_delay
+ASSET_CUSTOMER_FEED,Customer Notification Feed,API,Customer Engagement,60,4,customer_feed_delay
+ASSET_BI_PORTAL,BI Analytics Portal,dashboard,Business Intelligence,120,4,bi_portal_delay
+ASSET_PARTNER_EXPORT,Partner Data Export,file,Partner Operations,180,3,partner_export_delay
+ASSET_INVENTORY_REPORT,Real-time Inventory Report,dashboard,Supply Chain Ops,90,4,inventory_report_delay
+ASSET_COMPLIANCE_REPORT,Daily Compliance Report,regulatory_report,Compliance,240,5,compliance_delay
+ASSET_CUSTOMER_LOYALTY_DASH,Customer Loyalty Dashboard,dashboard,Marketing,180,3,loyalty_dash_delay
+ASSET_STOCK_RISK_ALERT,Stock Risk Alert System,API,Supply Chain Ops,60,4,stock_risk_delay
+ASSET_FINANCE_CLOSE_REPORT,Finance Close Report,extract,Finance Operations,300,5,finance_close_delay

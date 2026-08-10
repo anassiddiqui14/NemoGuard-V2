@@ -1,0 +1,10 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+COPY pyproject.toml README.md .
+COPY src/ ./src/
+# Install dependencies
+RUN pip install . opentelemetry-api opentelemetry-sdk temporalio psycopg2-binary
+COPY . .
+
+CMD ["python", "-m", "src.temporal_worker"]

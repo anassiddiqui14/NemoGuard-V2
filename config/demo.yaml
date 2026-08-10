@@ -1,0 +1,21 @@
+seed: 20260812
+history_days: 21
+base_date: "2026-08-12"
+base_timezone: UTC
+incident_rate_per_1000_runs: 18
+scenario_mix:
+  api_5xx_spike: 0.60
+  informatica_bad_file: 0.15
+  missing_canary: 0.15
+  sqs_low_volume: 0.10
+demo_incidents:
+  - incident_id: INC_DEMO_API_001
+    scenario_type: api_5xx_spike
+    root_job_id: JOB_BWS_PROMO_API
+    inject_at_hour: 9
+    inject_at_day_offset: 0
+  - incident_id: INC_DEMO_CANARY_001
+    scenario_type: missing_canary
+    root_job_id: JOB_AWS_CANARY_CHECK
+    inject_at_hour: 10
+    inject_at_day_offset: 0

@@ -1,0 +1,22 @@
+[
+  {
+    "id": "RB-SCHEMA-001",
+    "name": "Schema Regression Recovery",
+    "trigger_condition": "SCHEMA_COLUMN_MISSING",
+    "steps": [
+      {"action": "Revert the schema migration script introducing the incompatible change", "tool": "git_revert", "risk": "LOW"},
+      {"action": "Redeploy the previous stable version of the ingestion pipeline", "tool": "kubectl_rollout_undo", "risk": "MEDIUM"},
+      {"action": "Clear the corrupted DLQ (Dead Letter Queue) messages", "tool": "kafka_cli", "risk": "LOW"},
+      {"action": "Manually trigger downstream blocked jobs", "tool": "airflow_trigger_dag", "risk": "LOW"}
+    ]
+  },
+  {
+    "id": "RB-RESOURCE-001",
+    "name": "OOM / Resource Exhaustion",
+    "trigger_condition": "OOMKilled or Connection Timeout",
+    "steps": [
+      {"action": "Increase pod memory requests/limits by 2x", "tool": "kubectl_patch", "risk": "LOW"},
+      {"action": "Restart the deployment", "tool": "kubectl_rollout_restart", "risk": "LOW"}
+    ]
+  }
+]

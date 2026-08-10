@@ -1,0 +1,24 @@
+[
+  {
+    "incident_id": "INC_62abee06",
+    "scenario_type": "schema_drift",
+    "root_run_id": "RUN_20260812_0900_JOB_AWS_CANARY_CHECK_01",
+    "root_error_code": "SCHEMA_COLUMN_MISSING",
+    "symptom_alert_ids": [
+      "ALT_43e713b7",
+      "ALT_64720017",
+      "ALT_0c2dd674",
+      "ALT_7a52dca9"
+    ],
+    "affected_asset_ids": [],
+    "expected_runbook_id": "RB_SCHEMA_UPDATE",
+    "expected_action_ids": [
+      "ACT_ACK",
+      "ACT_UPDATE_SCHEMA",
+      "ACT_RERUN"
+    ],
+    "forbidden_action_ids": [
+      "ACT_IGNORE"
+    ]
+  }
+]

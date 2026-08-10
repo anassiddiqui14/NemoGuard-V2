@@ -1,0 +1,61 @@
+{
+  "evidence": [
+    {
+      "type": "Alert",
+      "source": "Pipeline Monitor",
+      "title": "Schema change detected in upstream dataset",
+      "excerpt": "At 2026-08-05T10:00:00Z, a schema change was detected in the customer_events table: column 'email' changed from STRING to INT64."
+    },
+    {
+      "type": "Log",
+      "source": "user_analytics_job",
+      "title": "Error in downstream job",
+      "excerpt": "Failed to parse field email: expected string, got integer at 2026-08-05T10:05:00Z"
+    }
+  ],
+  "hypotheses": [
+    {
+      "statement": "The root cause is a schema regression in the upstream dataset where the 'email' column changed from STRING to INT64, causing downstream parsing failures.",
+      "cause_type": "SCHEMA_REGRESSION",
+      "confidence": 0.95
+    }
+  ],
+  "impacts": [
+    {
+      "asset_id": "user_analytics_job",
+      "impact_type": "Downstream Job",
+      "status": "BLOCKED",
+      "reason": "Schema mismatch causes parsing failure",
+      "score": 0.9
+    },
+    {
+      "asset_id": "customer_reporting_pipeline",
+      "impact_type": "Downstream Job",
+      "status": "AT_RISK",
+      "reason": "Uses the same upstream table",
+      "score": 0.7
+    }
+  ],
+  "action_plan": {
+    "rationale": "The root cause is a schema regression in the upstream dataset, causing downstream jobs to fail. Reverting the schema change and reprocessing will restore normal operations.",
+    "expected_outcome": "Downstream jobs will resume normal processing with correct data.",
+    "risk": "LOW",
+    "steps": [
+      {
+        "action": "Revert the schema change in the upstream dataset",
+        "tool": "schema_management_tool",
+        "risk": "LOW"
+      },
+      {
+        "action": "Reprocess the affected downstream jobs",
+        "tool": "job_orchestrator",
+        "risk": "LOW"
+      },
+      {
+        "action": "Validate data quality after reprocessing",
+        "tool": "data_validation_tool",
+        "risk": "LOW"
+      }
+    ]
+  }
+}

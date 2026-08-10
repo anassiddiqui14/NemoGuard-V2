@@ -1,0 +1,38 @@
+{
+  "services": [
+    {
+      "id": "customer_profile",
+      "name": "Customer Profile Ingestion API",
+      "type": "Ingestion",
+      "dependencies": [],
+      "downstream": ["JOB_EXTRACT_RESERVATION", "JOB_DQ_VALIDATION", "JOB_EDW_LOAD"]
+    },
+    {
+      "id": "payment_api",
+      "name": "Payment API",
+      "type": "Service",
+      "dependencies": ["customer_profile", "auth_service"],
+      "downstream": ["checkout_ui"]
+    }
+  ],
+  "jobs": [
+    {
+      "id": "JOB_EXTRACT_RESERVATION",
+      "name": "Reservation Extraction Job",
+      "criticality": "HIGH",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "id": "JOB_DQ_VALIDATION",
+      "name": "Data Quality Validation Suite",
+      "criticality": "CRITICAL",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "id": "JOB_EDW_LOAD",
+      "name": "EDW Data Load",
+      "criticality": "HIGH",
+      "schedule": "0 2 * * *"
+    }
+  ]
+}

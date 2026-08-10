@@ -1,0 +1,14 @@
+[
+  {
+    "type": "Alert",
+    "source": "Monte Carlo",
+    "title": "NULL rate spike on transaction_amount",
+    "excerpt": "Anomaly detected on transactions_fact.transaction_amount: NULL rate is 45.2% (Historical average: 0.01%)."
+  },
+  {
+    "type": "Log",
+    "source": "payment_gateway_api",
+    "title": "Unrecognized currency format",
+    "excerpt": "Encountered 452,000 records with unrecognized currency format. Defaulting to NULL for transaction_amount."
+  }
+]

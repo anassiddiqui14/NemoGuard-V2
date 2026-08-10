@@ -1,0 +1,7 @@
+[
+  {
+    "statement": "Payment API is sending unrecognized currency format, causing NULL transaction_amount, which breaks downstream data quality checks and dependent jobs.",
+    "cause_type": "DATA_QUALITY",
+    "confidence": 0.95
+  }
+]

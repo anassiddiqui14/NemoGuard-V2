@@ -1,0 +1,34 @@
+from enum import Enum
+
+class IncidentState(str, Enum):
+    DETECTED = "DETECTED"
+    CORRELATING = "CORRELATING"
+    TRIAGING = "TRIAGING"
+    INVESTIGATING = "INVESTIGATING"
+    PLAN_READY = "PLAN_READY"
+    AWAITING_APPROVAL = "AWAITING_APPROVAL"
+    EXECUTING = "EXECUTING"
+    VERIFYING = "VERIFYING"
+    RESOLVED = "RESOLVED"
+    ROLLED_BACK = "ROLLED_BACK"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+class ToolRisk(str, Enum):
+    READ_ONLY = "READ_ONLY"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    PROHIBITED = "PROHIBITED"
+
+class Severity(str, Enum):
+    SEV_1 = "SEV_1"
+    SEV_2 = "SEV_2"
+    SEV_3 = "SEV_3"
+    SEV_4 = "SEV_4"
+
+class HypothesisStatus(str, Enum):
+    POSSIBLE = "POSSIBLE"
+    PROBABLE = "PROBABLE"
+    UNLIKELY = "UNLIKELY"
+    REJECTED = "REJECTED"

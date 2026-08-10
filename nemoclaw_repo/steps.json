@@ -1,0 +1,22 @@
+[
+  {
+    "action": "Fix the currency format handling in the payment gateway ingestion script to map unrecognized currencies to a default or flag for review",
+    "tool": "git_patch",
+    "risk": "LOW"
+  },
+  {
+    "action": "Redeploy the ingestion pipeline with the fixed currency handling",
+    "tool": "kubectl_rollout_restart",
+    "risk": "MEDIUM"
+  },
+  {
+    "action": "Clear any invalid messages in the ingestion dead letter queue (DLQ)",
+    "tool": "kafka_cli",
+    "risk": "LOW"
+  },
+  {
+    "action": "Manually trigger the halted financial reporting job",
+    "tool": "airflow_trigger_dag",
+    "risk": "LOW"
+  }
+]

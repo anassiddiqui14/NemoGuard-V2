@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: nemoguard-postgres
+    environment:
+      POSTGRES_USER: nemoguard
+      POSTGRES_PASSWORD: nemoguard_password
+      POSTGRES_DB: nemoguard_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nemoguard -d nemoguard_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  temporal:
+    image: temporalio/admin-tools:latest
+    container_name: nemoguard-temporal
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    environment:
+      - TEMPORAL_CLI_ADDRESS=localhost:7233
+    command: ["temporal", "server", "start-dev", "--ip", "0.0.0.0"]
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: nemoguard-api
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    environment:
+      - POSTGRES_URL=postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db
+      - TEMPORAL_URL=temporal:7233
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:?NVIDIA_API_KEY must be set in .env}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
+      - ENV=${ENV:-production}
+
+  temporal-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.temporal
+    container_name: nemoguard-temporal-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    environment:
+      - POSTGRES_URL=postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db
+      - TEMPORAL_URL=temporal:7233
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:?NVIDIA_API_KEY must be set in .env}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    container_name: nemoguard-frontend
+    ports:
+      - "80:80"
+
+  simulator:
+    build:
+      context: ./simulator_backend
+      dockerfile: Dockerfile.simulator
+    container_name: nemoguard-simulator
+    ports:
+      - "8001:8001"
+    environment:
+      - POSTGRES_URL=postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:?NVIDIA_API_KEY must be set in .env}
+
+volumes:
+  postgres_data:

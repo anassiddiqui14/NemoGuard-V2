@@ -1,0 +1,27 @@
+[project]
+name = "pipeline-copilot"
+version = "0.1.0"
+description = "Synthetic dataset generator for AI hackathon project"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml",
+    "pandas",
+    "pyarrow",
+    "duckdb",
+    "mcp",
+    "fastapi",
+    "uvicorn",
+    "openai",
+    "langgraph",
+    "pyjwt",
+    "httpx"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
