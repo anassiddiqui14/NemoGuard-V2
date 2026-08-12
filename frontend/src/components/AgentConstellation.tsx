@@ -66,7 +66,7 @@ export const AgentConstellation: React.FC<Props> = ({ status, events }) => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="grid grid-cols-3 gap-2.5 content-start">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 content-start">
         {agents.map((agent, idx) => {
           const style = STATE_STYLES[agent.state];
           const isRunning = agent.state === 'RUNNING';
@@ -76,7 +76,7 @@ export const AgentConstellation: React.FC<Props> = ({ status, events }) => {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: idx * 0.05 }}
-              className={`relative rounded-xl p-3 ring-1 ${style.ring} ${style.bg} ${style.glow} flex flex-col items-center text-center transition-all duration-300`}
+              className={`relative rounded-xl p-2.5 ring-1 ${style.ring} ${style.bg} ${style.glow} flex flex-col items-center text-center transition-all duration-300`}
             >
               {isRunning && (
                 <motion.div
@@ -85,12 +85,12 @@ export const AgentConstellation: React.FC<Props> = ({ status, events }) => {
                   transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
                 />
               )}
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-2 ${style.text} ${agent.state === 'RUNNING' ? 'bg-agent-active/20' : agent.state === 'COMPLETED' ? 'bg-healthy/15' : agent.state === 'FAILED' ? 'bg-critical/15' : 'bg-white/[0.04]'}`}>
-                {agent.icon}
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-1.5 ${style.text} ${agent.state === 'RUNNING' ? 'bg-agent-active/20' : agent.state === 'COMPLETED' ? 'bg-healthy/15' : agent.state === 'FAILED' ? 'bg-critical/15' : 'bg-white/[0.04]'}`}>
+                <span className="scale-90">{agent.icon}</span>
               </div>
-              <div className="text-[11.5px] font-semibold text-text-primary mb-0.5">{agent.name}</div>
-              <div className={`text-[9px] font-bold uppercase tracking-wide ${style.text}`}>{agent.state}</div>
-              <div className="text-[9.5px] text-text-muted mt-1.5 line-clamp-2 leading-tight" title={agent.lastMessage}>
+              <div className="text-[11px] font-semibold text-text-primary mb-0.5">{agent.name}</div>
+              <div className={`text-[8.5px] font-bold uppercase tracking-wide ${style.text}`}>{agent.state}</div>
+              <div className="text-[9px] text-text-muted mt-1 line-clamp-1 leading-tight" title={agent.lastMessage}>
                 {agent.lastMessage}
               </div>
             </motion.div>

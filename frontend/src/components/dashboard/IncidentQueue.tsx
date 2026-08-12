@@ -12,8 +12,8 @@ interface Props {
 
 export function IncidentQueue({ openIncidents, activeIncidentId, setActiveIncidentId, refreshQueue }: Props) {
     return (
-        <aside className="w-[300px] flex-shrink-0 border-r border-white/[0.06] bg-black/20 flex flex-col z-10">
-            <div className="px-5 py-4 flex items-center justify-between">
+        <aside className="w-full xl:w-[300px] xl:h-full flex-shrink-0 border-b xl:border-b-0 xl:border-r border-white/[0.06] bg-black/20 flex flex-col z-10 order-1 xl:order-none">
+            <div className="px-4 sm:px-5 py-3.5 flex items-center justify-between">
                 <div>
                     <h2 className="font-semibold text-[13px] text-text-primary tracking-tight">Incident Queue</h2>
                     <p className="text-[11px] text-text-muted mt-0.5">{openIncidents.length} active incident{openIncidents.length !== 1 ? 's' : ''}</p>
@@ -27,7 +27,7 @@ export function IncidentQueue({ openIncidents, activeIncidentId, setActiveIncide
                 </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-2">
+            <div className="xl:flex-1 xl:overflow-y-auto px-3 pb-3 flex gap-2 overflow-x-auto xl:block xl:space-y-2">
                 {openIncidents.length === 0 ? (
                     <EmptyState
                         icon={<AlertTriangle className="w-5 h-5" />}
@@ -48,7 +48,7 @@ export function IncidentQueue({ openIncidents, activeIncidentId, setActiveIncide
                                     exit={{ opacity: 0, scale: 0.97 }}
                                     key={inc.incident_id}
                                     onClick={() => setActiveIncidentId(inc.incident_id)}
-                                    className={`relative w-full text-left rounded-xl p-3.5 transition-all duration-200 group ${isActive
+                                    className={`relative min-w-[230px] xl:min-w-0 xl:w-full text-left rounded-xl p-3.5 transition-all duration-200 group ${isActive
                                             ? 'bg-gradient-to-br from-primary/[0.12] to-agent-active/[0.06] ring-1 ring-primary/30 shadow-lg shadow-primary/5'
                                             : 'bg-white/[0.02] hover:bg-white/[0.04] ring-1 ring-white/[0.04] hover:ring-white/[0.08]'
                                         }`}

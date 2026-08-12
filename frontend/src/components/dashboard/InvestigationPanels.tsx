@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ResponsiveContainer, Radar, RadarChart, PolarGrid, PolarAngleAxis, Tooltip } from 'recharts';
 import { AgentConstellation } from '../AgentConstellation';
 import { LiveOperationsConsole } from '../LiveOperationsConsole';
+import { useTheme } from '../../contexts/ThemeContext';
 import { EmptyState, severityPill } from './shared';
 import { Search, Activity, TrendingUp, ChevronDown, Sparkles } from 'lucide-react';
 import type { AgentEvent } from '../../hooks/useIncidentEvents';
@@ -72,9 +73,9 @@ export function AgentAndHypothesisRow({
     onViewEvidence: () => void;
 }) {
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4 items-start">
-            <Card title="Agent Constellation" subtitle="NemoClaw coordinated investigation" className="h-[400px]">
-                <div className="p-4 h-full overflow-y-auto">
+        <div className="grid grid-cols-1 gap-4 w-full">
+            <Card title="Agent Constellation" subtitle="NemoClaw coordinated investigation" className="w-full">
+                <div className="p-4">
                     {activeIncidentId ? (
                         <AgentConstellation status={incidentStatus} events={liveEvents} />
                     ) : (
@@ -91,9 +92,9 @@ export function AgentAndHypothesisRow({
                         <Search className="w-3 h-3" /> Evidence
                     </button>
                 }
-                className="h-[400px]"
+                className="w-full"
             >
-                <div className="p-4 h-full overflow-y-auto">
+                <div className="p-4">
                     {!hypothesis ? (
                         <EmptyState
                             icon={<TrendingUp className="w-5 h-5" />}
@@ -156,8 +157,13 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
     selectedSeverity: string | undefined;
     impact: any[];
 }) {
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
+    const chartGrid = isLight ? 'rgba(71, 77, 99, 0.18)' : 'rgba(255,255,255,0.10)';
+    const chartText = isLight ? '#4B4D63' : 'rgba(255,255,255,0.62)';
+    const tooltipStyle = { backgroundColor: isLight ? '#FFFFFF' : '#14141F', borderColor: isLight ? '#D7DAE7' : 'rgba(255,255,255,0.14)', color: isLight ? '#14141F' : '#F5F5FA', borderRadius: '10px', fontSize: '12px' };
     return (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 w-full">
             <Card
                 title="Agent Activity"
                 subtitle="Live thought and execution stream"
@@ -167,7 +173,7 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                         {sseStatus === 'connected' ? 'LIVE' : sseStatus.toUpperCase()}
                     </span>
                 }
-                className="h-[360px]"
+                className="w-full min-h-[360px]"
             >
                 {activeIncidentId ? (
                     <LiveOperationsConsole events={liveEvents} status={sseStatus} />
@@ -176,9 +182,9 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                 )}
             </Card>
 
-            <Card title="Business Impact" subtitle="Technical and customer-facing blast radius" right={severityPill(selectedSeverity)} className="h-[360px]">
-                <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
-                    <div className="h-[190px] w-full">
+            <Card title="Business Impact" subtitle="Technical and customer-facing blast radius" right={severityPill(selectedSeverity)} className="w-full">
+                <div className="p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)] gap-5 items-center">
+                    <div className="h-[220px] sm:h-[240px] w-full lg:max-w-[320px] lg:justify-self-start">
                         {impact.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
                                 <RadarChart cx="50%" cy="50%" outerRadius="75%" data={[
@@ -188,9 +194,9 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                                     { subject: 'Latency', A: impact.length > 0 ? 2 : 0, fullMark: 10 },
                                     { subject: 'Risk', A: impact.length > 0 ? 8 : 0, fullMark: 10 },
                                 ]}>
-                                    <PolarGrid stroke="rgba(255,255,255,0.06)" />
-                                    <PolarAngleAxis dataKey="subject" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9.5 }} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#14141F', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '10px', fontSize: '12px' }} />
+                                    <PolarGrid stroke={chartGrid} />
+                                    <PolarAngleAxis dataKey="subject" tick={{ fill: chartText, fontSize: 9.5 }} />
+                                    <Tooltip contentStyle={tooltipStyle} />
                                     <Radar name="Impact" dataKey="A" stroke="#C026D3" fill="#C026D3" fillOpacity={0.35} />
                                 </RadarChart>
                             </ResponsiveContainer>
@@ -199,9 +205,10 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                         )}
                     </div>
 
-                    <div className="space-y-2 overflow-y-auto max-h-[190px]">
+                    <div className="space-y-2 w-full">
                         <div className="text-[10.5px] font-semibold uppercase tracking-wider text-text-muted mb-2">Affected Assets</div>
                         {impact.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <AnimatePresence>
                                 {impact.map((imp, idx) => (
                                     <motion.div
@@ -209,7 +216,7 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                                         initial={{ opacity: 0, x: 16 }}
                                         animate={{ opacity: 1, x: 0 }}
                                         transition={{ delay: 0.08 * idx }}
-                                        className="flex items-center justify-between p-2.5 mb-1.5 rounded-lg bg-white/[0.02] ring-1 ring-white/[0.05]"
+                                        className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] ring-1 ring-white/[0.05]"
                                     >
                                         <span className="font-medium text-[12px] text-text-secondary break-words pr-2 truncate">{imp.asset_name || imp.asset_id}</span>
                                         <span
@@ -219,8 +226,9 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                                             {imp.impact_status || imp.status || 'AT RISK'}
                                         </span>
                                     </motion.div>
-                                ))}
+                            ))}
                             </AnimatePresence>
+                            </div>
                         ) : (
                             <div className="text-[12px] text-text-muted py-2">No assets currently affected.</div>
                         )}

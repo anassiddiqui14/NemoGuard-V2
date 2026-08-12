@@ -1,9 +1,11 @@
 import { X, Sparkles } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 
 export function EvidenceModal({ hypothesis, evidence, onClose }: { hypothesis: any; evidence: any[]; onClose: () => void }) {
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-            <div className="glass-panel rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden ring-1 ring-white/[0.08]">
+        <AnimatePresence>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0, y: 20, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} transition={{ type: 'spring', stiffness: 340, damping: 28 }} className="glass-panel rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden ring-1 ring-white/[0.08]">
                 <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-agent-active/20 flex items-center justify-center">
@@ -40,7 +42,8 @@ export function EvidenceModal({ hypothesis, evidence, onClose }: { hypothesis: a
                         )}
                     </div>
                 </div>
-            </div>
-        </div>
+            </motion.div>
+        </motion.div>
+        </AnimatePresence>
     );
 }

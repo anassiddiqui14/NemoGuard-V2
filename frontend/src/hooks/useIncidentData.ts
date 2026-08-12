@@ -19,8 +19,8 @@ export function useIncidentData(incidentId: string | null) {
       return;
     }
 
-    setLoading(true);
-    const interval = setInterval(async () => {
+    let cancelled = false;
+    const load = async () => {
       try {
         const [evRes, hypRes, planRes, impactRes, alertsRes] = await Promise.all([
           fetch(`/api/v2/incidents/${incidentId}/evidence`),
@@ -36,6 +36,7 @@ export function useIncidentData(incidentId: string | null) {
         const impactData = await impactRes.json();
         const alertsData = await alertsRes.json();
 
+        if (cancelled) return;
         if (Array.isArray(evData)) setEvidence(evData);
         if (Array.isArray(impactData)) setImpact(impactData);
         if (Array.isArray(alertsData)) setAlerts(alertsData);
@@ -50,16 +51,24 @@ export function useIncidentData(incidentId: string | null) {
         if (Array.isArray(planData) && planData.length > 0) {
           setPlan(planData[0]);
           if (planData[0].status === 'APPROVED' || planData[0].status === 'EXECUTED') {
-            clearInterval(interval);
             setLoading(false);
           }
         }
       } catch (e) {
         console.error(e);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    }, 2000);
+    };
 
-    return () => clearInterval(interval);
+    setLoading(true);
+    void load();
+    const interval = window.setInterval(() => void load(), 5000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [incidentId]);
 
   return { evidence, hypothesis, plan, impact, alerts, loading };

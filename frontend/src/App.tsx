@@ -1,9 +1,12 @@
-import { Search, Bell, Sparkles, Sun, Moon, Clock, FileCheck2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Search, Bell, Sparkles, Sun, Moon, Clock, FileCheck2, Activity, BrainCircuit, ClipboardList, LayoutDashboard, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTheme } from './contexts/ThemeContext';
 import { useNotifications } from './hooks/useNotifications';
 import { Dashboard } from './components/Dashboard';
+import { WorkspacePage } from './components/WorkspacePages';
+
+type Workspace = 'command' | 'incidents' | 'operations' | 'intelligence';
 
 function useAuthToken() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('nemoguard_token'));
@@ -125,11 +128,12 @@ function NotificationBell({ onSelectIncident }: { onSelectIncident: (id: string)
   );
 }
 
-function TopBar({ onSelectIncident }: { onSelectIncident: (id: string) => void }) {
+function TopBar({ onSelectIncident, onToggleNav, navCollapsed }: { onSelectIncident: (id: string) => void; onToggleNav: () => void; navCollapsed: boolean }) {
   useAuthToken();
   return (
-    <div className="h-16 border-b border-white/[0.06] flex items-center justify-between px-6 flex-shrink-0 glass-panel z-20 relative">
+    <div className="min-h-16 border-b border-white/[0.06] flex items-center justify-between gap-3 px-4 sm:px-6 flex-shrink-0 glass-panel z-20 relative">
       <div className="flex items-center gap-2.5 min-w-0">
+        <button onClick={onToggleNav} className="hidden lg:inline-flex p-2 rounded-lg text-text-muted hover:bg-white/[0.04] hover:text-text-primary" aria-label="Toggle navigation">{navCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}</button>
         <motion.div
           whileHover={{ rotate: 8, scale: 1.05 }}
           transition={{ type: 'spring', stiffness: 300, damping: 15 }}
@@ -141,17 +145,17 @@ function TopBar({ onSelectIncident }: { onSelectIncident: (id: string) => void }
           <h1 className="font-semibold text-text-primary text-[15px] leading-tight tracking-tight">
             NemoGuard <span className="text-gradient font-semibold">Command Center</span>
           </h1>
-          <p className="text-[11px] text-text-muted leading-tight">Agentic incident response</p>
+          <p className="hidden sm:block text-[11px] text-text-muted leading-tight">Agentic incident response</p>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="relative hidden sm:block">
+        <div className="relative hidden lg:block">
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
           <input
             type="text"
             placeholder="Search incidents, evidence…"
-            className="pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[13px] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/40 w-56 transition-all"
+            className="pl-8 pr-3 py-2 bg-white/[0.03] border border-white/[0.06] rounded-xl text-[13px] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/40 w-64 transition-all"
           />
         </div>
 
@@ -166,14 +170,28 @@ function TopBar({ onSelectIncident }: { onSelectIncident: (id: string) => void }
   );
 }
 
+function Sidebar({ page, onChange, collapsed }: { page: Workspace; onChange: (page: Workspace) => void; collapsed: boolean }) {
+  const navigation: { id: Workspace; label: string; icon: ReactNode; group: string }[] = [
+    { id: 'command', label: 'Command Center', icon: <LayoutDashboard />, group: 'Workspace' },
+    { id: 'incidents', label: 'Incidents', icon: <ClipboardList />, group: 'Response' },
+    { id: 'operations', label: 'Operations', icon: <Activity />, group: 'Response' },
+    { id: 'intelligence', label: 'Intelligence', icon: <BrainCircuit />, group: 'Insights' },
+  ];
+  return <nav className={`${collapsed ? 'lg:w-[68px] lg:p-2' : 'lg:w-[230px]'} w-full lg:h-full shrink-0 border-b lg:border-b-0 lg:border-r border-white/[0.06] bg-black/20 p-2 lg:p-3 transition-[width,padding] duration-200`}><div className={`flex lg:flex-col gap-1 overflow-x-auto ${collapsed ? 'lg:items-center' : ''}`}>{navigation.map((item, index) => <div key={item.id} className={collapsed ? 'lg:w-full' : 'contents'}>{(index === 0 || navigation[index - 1].group !== item.group) && <div className={`${collapsed ? 'lg:hidden' : ''} hidden lg:block mt-3 mb-1 px-2 text-[10px] uppercase tracking-[0.14em] font-bold text-text-muted`}>{item.group}</div>}<button onClick={() => onChange(item.id)} title={item.label} className={`${page === item.id ? 'bg-primary/14 text-primary ring-1 ring-primary/25' : 'text-text-secondary hover:bg-white/[0.04] hover:text-text-primary'} flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${collapsed ? 'lg:w-full lg:h-11 lg:justify-center lg:px-0' : ''}`}><span className="w-4 h-4 shrink-0">{item.icon}</span><span className={collapsed ? 'lg:hidden' : ''}>{item.label}</span></button></div>)}</div></nav>;
+}
+
 function App() {
   const [focusIncidentId, setFocusIncidentId] = useState<string | null>(null);
+  const [page, setPage] = useState<Workspace>('command');
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const openIncident = (id: string) => { setFocusIncidentId(id); setPage('command'); };
 
   return (
-    <div className="flex flex-col h-screen w-full bg-app-bg overflow-hidden font-sans">
-      <TopBar onSelectIncident={setFocusIncidentId} />
-      <main className="flex-1 overflow-hidden">
-        <Dashboard focusIncidentId={focusIncidentId} onFocusHandled={() => setFocusIncidentId(null)} />
+    <div className="flex flex-col min-h-screen h-[100dvh] w-full bg-app-bg overflow-hidden font-sans">
+      <TopBar onSelectIncident={openIncident} onToggleNav={() => setNavCollapsed((value) => !value)} navCollapsed={navCollapsed} />
+      <main className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
+        <Sidebar page={page} onChange={setPage} collapsed={navCollapsed} />
+        {page === 'command' ? <Dashboard focusIncidentId={focusIncidentId} onFocusHandled={() => setFocusIncidentId(null)} /> : <WorkspacePage page={page} onOpenIncident={openIncident} />}
       </main>
     </div>
   );

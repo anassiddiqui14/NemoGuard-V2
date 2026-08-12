@@ -27,6 +27,7 @@
   --panel-border: rgba(255, 255, 255, 0.06);
   --glow-primary: rgba(99, 102, 241, 0.12);
   --glow-agent: rgba(192, 38, 211, 0.08);
+  --modal-backdrop: rgba(3, 3, 8, 0.64);
 }
 
 :root.light {
@@ -53,6 +54,7 @@
   --panel-border: rgba(20, 20, 31, 0.08);
   --glow-primary: rgba(84, 87, 229, 0.08);
   --glow-agent: rgba(162, 28, 175, 0.06);
+  --modal-backdrop: rgba(244, 245, 250, 0.66);
 }
 
 @layer base {
@@ -88,6 +90,11 @@
       radial-gradient(ellipse 80% 50% at 20% -10%, var(--glow-primary), transparent),
       radial-gradient(ellipse 60% 40% at 100% 0%, var(--glow-agent), transparent);
     background-attachment: fixed;
+    min-width: 320px;
+  }
+
+  button, input {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
@@ -97,6 +104,16 @@
     backdrop-filter: blur(20px) saturate(140%);
     -webkit-backdrop-filter: blur(20px) saturate(140%);
     border: 1px solid var(--panel-border);
+  }
+
+  .modal-backdrop {
+    background: var(--modal-backdrop);
+    backdrop-filter: blur(14px) saturate(120%);
+    -webkit-backdrop-filter: blur(14px) saturate(120%);
+  }
+
+  .text-balance {
+    text-wrap: balance;
   }
 
   .gradient-border {
@@ -175,6 +192,49 @@
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
     background-size: 200% 100%;
     animation: shimmer 1.6s ease-in-out infinite;
+  }
+}
+
+@media (max-width: 639px) {
+  .glass-panel {
+    backdrop-filter: blur(14px) saturate(130%);
+    -webkit-backdrop-filter: blur(14px) saturate(130%);
+  }
+}
+
+/* The command center's content column can be narrow even on a wide display:
+   it sits between navigation, the incident queue, and recovery rail. Size the
+   incident heading against its own container instead of the viewport. */
+.situation-header {
+  container-type: inline-size;
+}
+
+.situation-sla > div {
+  width: 100%;
+  text-align: left;
+}
+
+@container (min-width: 820px) {
+  .situation-top {
+    flex-direction: row;
+  }
+
+  .situation-sla {
+    width: auto;
+  }
+
+  .situation-sla > div {
+    width: auto;
+    text-align: right;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

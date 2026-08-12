@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Toaster } from 'react-hot-toast';
+import { Activity, BellRing, BrainCircuit, LayoutDashboard, ShieldCheck } from 'lucide-react';
 import { useIncidentData } from '../hooks/useIncidentData';
 import { useIncidentEvents } from '../hooks/useIncidentEvents';
 import { IncidentQueue } from './dashboard/IncidentQueue';
@@ -24,6 +25,7 @@ export function Dashboard({ focusIncidentId, onFocusHandled }: DashboardProps = 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [triageStarting, setTriageStarting] = useState(false);
   const [safetyAcknowledged, setSafetyAcknowledged] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'investigation' | 'activity' | 'recovery'>('overview');
 
   const { evidence, hypothesis, plan, impact, alerts, loading: dataLoading } = useIncidentData(activeIncidentId);
   const { events: liveEvents, status: sseStatus } = useIncidentEvents(activeIncidentId);
@@ -102,6 +104,10 @@ export function Dashboard({ focusIncidentId, onFocusHandled }: DashboardProps = 
     setSafetyAcknowledged(false);
   }, [plan?.action_plan_id]);
 
+  useEffect(() => {
+    setActiveTab('overview');
+  }, [activeIncidentId]);
+
   const sortedIncidents = useMemo(() => {
     return [...openIncidents].sort((a, b) => {
       const aAttn = needsAttention(a.status) ? 0 : 1;
@@ -114,7 +120,7 @@ export function Dashboard({ focusIncidentId, onFocusHandled }: DashboardProps = 
   const canApprove = !!plan && (!isNeedsReview || safetyAcknowledged);
 
   return (
-    <div className="flex h-full min-h-0 bg-app-bg text-text-primary overflow-hidden selection:bg-primary/30">
+    <div className="flex flex-col xl:flex-row h-full min-h-0 w-full bg-app-bg text-text-primary overflow-y-auto xl:overflow-hidden selection:bg-primary/30">
       <Toaster position="top-right" />
 
       <IncidentQueue
@@ -124,49 +130,64 @@ export function Dashboard({ focusIncidentId, onFocusHandled }: DashboardProps = 
         refreshQueue={refreshQueue}
       />
 
-      <main className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 min-w-0">
-        <SituationHeader
-          selectedIncident={selectedIncident}
-          alerts={alerts}
-          impact={impact}
-          hypothesis={hypothesis}
-          triageStarting={triageStarting}
-          handleStartTriage={handleStartTriage}
-        />
+      <main className="flex-1 min-w-0 w-full p-3 sm:p-5 xl:overflow-y-auto flex flex-col gap-3 sm:gap-4 order-2 xl:order-none">
+        <IncidentTabs activeTab={activeTab} setActiveTab={setActiveTab} alertCount={alerts.length} />
 
-        <AlertsPanel alerts={alerts} expandedAlert={expandedAlert} setExpandedAlert={setExpandedAlert} />
+        {activeTab === 'overview' && (
+          <SituationHeader
+            selectedIncident={selectedIncident}
+            alerts={alerts}
+            impact={impact}
+            hypothesis={hypothesis}
+            triageStarting={triageStarting}
+            handleStartTriage={handleStartTriage}
+          />
+        )}
 
-        <AgentAndHypothesisRow
-          activeIncidentId={activeIncidentId}
-          incidentStatus={selectedIncident?.status ?? 'UNKNOWN'}
-          liveEvents={liveEvents}
-          hypothesis={hypothesis}
-          evidence={evidence}
-          dataLoading={dataLoading}
-          onViewEvidence={() => setIsEvidenceModalOpen(true)}
-        />
+        {activeTab === 'alerts' && <AlertsPanel alerts={alerts} expandedAlert={expandedAlert} setExpandedAlert={setExpandedAlert} />}
 
-        <ActivityAndImpactRow
-          activeIncidentId={activeIncidentId}
-          liveEvents={liveEvents}
-          sseStatus={sseStatus}
-          selectedSeverity={selectedIncident?.severity}
-          impact={impact}
-        />
+        {activeTab === 'investigation' && (
+          <div className="flex-1 min-h-[520px]">
+            <AgentAndHypothesisRow
+              activeIncidentId={activeIncidentId}
+              incidentStatus={selectedIncident?.status ?? 'UNKNOWN'}
+              liveEvents={liveEvents}
+              hypothesis={hypothesis}
+              evidence={evidence}
+              dataLoading={dataLoading}
+              onViewEvidence={() => setIsEvidenceModalOpen(true)}
+            />
+          </div>
+        )}
+
+        {activeTab === 'activity' && (
+          <div className="flex-1 min-h-[520px]">
+            <ActivityAndImpactRow
+              activeIncidentId={activeIncidentId}
+              liveEvents={liveEvents}
+              sseStatus={sseStatus}
+              selectedSeverity={selectedIncident?.severity}
+              impact={impact}
+            />
+          </div>
+        )}
+
+        {activeTab === 'recovery' && (
+          <RecoveryRail
+            embedded
+            hypothesis={hypothesis}
+            evidence={evidence}
+            plan={plan}
+            dataLoading={dataLoading}
+            isNeedsReview={isNeedsReview}
+            safetyAcknowledged={safetyAcknowledged}
+            setSafetyAcknowledged={setSafetyAcknowledged}
+            canApprove={canApprove}
+            onViewPlan={() => setIsModalOpen(true)}
+            onExecute={handleExecute}
+          />
+        )}
       </main>
-
-      <RecoveryRail
-        hypothesis={hypothesis}
-        evidence={evidence}
-        plan={plan}
-        dataLoading={dataLoading}
-        isNeedsReview={isNeedsReview}
-        safetyAcknowledged={safetyAcknowledged}
-        setSafetyAcknowledged={setSafetyAcknowledged}
-        canApprove={canApprove}
-        onViewPlan={() => setIsModalOpen(true)}
-        onExecute={handleExecute}
-      />
 
       {isEvidenceModalOpen && activeIncidentId && hypothesis && (
         <EvidenceModal hypothesis={hypothesis} evidence={evidence} onClose={() => setIsEvidenceModalOpen(false)} />
@@ -175,6 +196,28 @@ export function Dashboard({ focusIncidentId, onFocusHandled }: DashboardProps = 
       {isModalOpen && activeIncidentId && plan && (
         <PlanApprovalModal incidentId={activeIncidentId} plan={plan} onClose={() => setIsModalOpen(false)} onRefreshPlan={() => refreshQueue()} />
       )}
+    </div>
+  );
+}
+
+function IncidentTabs({ activeTab, setActiveTab, alertCount }: {
+  activeTab: 'overview' | 'alerts' | 'investigation' | 'activity' | 'recovery';
+  setActiveTab: (tab: 'overview' | 'alerts' | 'investigation' | 'activity' | 'recovery') => void;
+  alertCount: number;
+}) {
+  const tabs = [
+    { id: 'overview' as const, label: 'Overview', icon: <LayoutDashboard className="w-3.5 h-3.5" /> },
+    { id: 'alerts' as const, label: 'Alerts', icon: <BellRing className="w-3.5 h-3.5" />, count: alertCount },
+    { id: 'investigation' as const, label: 'Investigation', icon: <BrainCircuit className="w-3.5 h-3.5" /> },
+    { id: 'activity' as const, label: 'Activity & impact', icon: <Activity className="w-3.5 h-3.5" /> },
+    { id: 'recovery' as const, label: 'Recovery plan', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+  ];
+  return (
+    <div className="w-full overflow-x-auto rounded-xl bg-white/[0.02] p-1 ring-1 ring-white/[0.06] flex-shrink-0" role="tablist" aria-label="Incident workspace sections">
+      <div className="grid min-w-[700px] grid-cols-5 gap-1">
+      {tabs.map((tab) => <button key={tab.id} onClick={() => setActiveTab(tab.id)} role="tab" aria-selected={activeTab === tab.id} className={`inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2.5 text-[12px] font-medium transition-all ${activeTab === tab.id ? 'bg-primary/14 text-primary shadow-sm ring-1 ring-primary/25' : 'text-text-muted hover:bg-white/[0.04] hover:text-text-primary'}`}>
+        {tab.icon}{tab.label}{typeof tab.count === 'number' && tab.count > 0 && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold">{tab.count}</span>}
+      </button>)}</div>
     </div>
   );
 }

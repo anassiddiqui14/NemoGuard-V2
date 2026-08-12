@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { PlayCircle, ShieldAlert, Clock, Users, Briefcase, Layers, AlarmClock } from 'lucide-react';
-import { LifecycleStepper, formatElapsedSeconds, severityPill, statusBadge } from './shared';
+import { formatElapsedSeconds, severityPill, statusBadge } from './shared';
+import { ConnectedProcessFlow } from './ConnectedProcessFlow';
 import type { IncidentSummary } from './shared';
 
 interface Props {
@@ -97,9 +98,9 @@ export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, 
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
-            className="glass-panel rounded-2xl p-5 lg:p-6 relative"
+            className="situation-header glass-panel rounded-2xl p-4 sm:p-5 lg:p-6 relative"
         >
-            <div className="flex flex-col lg:flex-row items-start justify-between gap-4 mb-5">
+            <div className="situation-top flex flex-col items-start justify-between gap-4 mb-5">
                 <div className="min-w-0 w-full lg:flex-1">
                     <div className="flex items-center gap-2.5 mb-3 flex-wrap">
                         {severityPill(selectedIncident?.severity)}
@@ -107,7 +108,7 @@ export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, 
                         <span className="text-[11px] font-mono text-text-muted truncate max-w-[160px]">{selectedIncident?.incident_id ?? '—'}</span>
                     </div>
 
-                    <h1 className="text-[22px] font-semibold mb-2.5 tracking-tight leading-snug">
+                    <h1 className="text-xl sm:text-[22px] font-semibold mb-2.5 tracking-tight leading-snug text-balance">
                         {selectedIncident?.title ?? 'No active incident selected'}
                     </h1>
 
@@ -141,14 +142,14 @@ export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, 
                     )}
                 </div>
 
-                {selectedIncident && <SlaBreachCard incident={selectedIncident} impact={impact} />}
+                {selectedIncident && <div className="situation-sla w-full"><SlaBreachCard incident={selectedIncident} impact={impact} /></div>}
             </div>
 
-            <div className="relative mb-5">
-                <LifecycleStepper status={selectedIncident?.status ?? ''} />
+            <div className="relative mb-5 overflow-x-auto pb-1">
+                <ConnectedProcessFlow status={selectedIncident?.status ?? ''} />
             </div>
 
-            <div className="relative grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="relative grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
                 <Metric icon={<Layers className="w-3.5 h-3.5" />} label="Alerts" value={alerts.length > 0 ? `${alerts.length}→1` : '—'} sub="consolidated" />
                 <Metric icon={<Briefcase className="w-3.5 h-3.5" />} label="Jobs" value={impact.filter((i) => i.impact_type?.includes('Job')).length || (impact.length > 0 ? 0 : '—')} sub="blocked jobs" accent="text-critical" />
                 <Metric icon={<Layers className="w-3.5 h-3.5" />} label="Products" value={impact.filter((i) => !i.impact_type?.includes('Job')).length || (impact.length > 0 ? 0 : '—')} sub="at risk" accent="text-warning" />

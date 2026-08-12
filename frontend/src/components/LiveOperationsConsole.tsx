@@ -25,7 +25,7 @@ export function LiveOperationsConsole({ events, status }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      <div ref={scrollRef} className="flex-1 p-4 overflow-y-auto space-y-3" aria-live="polite">
+      <div ref={scrollRef} className="flex-1 p-4 space-y-3" aria-live="polite">
         {events.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-text-muted">
             <Activity className={`w-7 h-7 mb-2.5 ${status === 'connected' ? 'text-primary animate-pulse' : 'text-text-muted opacity-40'}`} />

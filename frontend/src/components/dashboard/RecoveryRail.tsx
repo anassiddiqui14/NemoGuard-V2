@@ -2,6 +2,7 @@ import { ShieldAlert, FileCheck, Sparkles } from 'lucide-react';
 import { SafetyReviewBanner } from './SituationHeader';
 
 interface Props {
+    embedded?: boolean;
     hypothesis: any;
     evidence: any[];
     plan: any;
@@ -15,13 +16,13 @@ interface Props {
 }
 
 export function RecoveryRail({
-    hypothesis, evidence, plan, dataLoading, isNeedsReview, safetyAcknowledged, setSafetyAcknowledged, canApprove, onViewPlan, onExecute,
+    embedded = false, hypothesis, evidence, plan, dataLoading, isNeedsReview, safetyAcknowledged, setSafetyAcknowledged, canApprove, onViewPlan, onExecute,
 }: Props) {
     const executed = plan?.status === 'EXECUTED' || plan?.status === 'APPROVED';
 
     return (
-        <aside className="w-[300px] flex-shrink-0 border-l border-white/[0.06] bg-black/20 flex flex-col z-10">
-            <div className="p-5 pb-4">
+        <aside className={embedded ? 'w-full min-h-[520px] glass-panel rounded-2xl overflow-hidden flex flex-col' : 'w-full xl:w-[300px] flex-shrink-0 border-t xl:border-t-0 xl:border-l border-white/[0.06] bg-black/20 flex flex-col z-10 order-3 xl:order-none'}>
+            <div className="p-4 sm:p-5 pb-3 xl:pb-4">
                 <div className="flex items-center gap-2 mb-1">
                     <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary/20 to-agent-active/20 flex items-center justify-center">
                         <Sparkles className="w-3.5 h-3.5 text-primary" />
@@ -42,7 +43,7 @@ export function RecoveryRail({
                 </div>
             </div>
 
-            <div className="p-4 flex-1 overflow-y-auto space-y-3">
+            <div className="px-4 pb-3 xl:p-4 xl:flex-1 xl:overflow-y-auto space-y-3">
                 {isNeedsReview && plan && (
                     <div className="space-y-2.5">
                         <SafetyReviewBanner feedback={plan.rationale} />
@@ -68,9 +69,28 @@ export function RecoveryRail({
                         <StatusRow done={executed} active={!!plan && !executed} label="Preparing verification checks" />
                     </div>
                 </div>
+
+                {embedded && plan && (
+                    <div className="rounded-xl p-4 sm:p-5 bg-white/[0.02] ring-1 ring-white/[0.05]">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <div><div className="font-semibold text-[14px] text-text-primary">Recommended recovery</div><div className="text-[11px] text-text-muted mt-0.5">Human approval remains required before execution.</div></div>
+                            <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-warning/15 text-warning ring-1 ring-warning/30">{plan.overall_risk || 'MEDIUM'} RISK</span>
+                        </div>
+                        <p className="text-[13px] leading-relaxed text-text-secondary mb-4">{plan.rationale}</p>
+                        <div className="grid gap-3 md:grid-cols-3">
+                            {(plan.steps || []).map((step: any, index: number) => (
+                                <div key={step.sequence_no || index} className="relative rounded-xl p-3.5 bg-app-bg/40 ring-1 ring-white/[0.06]">
+                                    <div className="w-6 h-6 rounded-full bg-primary/15 text-primary text-[11px] font-bold flex items-center justify-center mb-3">{index + 1}</div>
+                                    <div className="text-[12px] font-semibold text-text-primary mb-1">{step.title || `Step ${index + 1}`}</div>
+                                    <div className="text-[11px] leading-relaxed text-text-muted">{step.action_type || step.instruction}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
-            <div className="p-4 flex flex-col gap-2.5 mt-auto">
+            <div className="p-4 pt-2 xl:pt-4 flex flex-col sm:flex-row xl:flex-col gap-2.5 mt-auto">
                 <button
                     onClick={onViewPlan}
                     disabled={!plan}
