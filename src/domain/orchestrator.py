@@ -142,15 +142,22 @@ class IncidentOrchestrator:
             runbook_res = final_state.get("runbook_result", {})
             plan_res = final_state.get("final_plan", {})
             
+            # Prefer the RCA agent's full ranked hypothesis ledger (spec §10.1) when
+            # it returned one -- multiple competing hypotheses with supporting/
+            # contradicting evidence, not just a single collapsed "finding" string.
+            # Fall back to a single-hypothesis list for backward compatibility with
+            # older RCA responses that only set "finding"/"confidence".
+            rca_hypotheses = rca_res.get("hypotheses")
+            if not rca_hypotheses:
+                rca_hypotheses = [{
+                    "statement": rca_res.get("finding", "Unknown root cause"),
+                    "cause_type": rca_res.get("cause_type", "OTHER"),
+                    "confidence": rca_res.get("confidence", 0.9)
+                }]
+
             llm_response = {
                 "evidence": rca_res.get("evidence", []),
-                "hypotheses": [
-                    {
-                        "statement": rca_res.get("finding", "Unknown root cause"),
-                        "cause_type": rca_res.get("cause_type", "OTHER"),
-                        "confidence": rca_res.get("confidence", 0.9)
-                    }
-                ],
+                "hypotheses": rca_hypotheses,
                 "impacts": impact_res.get("impacts", []),
                 "action_plan": {
                     "rationale": plan_res.get("rationale", ""),
@@ -293,14 +300,16 @@ class IncidentOrchestrator:
             """, ("SYSTEM", incident_id, "System Triage", "Triage Incident", "COMPLETED"))
             
             # 1. Insert Evidence
+            from src.domain.evidence_authority import classify_authority
             evidence_ids = []
             for ev in llm_response.get("evidence", []):
                 ev_id = self._generate_id("EVD")
                 evidence_ids.append(ev_id)
+                source = ev.get("source", "System")
                 conn.execute("""
-                    INSERT INTO evidence (evidence_id, incident_id, evidence_type, source_system, title, excerpt, collected_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (ev_id, incident_id, ev.get("type", "Log"), ev.get("source", "System"), ev.get("title", "Evidence"), ev.get("excerpt", ""), now))
+                    INSERT INTO evidence (evidence_id, incident_id, evidence_type, source_system, title, excerpt, collected_at, authority)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (ev_id, incident_id, ev.get("type", "Log"), source, ev.get("title", "Evidence"), ev.get("excerpt", ""), now, classify_authority(source)))
             
             # 2. Insert Hypotheses
             primary_hypothesis = None
@@ -460,28 +469,116 @@ class IncidentOrchestrator:
         return {"status": "success", "plan_id": plan_id}
 
     def execute_plan(self, incident_id: str, plan_id: str):
+        """
+        Executes an approved plan through the real Governed Capability
+        Gateway (src/capabilities/*) instead of unconditionally marking
+        every step SUCCEEDED and inserting hardcoded "PASSED" verification
+        rows. Every action_step is:
+          1. mapped from its free-text tool_name/action_type to a typed
+             ActionIntent (src/capabilities/intent_mapper.py)
+          2. compiled to a real registered capability + exact args
+             (src/capabilities/plan_compiler.py)
+          3. executed through the generic engine: precondition check ->
+             execute -> INDEPENDENT verification
+             (src/capabilities/execution_engine.py)
+        The incident is only marked RESOLVED if verification actually
+        passed for every action; otherwise it is marked FAILED and an
+        ESCALATED audit event is recorded so a human can intervene.
+        See docs/nemoguard_real_world_support_engineer_build_spec.md §12/§14.
+        """
+        import json as _json
+        from src.capabilities import plan_compiler, execution_engine
+        from src.capabilities.intent_mapper import action_steps_to_intents
+        from src.capabilities.models import VerificationStatus
+
         now = datetime.now(timezone.utc).isoformat()
+
         with self.db.get_connection() as conn:
-            conn.execute("UPDATE action_plan SET status = 'EXECUTED' WHERE action_plan_id = %s", (plan_id,))
-            conn.execute("UPDATE action_step SET status = 'SUCCEEDED' WHERE action_plan_id = %s", (plan_id,))
-            conn.execute("UPDATE incident SET status = %s WHERE incident_id = %s", (IncidentState.RESOLVED.value, incident_id))
-            
-            # Create verification results
-            conn.execute("""
-                INSERT INTO verification_result (verification_id, incident_id, action_plan_id, check_name, status, expected_json, actual_json, evidence_ids_json, checked_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (self._generate_id("VRF"), incident_id, plan_id, "Schema validation", "PASSED", "{}", "{}", "[]", now))
-            
-            conn.execute("""
-                INSERT INTO verification_result (verification_id, incident_id, action_plan_id, check_name, status, expected_json, actual_json, evidence_ids_json, checked_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (self._generate_id("VRF"), incident_id, plan_id, "Row count within tolerance", "PASSED", "{}", "{}", "[]", now))
-            
-            conn.execute("UPDATE incident SET status = %s, resolved_at = %s WHERE incident_id = %s", (IncidentState.RESOLVED.value, now, incident_id))
-            
-        self._log_audit(incident_id, "Executor", "ACTION_COMPLETED", "All recovery steps executed successfully")
-        self._log_audit(incident_id, "Verifier", "VERIFICATION_PASSED", "Independent verification checks passed")
-        self._log_audit(incident_id, "Commander", "INCIDENT_RESOLVED", "Incident resolved successfully")
+            cursor = conn.execute(
+                "SELECT action_step_id, sequence_no, action_type, tool_name, parameters_json FROM action_step "
+                "WHERE action_plan_id = %s ORDER BY sequence_no ASC",
+                (plan_id,),
+            )
+            steps = [
+                {
+                    "action_step_id": r[0], "sequence_no": r[1],
+                    "action_type": r[2], "tool_name": r[3], "parameters_json": r[4],
+                }
+                for r in cursor.fetchall()
+            ]
+
+            cursor = conn.execute("SELECT plan_version FROM action_plan WHERE action_plan_id = %s", (plan_id,))
+            row = cursor.fetchone()
+            plan_version = row[0] if row else 1
+
+            cursor = conn.execute("SELECT primary_run_id FROM incident WHERE incident_id = %s", (incident_id,))
+            row = cursor.fetchone()
+            incident_run_id = row[0] if row and row[0] else ""
+
+        intents = action_steps_to_intents(steps, incident_run_id=incident_run_id)
+        compiled = plan_compiler.compile_plan(incident_id, plan_id, plan_version, intents)
+
+        all_verified = True
+        with self.db.get_connection() as conn:
+            conn.execute("UPDATE action_plan SET status = 'EXECUTING', compiled_plan_hash = %s WHERE action_plan_id = %s", (compiled.plan_hash, plan_id))
+
+            for step, action in zip(steps, compiled.actions):
+                conn.execute(
+                    "UPDATE action_step SET capability_id = %s, capability_version = %s, status = 'EXECUTING' WHERE action_step_id = %s",
+                    (action.capability_id, action.capability_version, step["action_step_id"]),
+                )
+
+                record = execution_engine.execute_compiled_action(action)
+
+                exec_now = datetime.now(timezone.utc).isoformat()
+                verified = record.verification.status == VerificationStatus.PASSED
+                if record.verification.status in (VerificationStatus.FAILED, VerificationStatus.INCONCLUSIVE):
+                    all_verified = False
+
+                step_status = "SUCCEEDED" if record.result.status.value == "SUCCESS" and verified else "FAILED"
+                conn.execute("UPDATE action_step SET status = %s WHERE action_step_id = %s", (step_status, step["action_step_id"]))
+
+                conn.execute("""
+                    INSERT INTO action_execution (
+                        action_execution_id, action_step_id, idempotency_key, status,
+                        started_at, completed_at, result_json, error_message,
+                        capability_id, verification_status, verification_details_json
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    self._generate_id("AEX"), step["action_step_id"], action.idempotency_key, record.result.status.value,
+                    record.result.started_at.isoformat(), exec_now,
+                    _json.dumps(record.result.raw_result), record.result.error_message,
+                    record.capability_id, record.verification.status.value, _json.dumps(record.verification.details),
+                ))
+
+                conn.execute("""
+                    INSERT INTO verification_result (verification_id, incident_id, action_plan_id, check_name, status, expected_json, actual_json, evidence_ids_json, checked_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    self._generate_id("VRF"), incident_id, plan_id, f"{action.capability_id} verification",
+                    record.verification.status.value, _json.dumps({"expected": "verified"}),
+                    _json.dumps(record.verification.details), "[]", exec_now,
+                ))
+
+                self._log_audit(
+                    incident_id, "Executor", "ACTION_EXECUTED",
+                    f"Capability {action.capability_id} executed with result={record.result.status.value}, "
+                    f"verification={record.verification.status.value}.",
+                )
+
+            if all_verified:
+                conn.execute("UPDATE action_plan SET status = 'EXECUTED' WHERE action_plan_id = %s", (plan_id,))
+                conn.execute("UPDATE incident SET status = %s, resolved_at = %s WHERE incident_id = %s", (IncidentState.RESOLVED.value, now, incident_id))
+            else:
+                conn.execute("UPDATE action_plan SET status = 'FAILED' WHERE action_plan_id = %s", (plan_id,))
+                conn.execute("UPDATE incident SET status = %s WHERE incident_id = %s", (IncidentState.FAILED.value, incident_id))
+
+        if all_verified:
+            self._log_audit(incident_id, "Verifier", "VERIFICATION_PASSED", "Independent verification passed for all executed actions.")
+            self._log_audit(incident_id, "Commander", "INCIDENT_RESOLVED", "Incident resolved successfully — verified against real system state.")
+        else:
+            self._log_audit(incident_id, "Verifier", "VERIFICATION_FAILED", "One or more actions failed independent verification; incident NOT marked resolved.")
+            self._log_audit(incident_id, "Commander", "INCIDENT_ESCALATED", "Plan execution did not verify successfully. Human intervention required.")
 
     def triage_feedback(self, incident_id: str, feedback_text: str) -> Dict[str, Any]:
         """Handles user feedback on an existing action plan and generates a revised plan."""
@@ -616,16 +713,49 @@ class IncidentOrchestrator:
                     INSERT INTO incident_alert (incident_id, alert_id, correlation_score, correlation_reasons_json, added_at)
                     VALUES (%s, %s, %s, %s, %s)
                 """, (correlated_incident_id, alert_id, analysis.get("confidence", 0.95), json.dumps([analysis.get("reasoning")]), now))
-                
+
                 # Update incident summary
                 conn.execute("""
-                    UPDATE incident 
-                    SET summary = summary || %s, updated_at = %s 
+                    UPDATE incident
+                    SET summary = summary || %s, updated_at = %s
                     WHERE incident_id = %s
                 """, (f"\n\nNew Correlated Alert: {message}", now, correlated_incident_id))
-                
+
+                # Real-world monitoring tools (Datadog, PagerDuty, etc.) send a
+                # "recovered"/"resolved"/"cleared" notification once a previously
+                # -firing alert returns to normal — often because the underlying
+                # issue self-healed or was fixed manually outside NemoGuard.
+                # Previously we had NO way to close an incident from an external
+                # signal: an incident only ever transitioned to RESOLVED when
+                # NemoGuard's own recovery plan executed. That meant incidents
+                # for issues that resolved themselves (or were fixed by hand)
+                # would sit open indefinitely. If the Watcher Agent flags this
+                # alert as a recovery signal, auto-resolve the correlated
+                # incident, with an explicit audit trail noting it was resolved
+                # externally (not via an executed NemoGuard plan) so operators
+                # can tell the two cases apart.
+                if analysis.get("is_recovery_signal"):
+                    conn.execute(
+                        "UPDATE incident SET status = %s, resolved_at = %s, updated_at = %s WHERE incident_id = %s",
+                        (IncidentState.RESOLVED.value, now, now, correlated_incident_id)
+                    )
+                    self._log_audit(
+                        correlated_incident_id,
+                        "Watcher Agent",
+                        "INCIDENT_AUTO_RESOLVED_EXTERNALLY",
+                        f"Alert {alert_id} reported the underlying issue has recovered (source: {source_system}). "
+                        f"Incident auto-resolved based on external recovery signal, not an executed NemoGuard plan. "
+                        f"Reasoning: {analysis.get('reasoning')}"
+                    )
+                    return {
+                        "status": "ingested_and_incident_auto_resolved",
+                        "alert_id": alert_id,
+                        "incident_id": correlated_incident_id,
+                        "reasoning": analysis.get("reasoning")
+                    }
+
                 self._log_audit(correlated_incident_id, "Watcher Agent", "ALERT_CORRELATED", f"Alert {alert_id} dynamically correlated to this incident by AI. Reasoning: {analysis.get('reasoning')}")
-                
+
                 return {
                     "status": "ingested_and_correlated",
                     "alert_id": alert_id,

@@ -1,5 +1,6 @@
 from datetime import timedelta
 from temporalio import workflow
+from temporalio.common import RetryPolicy
 from typing import Dict, Any
 
 with workflow.unsafe.imports_passed_through():
@@ -17,10 +18,21 @@ class IncidentLifecycleWorkflow:
         workflow.logger.info(f"Started IncidentLifecycleWorkflow for {incident_id}")
         
         # 1. Run Triage Activity (Investigate and generate plan)
+        # The full multi-agent chain (RCA -> Impact -> Runbook -> Grounding
+        # Critic, each doing several tool-calling LLM round-trips) can
+        # legitimately take longer than a few minutes. The previous 5-minute
+        # timeout with the default unlimited retry policy meant a slow (but
+        # otherwise healthy) triage run would get killed by Temporal,
+        # silently restart from attempt 1, get killed again, and repeat
+        # forever -- the incident just sat in INVESTIGATING indefinitely
+        # with no visible error. Raise the timeout to give the agent chain
+        # realistic headroom, and cap retries so a genuinely broken/hanging
+        # triage fails visibly instead of looping silently.
         triage_result = await workflow.execute_activity(
             triage_incident_activity,
             incident_id,
-            start_to_close_timeout=timedelta(minutes=5),
+            start_to_close_timeout=timedelta(minutes=15),
+            retry_policy=RetryPolicy(maximum_attempts=3),
         )
         
         if triage_result.get("status") != "EXECUTED" or not triage_result.get("saved_plan"):

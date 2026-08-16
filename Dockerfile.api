@@ -3,8 +3,14 @@ FROM python:3.10-slim
 WORKDIR /app
 COPY pyproject.toml README.md .
 COPY src/ ./src/
-# Install dependencies from pyproject.toml as well as required packages
-RUN pip install . opentelemetry-api opentelemetry-sdk temporalio psycopg2-binary
+# Install dependencies from pyproject.toml as well as required packages.
+# boto3 is included so src/tools/write_tools.py can optionally import
+# localstack_lab/remediate.py (only exercised when NEMOGUARD_LOCALSTACK_LAB=1)
+# to perform/verify real remediation actions against the LocalStack lab.
+# boto3/botocore pinned to 1.34.144: newer versions send a query-protocol
+# request shape LocalStack's CloudWatch emulator doesn't recognize (see
+# localstack_lab/requirements.txt for details).
+RUN pip install . opentelemetry-api opentelemetry-sdk temporalio psycopg2-binary "boto3==1.34.144" "botocore==1.34.144"
 COPY . .
 
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

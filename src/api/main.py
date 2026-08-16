@@ -15,7 +15,10 @@ from src.domain.orchestrator import IncidentOrchestrator
 from src.domain.correlator import CorrelatorEngine
 from src.domain.models import Incident, Alert
 from src.utils.telemetry import setup_telemetry
-from src.api.auth import get_current_user, require_role, User, get_mock_token
+from src.api.auth import (
+    get_current_user, require_role, User, get_mock_token,
+    LoginRequest, verify_password, issue_token_for_user, IS_DEV_ENV,
+)
 
 from temporalio.client import Client
 from src.domain.workflows.incident_workflow import IncidentLifecycleWorkflow
@@ -35,9 +38,76 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/api/v2/auth/mock-login")
 def mock_login(role: str = "commander"):
-    if os.environ.get("ENV", "production").lower() not in ("development", "dev", "local"):
+    if not IS_DEV_ENV:
         raise HTTPException(status_code=404, detail="Not found")
     return {"access_token": get_mock_token(role), "token_type": "bearer"}
+
+@app.get("/api/v2/auth/config")
+def auth_config():
+    """
+    Tells the frontend how it is allowed to authenticate in THIS deployment.
+    - dev_login_enabled: whether the no-credential mock-login endpoint is
+      reachable at all (only true in development/dev/local).
+    - credential_login_enabled: whether real email/password sign-in against
+      platform_user is available (true whenever the table has at least one
+      active account provisioned).
+    This lets the login screen stop advertising "demo mode" / "skip login"
+    as an option the moment a real deployment has real accounts, without any
+    client-side toggle able to re-enable it.
+    """
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    has_real_users = False
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.execute("SELECT COUNT(*) FROM platform_user WHERE is_active = TRUE")
+            has_real_users = cursor.fetchone()[0] > 0
+    except Exception:
+        has_real_users = False
+    return {
+        "dev_login_enabled": IS_DEV_ENV,
+        "credential_login_enabled": has_real_users,
+    }
+
+@app.post("/api/v2/auth/login")
+def login(req: LoginRequest):
+    """
+    Real credential-backed sign-in. Verifies the submitted password against
+    the PBKDF2 hash stored for the account and, on success, issues a JWT
+    carrying that account's actual roles/tenant/workspace -- replacing the
+    mock-login flow where any typed password worked and the "role" was
+    whatever the operator happened to click in a dropdown.
+    """
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    with db.get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT user_id, email, password_hash, roles, tenant_id, workspace_id, is_active FROM platform_user WHERE email = %s",
+            (req.email.strip().lower(),),
+        )
+        row = cursor.fetchone()
+
+    invalid_credentials = HTTPException(status_code=401, detail="Invalid email or password")
+    if not row:
+        raise invalid_credentials
+
+    user_id, email, password_hash, roles, tenant_id, workspace_id, is_active = row
+    if not is_active or not verify_password(req.password, password_hash):
+        raise invalid_credentials
+
+    token = issue_token_for_user({
+        "user_id": user_id,
+        "email": email,
+        "roles": roles,
+        "tenant_id": tenant_id,
+        "workspace_id": workspace_id,
+    })
+
+    with db.get_connection() as conn:
+        conn.execute(
+            "UPDATE platform_user SET last_login_at = %s WHERE user_id = %s",
+            (datetime.now(timezone.utc).isoformat(), user_id),
+        )
+
+    return {"access_token": token, "token_type": "bearer"}
 
 @app.on_event("startup")
 async def startup_event():
@@ -103,10 +173,20 @@ def get_overview():
 def list_incidents(state: str = "open"):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
+        # Include resolved_at so the frontend can show "time to resolve" for
+        # resolved incidents instead of a live-ticking elapsed-time clock that
+        # keeps counting up forever even after the incident is closed.
         if state == "open":
-            cursor = conn.execute("SELECT incident_id, title, status, severity, detected_at, next_sla_breach_at, owner_team, primary_job_id, summary FROM incident WHERE status != 'RESOLVED' ORDER BY detected_at DESC")
+            # FAILED is terminal as well: the recovery attempt has completed
+            # but independent verification did not pass, so it must be worked
+            # from the escalation/history view rather than presented as an
+            # unchanged active incident in the operator queue.
+            cursor = conn.execute(
+                "SELECT incident_id, title, status, severity, detected_at, next_sla_breach_at, owner_team, primary_job_id, summary, resolved_at "
+                "FROM incident WHERE status NOT IN ('RESOLVED', 'FAILED', 'CLOSED', 'CANCELLED') ORDER BY detected_at DESC"
+            )
         else:
-            cursor = conn.execute("SELECT incident_id, title, status, severity, detected_at, next_sla_breach_at, owner_team, primary_job_id, summary FROM incident ORDER BY detected_at DESC")
+            cursor = conn.execute("SELECT incident_id, title, status, severity, detected_at, next_sla_breach_at, owner_team, primary_job_id, summary, resolved_at FROM incident ORDER BY detected_at DESC")
             
         cols = [col[0] for col in cursor.description]
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
@@ -395,6 +475,63 @@ async def execute_plan(incident_id: str, plan_id: str, current_user: User = Depe
     orchestrator = IncidentOrchestrator()
     orchestrator.execute_plan(incident_id, plan_id)
     return {"status": "EXECUTING"}
+
+
+# ---------------------------------------------------------------------------
+# Admin: Capability catalog + policy administration (spec §17.3/§17.4).
+# Lets an admin see exactly what real capabilities are registered, what
+# their EFFECTIVE (post-override) policy is, and force a live reload of
+# config/capability_policy.yaml without a process restart -- all admin-only.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v2/admin/capabilities")
+async def list_capabilities(current_user: User = Depends(require_role("admin"))):
+    from src.capabilities import registry, policy
+    from src.capabilities.models import CompiledAction, RiskLevel, AutonomyMode
+
+    results = []
+    for definition in registry.list_capabilities():
+        # Build a throwaway CompiledAction just to run it through the same
+        # effective-policy resolution the real execution engine uses, so
+        # what the admin sees here is GUARANTEED to match runtime behavior
+        # (no separate/divergent "display" logic).
+        fake_action = CompiledAction(
+            action_id="ADMIN-PREVIEW",
+            sequence=1,
+            capability_id=definition.capability_id,
+            capability_version=definition.version,
+            intent_type="ADMIN_PREVIEW",
+            target_resource_type="N/A",
+            target_resource_id="N/A",
+            arguments={},
+            risk_level=definition.risk_level,
+            autonomy_mode=definition.autonomy_mode,
+            supports_dry_run=definition.supports_dry_run,
+            idempotency_key="admin-preview",
+        )
+        effective_risk, effective_autonomy = policy._effective_risk_and_autonomy(fake_action)
+        results.append({
+            "capability_id": definition.capability_id,
+            "version": definition.version,
+            "kind": definition.kind.value,
+            "description": definition.description,
+            "owner": definition.owner,
+            "default_risk_level": definition.risk_level.value,
+            "default_autonomy_mode": definition.autonomy_mode.value,
+            "effective_risk_level": effective_risk.value,
+            "effective_autonomy_mode": effective_autonomy.value,
+            "overridden": (effective_risk != definition.risk_level) or (effective_autonomy != definition.autonomy_mode),
+            "supports_dry_run": definition.supports_dry_run,
+            "required_args": definition.required_args,
+        })
+    return results
+
+
+@app.post("/api/v2/admin/capabilities/reload-policy")
+async def reload_capability_policy(current_user: User = Depends(require_role("admin"))):
+    from src.capabilities import policy
+    policy.reload_policy_config()
+    return {"status": "reloaded", "config_path": str(policy._CONFIG_PATH)}
 
 
 

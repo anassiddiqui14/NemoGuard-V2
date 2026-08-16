@@ -42,15 +42,41 @@ class PostgresDatabase:
         schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
         with open(schema_path, 'r') as f:
             schema_sql = f.read()
-            
+
         migration_path = os.path.join(os.path.dirname(__file__), '../../migrations/002_domain_model.sql')
         with open(migration_path, 'r') as f:
             migration_sql = f.read()
-            
+
         with self.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(schema_sql)
                 cur.execute(migration_sql)
+
+        self.apply_pending_migrations()
+
+    def apply_pending_migrations(self):
+        """
+        Applies every migrations/NNN_*.sql file (in numeric order) that isn't
+        002_domain_model.sql (already applied above as part of init_schema).
+        Each file uses `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT
+        EXISTS` style guards, so re-running this on every startup is safe and
+        idempotent -- this is how 007_platform_users.sql (real credentialed
+        accounts) gets applied to existing deployments without a manual step.
+        """
+        migrations_dir = os.path.join(os.path.dirname(__file__), '../../migrations')
+        if not os.path.isdir(migrations_dir):
+            return
+        filenames = sorted(f for f in os.listdir(migrations_dir) if f.endswith('.sql') and f != '002_domain_model.sql')
+        for filename in filenames:
+            path = os.path.join(migrations_dir, filename)
+            with open(path, 'r') as f:
+                sql = f.read()
+            try:
+                with self.get_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(sql)
+            except Exception as e:
+                print(f"Migration {filename} failed (may already be applied): {e}")
 
     def load_seed_data(self, data_dir: str):
         def load_csv(filename, table):

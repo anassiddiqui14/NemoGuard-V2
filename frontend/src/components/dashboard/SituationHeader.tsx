@@ -115,7 +115,12 @@ export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, 
                         {selectedIncident && (
                             <>
                                 <span className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> {alerts.length > 0 ? alerts.length : 1} alerts → 1 incident</span>
-                                <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> {formatElapsedSeconds(selectedIncident.detected_at)} ago</span>
+                                <span className="flex items-center gap-1.5">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    {selectedIncident.resolved_at
+                                        ? `Resolved in ${formatElapsedSeconds(selectedIncident.detected_at, selectedIncident.resolved_at)}`
+                                        : `${formatElapsedSeconds(selectedIncident.detected_at)} ago`}
+                                </span>
                                 <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> {selectedIncident.owner_team || 'Data Operations'}</span>
                                 <span className="flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5" /> <span className="font-mono text-[11px]">{selectedIncident.primary_job_id || 'UNKNOWN'}</span></span>
                             </>
@@ -141,7 +146,7 @@ export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, 
                     )}
                 </div>
 
-                {selectedIncident && <SlaBreachCard incident={selectedIncident} impact={impact} />}
+                {selectedIncident && status !== 'RESOLVED' && <SlaBreachCard incident={selectedIncident} impact={impact} />}
             </div>
 
             <div className="relative mb-5">
@@ -153,7 +158,12 @@ export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, 
                 <Metric icon={<Briefcase className="w-3.5 h-3.5" />} label="Jobs" value={impact.filter((i) => i.impact_type?.includes('Job')).length || (impact.length > 0 ? 0 : '—')} sub="blocked jobs" accent="text-critical" />
                 <Metric icon={<Layers className="w-3.5 h-3.5" />} label="Products" value={impact.filter((i) => !i.impact_type?.includes('Job')).length || (impact.length > 0 ? 0 : '—')} sub="at risk" accent="text-warning" />
                 <Metric icon={<ShieldAlert className="w-3.5 h-3.5" />} label="Confidence" value={hypothesis ? `${Math.round(hypothesis.confidence_score * 100)}%` : '—'} sub="root cause" accent="text-agent-active" />
-                <Metric icon={<Clock className="w-3.5 h-3.5" />} label="Elapsed" value={selectedIncident ? formatElapsedSeconds(selectedIncident.detected_at) : '—'} sub="since detection" />
+                <Metric
+                    icon={<Clock className="w-3.5 h-3.5" />}
+                    label={selectedIncident?.resolved_at ? 'Resolved In' : 'Elapsed'}
+                    value={selectedIncident ? formatElapsedSeconds(selectedIncident.detected_at, selectedIncident.resolved_at) : '—'}
+                    sub={selectedIncident?.resolved_at ? 'time to resolve' : 'since detection'}
+                />
             </div>
         </motion.div>
     );

@@ -76,6 +76,10 @@ htmlcov/
 .pi_session/
 data/.pi_session/
 
+# Masked real-world alert imports (derived from real org data — never commit,
+# even though masked; see scripts/import_real_alerts.py)
+data/imported_alerts/
+
 # Pyc cache dirs
 __pycache__/
 **/__pycache__/

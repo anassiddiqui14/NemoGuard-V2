@@ -30,9 +30,18 @@ const AGENT_DEFS: AgentDef[] = [
 ];
 
 function computeAgentState(def: AgentDef, events: AgentEvent[], incidentStatus: string): { state: AgentState; lastMessage?: string } {
+  const s = incidentStatus.toUpperCase();
+  const isResolved = s === 'RESOLVED';
+
   const relevant = events.filter((e) => def.actors.includes(e.source));
   if (relevant.length === 0) {
-    const s = incidentStatus.toUpperCase();
+    // Once the incident is resolved, no agent should still be shown as
+    // running/queued — previously agents with no emitted events for this
+    // incident (e.g. Watcher on a fast auto-recovered incident) fell through
+    // to QUEUED here, but that's fine; the real bug is below where agents
+    // *with* events but no explicit completion event stayed RUNNING forever.
+    if (isResolved) return { state: 'COMPLETED', lastMessage: def.idleDesc };
+
     const isInvestigatingPhase = ['INVESTIGATING', 'TRIAGING', 'CORRELATING'].includes(s);
     const isExecPhase = ['EXECUTING', 'VERIFYING'].includes(s);
     if (def.key === 'verifier' && isExecPhase) return { state: 'RUNNING' };
@@ -42,6 +51,12 @@ function computeAgentState(def: AgentDef, events: AgentEvent[], incidentStatus: 
   const last = relevant[relevant.length - 1];
   if (def.failedOn?.includes(last.event_type)) return { state: 'FAILED', lastMessage: last.message };
   if (def.completedOn.includes(last.event_type)) return { state: 'COMPLETED', lastMessage: last.message };
+  // The agent's last recorded event wasn't an explicit "completed" event type
+  // (this happens for auto-resolved incidents where the pipeline short-circuits
+  // and never emits every agent's terminal event). If the incident has already
+  // resolved, treat every agent as COMPLETED rather than leaving it stuck on
+  // RUNNING indefinitely.
+  if (isResolved) return { state: 'COMPLETED', lastMessage: last.message };
   return { state: 'RUNNING', lastMessage: last.message };
 }
 
@@ -90,7 +105,7 @@ export const AgentConstellation: React.FC<Props> = ({ status, events }) => {
               </div>
               <div className="text-[11.5px] font-semibold text-text-primary mb-0.5">{agent.name}</div>
               <div className={`text-[9px] font-bold uppercase tracking-wide ${style.text}`}>{agent.state}</div>
-              <div className="text-[9.5px] text-text-muted mt-1.5 line-clamp-2 leading-tight" title={agent.lastMessage}>
+              <div className="text-[9.5px] text-text-muted mt-1.5 line-clamp-2 leading-tight break-words w-full" title={agent.lastMessage}>
                 {agent.lastMessage}
               </div>
             </motion.div>

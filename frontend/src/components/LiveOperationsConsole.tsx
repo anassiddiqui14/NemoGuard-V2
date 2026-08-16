@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal, CheckCircle, Activity, Loader2, AlertCircle } from 'lucide-react';
 import type { AgentEvent } from '../hooks/useIncidentEvents';
 
@@ -34,32 +35,40 @@ export function LiveOperationsConsole({ events, status }: Props) {
         ) : (
           <div className="relative before:absolute before:top-1 before:bottom-1 before:left-[13px] before:w-px before:bg-white/[0.06]">
             <div className="space-y-3">
-              {events.map((evt) => (
-                <div key={evt.id} className="relative flex gap-3 items-start">
-                  <div className="mt-0.5 w-6 h-6 rounded-full bg-surface-secondary flex items-center justify-center relative z-10 ring-1 ring-white/[0.06]">
-                    {getEventIcon(evt.event_type)}
-                  </div>
-                  <div className="flex-1 min-w-0 pb-0.5">
-                    <div className="flex items-center gap-2 mb-1 overflow-hidden">
-                      <span className="text-[11.5px] font-semibold text-text-primary truncate">{evt.source}</span>
-                      <span
-                        className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap flex-shrink-0 ${evt.event_type.includes('COMPLETED') || evt.event_type.includes('CREATED') || evt.event_type.includes('PASSED')
+              <AnimatePresence initial={false}>
+                {events.map((evt) => (
+                  <motion.div
+                    key={evt.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.22, ease: 'easeOut' }}
+                    className="relative flex gap-3 items-start"
+                  >
+                    <div className="mt-0.5 w-6 h-6 rounded-full bg-surface-secondary flex items-center justify-center relative z-10 ring-1 ring-white/[0.06]">
+                      {getEventIcon(evt.event_type)}
+                    </div>
+                    <div className="flex-1 min-w-0 pb-0.5">
+                      <div className="flex items-center gap-2 mb-1 overflow-hidden">
+                        <span className="text-[11.5px] font-semibold text-text-primary truncate">{evt.source}</span>
+                        <span
+                          className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap flex-shrink-0 ${evt.event_type.includes('COMPLETED') || evt.event_type.includes('CREATED') || evt.event_type.includes('PASSED')
                             ? 'bg-healthy/15 text-healthy'
                             : evt.event_type.includes('FAILED')
                               ? 'bg-critical/15 text-critical'
                               : 'bg-primary/15 text-primary'
-                          }`}
-                      >
-                        {evt.event_type.replace(/_/g, ' ')}
-                      </span>
-                      <span className="text-[9.5px] font-mono text-text-muted flex-shrink-0 ml-auto">
-                        {new Date(evt.timestamp).toLocaleTimeString([], { hour12: false })}
-                      </span>
+                            }`}
+                        >
+                          {evt.event_type.replace(/_/g, ' ')}
+                        </span>
+                        <span className="text-[9.5px] font-mono text-text-muted flex-shrink-0 ml-auto">
+                          {new Date(evt.timestamp).toLocaleTimeString([], { hour12: false })}
+                        </span>
+                      </div>
+                      <div className="text-[12px] text-text-secondary leading-relaxed whitespace-pre-wrap">{evt.message}</div>
                     </div>
-                    <div className="text-[12px] text-text-secondary leading-relaxed whitespace-pre-wrap">{evt.message}</div>
-                  </div>
-                </div>
-              ))}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
           </div>
         )}

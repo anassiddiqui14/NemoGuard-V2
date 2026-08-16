@@ -170,9 +170,20 @@ class CorrelatorEngine:
         if cluster['duplicate_count'] > 0:
             correlation_reasons.append(f"Deduplicated {cluster['duplicate_count']} exact match events")
             
+        # Previously this always appended "..." even when the message was
+        # shorter than the truncation length, so incident titles looked
+        # permanently cut off ("Incident: short message...") with no way to
+        # see the rest — the ellipsis was baked into the stored title itself,
+        # not a CSS overflow effect. Only truncate (and only then add "...")
+        # when the message actually exceeds the limit, and use a longer,
+        # more informative limit.
+        _TITLE_MSG_LIMIT = 120
+        _msg = primary.message or ""
+        _title_msg = _msg[:_TITLE_MSG_LIMIT] + "..." if len(_msg) > _TITLE_MSG_LIMIT else _msg
+
         return Incident(
             incident_id=incident_id,
-            title=f"Incident: {primary.message[:50]}...",
+            title=f"Incident: {_title_msg}",
             summary=f"Created from {len(cluster['alerts'])} correlated alerts (and {cluster['duplicate_count']} duplicates). \nReasons: {', '.join(correlation_reasons)}",
             status=IncidentState.DETECTED,
             severity=severity_map.get(primary.severity.lower(), Severity.SEV_3),

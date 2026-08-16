@@ -11,11 +11,20 @@ class WatcherAgent(BaseAgent):
 Your job is to analyze incoming webhook payloads (from Datadog, PagerDuty, Emails, etc.) and determine if they represent a real anomaly or are just noise.
 If it is a valid alert, normalize it into a standard schema.
 
+Monitoring tools like Datadog also send "recovered"/"resolved"/"cleared" notifications
+once a previously-firing alert returns to normal (e.g. subject starting with
+"Recovered:", "OK:", "Resolved:", or explicit recovery language in the body).
+These ARE valid, meaningful signals — you must still classify them as `is_valid: true`
+and still attempt to correlate them to an existing active incident (same service/run_id/
+monitor), but set `is_recovery_signal: true` so the system knows this alert reports
+that the underlying issue has cleared rather than reporting a new/ongoing problem.
+
 You MUST return ONLY valid JSON in this exact format:
 {
   "is_valid": true,
   "confidence": 0.95,
-  "reasoning": "Why you think this is or isn't a valid pipeline alert, and why it correlates to an existing incident (if any).",
+  "is_recovery_signal": false,
+  "reasoning": "Why you think this is or isn't a valid pipeline alert, whether it's a recovery/resolution notification, and why it correlates to an existing incident (if any).",
   "correlated_incident_id": "ID of an active incident if this alert belongs to it (based on run_id, service topology, or temporal proximity), else null",
   "normalized_alert": {
     "severity": "info|warning|high|critical",

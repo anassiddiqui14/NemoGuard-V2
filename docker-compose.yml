@@ -46,6 +46,11 @@ services:
       - NVIDIA_API_KEY=${NVIDIA_API_KEY:?NVIDIA_API_KEY must be set in .env}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
       - ENV=${ENV:-production}
+      # Opt-in: set to 1 (and run with --profile lab) to make
+      # execute_simulated_action / verify_incident_recovery call into the
+      # LocalStack lab for real remediation + verification instead of no-ops.
+      - NEMOGUARD_LOCALSTACK_LAB=${NEMOGUARD_LOCALSTACK_LAB:-0}
+      - LOCALSTACK_ENDPOINT=http://localstack:4566
 
   temporal-worker:
     build:
@@ -82,5 +87,33 @@ services:
       - POSTGRES_URL=postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db
       - NVIDIA_API_KEY=${NVIDIA_API_KEY:?NVIDIA_API_KEY must be set in .env}
 
+  # --- LocalStack lab (real-AWS-API simulation for effectiveness testing) ---
+  # See localstack_lab/README.md. Provides real S3/Lambda/CloudWatch/SNS/SQS
+  # emulation so a genuine data-pipeline job can genuinely fail and be
+  # genuinely remediated by NemoGuard's agents, instead of relying only on
+  # scripted webhook payloads. Opt-in: start with
+  #   docker compose --profile lab up -d
+  localstack:
+    image: localstack/localstack:3
+    container_name: nemoguard-localstack
+    profiles: ["lab"]
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,lambda,cloudwatch,sns,sqs,logs,iam,sts,stepfunctions,secretsmanager
+      - DEBUG=0
+      - LAMBDA_EXECUTOR=docker
+      - LAMBDA_DOCKER_NETWORK=pipeline-copilot_default
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:
+  localstack_data:

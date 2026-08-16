@@ -15,7 +15,9 @@ dependencies = [
     "openai",
     "langgraph",
     "pyjwt",
-    "httpx"
+    "httpx",
+    "python-docx",
+    "pypdf"
 ]
 
 [build-system]
@@ -24,4 +26,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
-

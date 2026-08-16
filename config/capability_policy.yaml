@@ -1,0 +1,47 @@
+# capability_policy.yaml
+#
+# Admin-configurable risk/autonomy overrides for capabilities registered in
+# src/capabilities/registry.py (spec §3.2 "Capability certification record"
+# and §17.4 "Policy administration" -- scoped down: a single YAML file
+# rather than a full certification/evaluation-suite subsystem, per
+# docs/IMPLEMENTATION_PLAN_FROM_GPT_SPEC.md Part 2.2).
+#
+# Each registered capability has a Python-defined DEFAULT risk_level and
+# autonomy_mode (see registry.py). This file lets an administrator override
+# those defaults WITHOUT touching code -- e.g. to require dual approval
+# for a specific capability in a specific deployment, or to promote a
+# well-proven capability from HUMAN_APPROVAL_REQUIRED to AUTOMATIC once it
+# has enough track record (spec §28 "Rollout and autonomy progression").
+#
+# A capability not listed here uses its Python-defined default. This file
+# can only make a capability's policy STRICTER or looser within what the
+# code allows -- it can never bypass the PROHIBITED risk level hardcoded in
+# registry.py for a capability that was never registered as anything else,
+# and unknown capability_ids in this file are ignored (fail-safe: policy
+# config typos never silently grant more access than intended, they just
+# have no effect).
+
+capabilities:
+  data.check_table_staleness:
+    risk_level: READ_ONLY
+    autonomy_mode: AUTOMATIC
+
+  data.cleanup_partial_write:
+    risk_level: MEDIUM
+    autonomy_mode: HUMAN_APPROVAL_REQUIRED
+
+  data.idempotent_rerun_order_events_job:
+    risk_level: MEDIUM
+    autonomy_mode: HUMAN_APPROVAL_REQUIRED
+
+  compute.rerun_ingest_job:
+    risk_level: MEDIUM
+    autonomy_mode: HUMAN_APPROVAL_REQUIRED
+
+  ops.verify_row_count_matches_expected:
+    risk_level: READ_ONLY
+    autonomy_mode: AUTOMATIC
+
+  ops.manual_step:
+    risk_level: LOW
+    autonomy_mode: HUMAN_APPROVAL_REQUIRED

@@ -1,0 +1,9 @@
+# Pinned: newer boto3/botocore (1.4x) send a query-protocol shape that
+# LocalStack's CloudWatch emulator doesn't recognize ("Operation detection
+# failed... Missing Action in request"), causing put_metric_alarm/
+# describe_alarms to fail with a 500. 1.34.x is confirmed working against
+# localstack/localstack:3.
+boto3==1.34.144
+botocore==1.34.144
+httpx==0.27.*
+psycopg2-binary

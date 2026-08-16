@@ -8,7 +8,12 @@ import type { AgentEvent } from '../../hooks/useIncidentEvents';
 
 function Card({ title, subtitle, right, children, className = '' }: { title: string; subtitle?: string; right?: React.ReactNode; children: React.ReactNode; className?: string }) {
     return (
-        <div className={`glass-panel rounded-2xl overflow-hidden flex flex-col ${className}`}>
+        <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className={`glass-panel rounded-2xl overflow-hidden flex flex-col ${className}`}
+        >
             <div className="px-4 py-3.5 flex items-center justify-between border-b border-white/[0.05]">
                 <div>
                     <div className="font-semibold text-[13px] text-text-primary">{title}</div>
@@ -17,7 +22,7 @@ function Card({ title, subtitle, right, children, className = '' }: { title: str
                 {right}
             </div>
             <div className="flex-1 overflow-hidden">{children}</div>
-        </div>
+        </motion.div>
     );
 }
 
@@ -28,8 +33,15 @@ export function AlertsPanel({ alerts, expandedAlert, setExpandedAlert }: { alert
             <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-primary/15 text-primary ring-1 ring-primary/30">{alerts.length} alerts</span>
         }>
             <div className="p-3 flex flex-col gap-2 max-h-[280px] overflow-y-auto">
-                {alerts.map((alt: any) => (
-                    <div key={alt.alert_id} className="rounded-xl overflow-hidden bg-white/[0.02] ring-1 ring-white/[0.04]">
+                {alerts.map((alt: any, idx: number) => (
+                    <motion.div
+                        key={alt.alert_id}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2, delay: idx * 0.03 }}
+                        layout
+                        className="rounded-xl overflow-hidden bg-white/[0.02] ring-1 ring-white/[0.04]"
+                    >
                         <button
                             onClick={() => setExpandedAlert(expandedAlert === alt.alert_id ? null : alt.alert_id)}
                             className="w-full px-3.5 py-3 flex items-center justify-between hover:bg-white/[0.02] transition-colors text-left"
@@ -46,14 +58,27 @@ export function AlertsPanel({ alerts, expandedAlert, setExpandedAlert }: { alert
                                     <div className="text-[11px] text-text-muted truncate">{alt.message}</div>
                                 </div>
                             </div>
-                            <ChevronDown className={`w-3.5 h-3.5 text-text-muted transition-transform flex-shrink-0 ml-2 ${expandedAlert === alt.alert_id ? 'rotate-180' : ''}`} />
+                            <motion.div animate={{ rotate: expandedAlert === alt.alert_id ? 180 : 0 }} transition={{ duration: 0.2 }} className="flex-shrink-0 ml-2">
+                                <ChevronDown className="w-3.5 h-3.5 text-text-muted" />
+                            </motion.div>
                         </button>
-                        {expandedAlert === alt.alert_id && (
-                            <div className="px-3.5 py-3 border-t border-white/[0.05] bg-black/20 text-[12px] font-mono text-text-secondary leading-relaxed whitespace-pre-wrap break-all">
-                                <div className="p-2.5 bg-white/[0.02] rounded-lg ring-1 ring-white/[0.04]">{alt.message}</div>
-                            </div>
-                        )}
-                    </div>
+                        <AnimatePresence initial={false}>
+                            {expandedAlert === alt.alert_id && (
+                                <motion.div
+                                    key="content"
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: 0.22, ease: 'easeInOut' }}
+                                    className="overflow-hidden"
+                                >
+                                    <div className="px-3.5 py-3 border-t border-white/[0.05] bg-black/20 text-[12px] font-mono text-text-secondary leading-relaxed whitespace-pre-wrap break-all">
+                                        <div className="p-2.5 bg-white/[0.02] rounded-lg ring-1 ring-white/[0.04]">{alt.message}</div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </motion.div>
                 ))}
             </div>
         </Card>
@@ -73,7 +98,7 @@ export function AgentAndHypothesisRow({
 }) {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4 items-start">
-            <Card title="Agent Constellation" subtitle="NemoClaw coordinated investigation" className="h-[400px]">
+            <Card title="Agent Constellation" subtitle="Coordinated multi-agent investigation" className="h-[400px]">
                 <div className="p-4 h-full overflow-y-auto">
                     {activeIncidentId ? (
                         <AgentConstellation status={incidentStatus} events={liveEvents} />

@@ -1,79 +1,58 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { Toaster } from 'react-hot-toast';
-import { useIncidentData } from '../hooks/useIncidentData';
-import { useIncidentEvents } from '../hooks/useIncidentEvents';
 import { IncidentQueue } from './dashboard/IncidentQueue';
-import { SituationHeader } from './dashboard/SituationHeader';
-import { AlertsPanel, AgentAndHypothesisRow, ActivityAndImpactRow } from './dashboard/InvestigationPanels';
-import { RecoveryRail } from './dashboard/RecoveryRail';
-import { EvidenceModal } from './dashboard/EvidenceModal';
-import { PlanApprovalModal } from './PlanApprovalModal';
+import { IncidentWorkspace } from './dashboard/IncidentWorkspace';
+import { GreetingBar } from './shell/GreetingBar';
 import type { IncidentSummary } from './dashboard/shared';
 import { needsAttention } from './dashboard/shared';
 
-interface DashboardProps {
-  focusIncidentId?: string | null;
-  onFocusHandled?: () => void;
-}
-
-export function Dashboard({ focusIncidentId, onFocusHandled }: DashboardProps = {}) {
+export function Dashboard() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusIncidentId = searchParams.get('incident');
   const [activeIncidentId, setActiveIncidentId] = useState<string | null>(null);
   const [openIncidents, setOpenIncidents] = useState<IncidentSummary[]>([]);
-  const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
-  const [expandedAlert, setExpandedAlert] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [triageStarting, setTriageStarting] = useState(false);
-  const [safetyAcknowledged, setSafetyAcknowledged] = useState(false);
-
-  const { evidence, hypothesis, plan, impact, alerts, loading: dataLoading } = useIncidentData(activeIncidentId);
-  const { events: liveEvents, status: sseStatus } = useIncidentEvents(activeIncidentId);
+  const [resolvedIncidents, setResolvedIncidents] = useState<IncidentSummary[]>([]);
+  // Tracks whether the incident queue has completed its FIRST fetch. Without
+  // this, navigating here with a specific incident already selected (e.g.
+  // from the Incidents page or a notification) raced against the initial
+  // refreshQueue() call: openIncidents/resolvedIncidents both start as `[]`,
+  // so the "does the active incident still exist" check below would run
+  // against two empty arrays on mount and immediately null out the
+  // just-selected incident before the real data ever arrived.
+  const [queueLoaded, setQueueLoaded] = useState(false);
 
   const refreshQueue = async () => {
     try {
-      const res = await fetch('/api/v2/incidents?state=open');
-      const data = (await res.json()) as IncidentSummary[];
-      setOpenIncidents(Array.isArray(data) ? data : []);
+      const [openRes, allRes] = await Promise.all([
+        fetch('/api/v2/incidents?state=open'),
+        fetch('/api/v2/incidents?state=all'),
+      ]);
+      const openData = (await openRes.json()) as IncidentSummary[];
+      const allData = (await allRes.json()) as IncidentSummary[];
+      setOpenIncidents(Array.isArray(openData) ? openData : []);
+      setResolvedIncidents(
+        Array.isArray(allData) ? allData.filter((i) => i.status?.toUpperCase() === 'RESOLVED') : [],
+      );
     } catch {
       setOpenIncidents([]);
-    }
-  };
-
-  const selectedIncident = useMemo(
-    () => openIncidents.find((i) => i.incident_id === activeIncidentId) ?? null,
-    [openIncidents, activeIncidentId],
-  );
-
-  const handleExecute = async () => {
-    if (!selectedIncident || !plan) return;
-    try {
-      const token = localStorage.getItem('nemoguard_token') || '';
-      await fetch(`/api/v2/incidents/${selectedIncident.incident_id}/plans/${plan.action_plan_id}/approve`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision: 'approve', plan_hash: plan.plan_hash }),
-      });
-      refreshQueue();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleStartTriage = async () => {
-    if (!activeIncidentId) return;
-    setTriageStarting(true);
-    try {
-      const token = localStorage.getItem('nemoguard_token') || '';
-      await fetch(`/api/v2/incidents/${activeIncidentId}/triage`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      refreshQueue();
-    } catch (e) {
-      console.error(e);
+      setResolvedIncidents([]);
     } finally {
-      setTriageStarting(false);
+      setQueueLoaded(true);
     }
   };
+
+  // An incident selected from the queue can now come from either the active
+  // (open) list or the resolved list — previously this only looked at
+  // openIncidents, so clicking a resolved incident would render nothing.
+  const selectedIncident = useMemo(
+    () =>
+      openIncidents.find((i) => i.incident_id === activeIncidentId) ??
+      resolvedIncidents.find((i) => i.incident_id === activeIncidentId) ??
+      null,
+    [openIncidents, resolvedIncidents, activeIncidentId],
+  );
 
   useEffect(() => {
     void refreshQueue();
@@ -84,23 +63,40 @@ export function Dashboard({ focusIncidentId, onFocusHandled }: DashboardProps = 
   useEffect(() => {
     if (focusIncidentId) {
       setActiveIncidentId(focusIncidentId);
-      onFocusHandled?.();
+      // Clear the query param once handled so subsequent queue navigation
+      // isn't overridden by a stale ?incident= value on every re-render.
+      searchParams.delete('incident');
+      setSearchParams(searchParams, { replace: true });
     }
-  }, [focusIncidentId, onFocusHandled]);
+  }, [focusIncidentId]);
 
   useEffect(() => {
-    if (openIncidents.length === 0 && activeIncidentId) {
-      setActiveIncidentId(null);
-    } else if (!activeIncidentId && openIncidents.length > 0) {
-      setActiveIncidentId(openIncidents[0].incident_id);
-    } else if (activeIncidentId && openIncidents.length > 0 && !openIncidents.some((i) => i.incident_id === activeIncidentId)) {
-      setActiveIncidentId(openIncidents[0].incident_id);
-    }
-  }, [activeIncidentId, openIncidents]);
+    // Wait for the FIRST successful queue fetch before doing any
+    // auto-correction. Previously this ran immediately on mount against two
+    // still-empty arrays, which meant navigating in with a specific incident
+    // pre-selected (e.g. clicking a row on the Incidents page, which sets
+    // ?incident=... and this component's activeIncidentId) got wiped back to
+    // null on the very next render, before the real queue data had a chance
+    // to arrive — making it look like clicking an incident "did nothing" and
+    // dumped the user back on an empty dashboard.
+    if (!queueLoaded) return;
 
-  useEffect(() => {
-    setSafetyAcknowledged(false);
-  }, [plan?.action_plan_id]);
+    // Only auto-correct the selection when the active incident no longer exists
+    // in EITHER the open or resolved lists — previously this only checked
+    // openIncidents, so selecting a resolved incident from the queue would
+    // immediately get snapped back to openIncidents[0] on the very next
+    // refresh tick, making resolved incidents impossible to actually view.
+    const activeExistsSomewhere =
+      !!activeIncidentId &&
+      (openIncidents.some((i) => i.incident_id === activeIncidentId) ||
+        resolvedIncidents.some((i) => i.incident_id === activeIncidentId));
+
+    if (!activeIncidentId && openIncidents.length > 0) {
+      setActiveIncidentId(openIncidents[0].incident_id);
+    } else if (activeIncidentId && !activeExistsSomewhere) {
+      setActiveIncidentId(openIncidents.length > 0 ? openIncidents[0].incident_id : null);
+    }
+  }, [activeIncidentId, openIncidents, resolvedIncidents, queueLoaded]);
 
   const sortedIncidents = useMemo(() => {
     return [...openIncidents].sort((a, b) => {
@@ -109,9 +105,6 @@ export function Dashboard({ focusIncidentId, onFocusHandled }: DashboardProps = 
       return aAttn - bAttn;
     });
   }, [openIncidents]);
-
-  const isNeedsReview = plan?.status === 'NEEDS_REVIEW';
-  const canApprove = !!plan && (!isNeedsReview || safetyAcknowledged);
 
   return (
     <div className="flex h-full min-h-0 bg-app-bg text-text-primary overflow-hidden selection:bg-primary/30">
@@ -124,57 +117,26 @@ export function Dashboard({ focusIncidentId, onFocusHandled }: DashboardProps = 
         refreshQueue={refreshQueue}
       />
 
-      <main className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 min-w-0">
-        <SituationHeader
-          selectedIncident={selectedIncident}
-          alerts={alerts}
-          impact={impact}
-          hypothesis={hypothesis}
-          triageStarting={triageStarting}
-          handleStartTriage={handleStartTriage}
+      <motion.main
+        key={activeIncidentId ?? 'no-incident'}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.2 }}
+        className="flex-1 overflow-y-auto flex flex-col gap-4 min-w-0"
+      >
+        <GreetingBar
+          activeCount={openIncidents.length}
+          approvalCount={openIncidents.filter((i) => needsAttention(i.status)).length}
         />
 
-        <AlertsPanel alerts={alerts} expandedAlert={expandedAlert} setExpandedAlert={setExpandedAlert} />
-
-        <AgentAndHypothesisRow
-          activeIncidentId={activeIncidentId}
-          incidentStatus={selectedIncident?.status ?? 'UNKNOWN'}
-          liveEvents={liveEvents}
-          hypothesis={hypothesis}
-          evidence={evidence}
-          dataLoading={dataLoading}
-          onViewEvidence={() => setIsEvidenceModalOpen(true)}
-        />
-
-        <ActivityAndImpactRow
-          activeIncidentId={activeIncidentId}
-          liveEvents={liveEvents}
-          sseStatus={sseStatus}
-          selectedSeverity={selectedIncident?.severity}
-          impact={impact}
-        />
-      </main>
-
-      <RecoveryRail
-        hypothesis={hypothesis}
-        evidence={evidence}
-        plan={plan}
-        dataLoading={dataLoading}
-        isNeedsReview={isNeedsReview}
-        safetyAcknowledged={safetyAcknowledged}
-        setSafetyAcknowledged={setSafetyAcknowledged}
-        canApprove={canApprove}
-        onViewPlan={() => setIsModalOpen(true)}
-        onExecute={handleExecute}
-      />
-
-      {isEvidenceModalOpen && activeIncidentId && hypothesis && (
-        <EvidenceModal hypothesis={hypothesis} evidence={evidence} onClose={() => setIsEvidenceModalOpen(false)} />
-      )}
-
-      {isModalOpen && activeIncidentId && plan && (
-        <PlanApprovalModal incidentId={activeIncidentId} plan={plan} onClose={() => setIsModalOpen(false)} onRefreshPlan={() => refreshQueue()} />
-      )}
+        <div className="px-5 pb-5 flex flex-col gap-4">
+          <IncidentWorkspace
+            incidentId={activeIncidentId}
+            selectedIncident={selectedIncident}
+            onRefreshParent={refreshQueue}
+          />
+        </div>
+      </motion.main>
     </div>
   );
 }

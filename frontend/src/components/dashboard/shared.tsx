@@ -1,4 +1,43 @@
 import React from 'react';
+import { motion } from 'framer-motion';
+
+// Shared motion presets so entrance/exit animations feel consistent across
+// the whole app (panels, cards, modals) instead of only a couple of screens
+// having transitions while the rest pop in/out instantly.
+export const fadeInUp = {
+    initial: { opacity: 0, y: 10 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -6 },
+    transition: { duration: 0.25, ease: 'easeOut' as const },
+};
+
+export const fadeIn = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: { duration: 0.2, ease: 'easeOut' as const },
+};
+
+export const modalBackdrop = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: { duration: 0.18 },
+};
+
+export const modalPanel = {
+    initial: { opacity: 0, scale: 0.96, y: 12 },
+    animate: { opacity: 1, scale: 1, y: 0 },
+    exit: { opacity: 0, scale: 0.97, y: 8 },
+    transition: { duration: 0.22, ease: [0.16, 1, 0.3, 1] as const },
+};
+
+export const staggerContainer = {
+    initial: {},
+    animate: { transition: { staggerChildren: 0.05 } },
+};
+
+export const MotionDiv = motion.div;
 
 export type IncidentSummary = {
     incident_id: string;
@@ -10,18 +49,27 @@ export type IncidentSummary = {
     owner_team?: string;
     primary_job_id?: string;
     summary?: string;
+    resolved_at?: string | null;
 };
 
-export function formatElapsedSeconds(detectedAt: string) {
+function formatDuration(diffMs: number): string {
+    const diff = Math.floor(diffMs / 1000);
+    if (diff < 0) return 'Just now';
+    if (diff < 60) return `${diff}s`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+    return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m`;
+}
+
+// Elapsed time should only keep ticking while the incident is still open.
+// Once it's resolved, this should freeze and reflect the actual time taken
+// to resolve (detected_at -> resolved_at) rather than continuing to count up
+// against "now" forever.
+export function formatElapsedSeconds(detectedAt: string, resolvedAt?: string | null) {
     if (!detectedAt) return '—';
     try {
         const detected = new Date(detectedAt).getTime();
-        const now = new Date().getTime();
-        const diff = Math.floor((now - detected) / 1000);
-        if (diff < 0) return 'Just now';
-        if (diff < 60) return `${diff}s`;
-        if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-        return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m`;
+        const end = resolvedAt ? new Date(resolvedAt).getTime() : new Date().getTime();
+        return formatDuration(end - detected);
     } catch {
         return '—';
     }
@@ -95,12 +143,17 @@ export function LifecycleStepper({ status }: { status: string }) {
         if (current === 'NEEDS_REVIEW') return 3;
         return 0;
     })();
+    // Once the incident has reached the terminal "Resolved" step, every step
+    // (including Resolved itself) should render as fully completed rather
+    // than leaving the final node stuck showing its step number instead of
+    // a checkmark.
+    const isResolved = current === 'RESOLVED';
     return (
         <div className="w-full">
             <div className="flex items-center justify-between text-[10.5px] text-text-muted">
                 {steps.map((s, idx) => {
-                    const isDone = idx < currentIdx;
-                    const isCurrent = idx === currentIdx;
+                    const isDone = isResolved || idx < currentIdx;
+                    const isCurrent = !isResolved && idx === currentIdx;
                     const dotCls = isDone
                         ? 'bg-healthy ring-healthy/40 text-app-bg'
                         : isCurrent

@@ -1,4 +1,7 @@
 import os
+import hashlib
+import hmac
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import Request, HTTPException, Depends
@@ -23,6 +26,10 @@ class User(BaseModel):
     roles: List[str]
     tenant_id: str
     workspace_id: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -70,7 +77,8 @@ def require_role(required_role: str):
         return current_user
     return role_checker
 
-# Mock Endpoint to generate a test token (for development only)
+# Mock Endpoint to generate a test token — only reachable when ENV is
+# development/dev/local (enforced in main.py). Never usable in production.
 def get_mock_token(role: str = "admin"):
     access_token = create_access_token(
         data={
@@ -83,3 +91,52 @@ def get_mock_token(role: str = "admin"):
         expires_delta=timedelta(days=1)
     )
     return access_token
+
+
+# ---------------------------------------------------------------------------
+# Real credential-backed authentication (production login path).
+#
+# Passwords are never stored in plaintext. We hash with PBKDF2-HMAC-SHA256
+# (via hashlib, no extra dependency needed) using a random per-user salt and
+# a high iteration count, in the standard `pbkdf2_sha256$<iterations>$<salt>$<hash>`
+# format so it's self-describing and can be re-parameterized later without a
+# migration.
+# ---------------------------------------------------------------------------
+
+_PBKDF2_ITERATIONS = 260_000
+
+
+def hash_password(plain_password: str) -> str:
+    salt = secrets.token_hex(16)
+    derived = hashlib.pbkdf2_hmac(
+        "sha256", plain_password.encode("utf-8"), salt.encode("utf-8"), _PBKDF2_ITERATIONS
+    )
+    return f"pbkdf2_sha256${_PBKDF2_ITERATIONS}${salt}${derived.hex()}"
+
+
+def verify_password(plain_password: str, stored_hash: str) -> bool:
+    try:
+        algo, iterations_str, salt, hex_digest = stored_hash.split("$", 3)
+        if algo != "pbkdf2_sha256":
+            return False
+        iterations = int(iterations_str)
+    except (ValueError, AttributeError):
+        return False
+    derived = hashlib.pbkdf2_hmac(
+        "sha256", plain_password.encode("utf-8"), salt.encode("utf-8"), iterations
+    )
+    return hmac.compare_digest(derived.hex(), hex_digest)
+
+
+def issue_token_for_user(user_row: dict) -> str:
+    """Builds a real, short-lived JWT for an authenticated platform_user row."""
+    return create_access_token(
+        data={
+            "sub": user_row["user_id"],
+            "email": user_row["email"],
+            "roles": list(user_row.get("roles") or ["viewer"]),
+            "tenant_id": user_row.get("tenant_id", "default_tenant"),
+            "workspace_id": user_row.get("workspace_id", "default_workspace"),
+        },
+        expires_delta=timedelta(hours=8),
+    )
