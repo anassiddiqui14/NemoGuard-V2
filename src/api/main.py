@@ -405,23 +405,52 @@ def get_runbooks_context(current_user: User = Depends(get_current_user)):
 # --- 12.4 Workflow endpoints ---
 
 @app.post("/api/v2/ingest/webhook")
-async def ingest_webhook(payload: dict, request: Request):
+async def ingest_webhook(request: Request):
     """
     Generic webhook endpoint for Datadog, PagerDuty, or Email-to-Webhook parsing.
     Passes the payload to the WatcherAgent to determine if it's a valid alert.
 
     This endpoint is intentionally left open to unauthenticated callers
     (real monitoring systems can't easily be issued NemoGuard JWTs), but is
-    now bounded by:
-      - a per-source-IP sliding-window rate limit (see rate_limit.py)
-      - a maximum payload size / nesting depth / string length (see
-        webhook_validation.py) before the payload is ever handed to an LLM.
+    now bounded by (per build plan Priority 9):
+      - a per-source-IP sliding-window rate limit (13.4, see rate_limit.py)
+      - a maximum payload size / nesting depth / string length (13.2, see
+        webhook_validation.py) before the payload is ever handed to an LLM
+      - OPT-IN per-source HMAC-SHA256 signature verification (13.3, see
+        webhook_security.py) -- enforced only once an operator configures a
+        WEBHOOK_SECRET_<SOURCE> secret for that source
+      - timestamp-bounds + event_id dedup replay protection (13.5, see
+        webhook_security.py)
+
+    Reads the raw request body (rather than accepting an auto-parsed
+    `payload: dict` parameter) because HMAC signature verification must be
+    computed over the exact bytes the sender signed -- re-serializing an
+    already-parsed dict is not guaranteed to byte-for-byte match the
+    original request body (key ordering, whitespace, unicode escaping),
+    which would make signature verification silently unreliable.
     """
     from src.api.rate_limit import enforce_webhook_rate_limit
     from src.api.webhook_validation import validate_webhook_payload
+    from src.api.webhook_security import verify_webhook_signature, enforce_replay_protection
 
     enforce_webhook_rate_limit(request)
+
+    raw_body = await request.body()
+    try:
+        payload = json.loads(raw_body) if raw_body else {}
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=422, detail=f"Payload is not valid JSON: {e}")
+
     validate_webhook_payload(payload)
+
+    # `source` is used both for HMAC secret lookup and downstream
+    # correlation -- accept either the canonical envelope's "source" field
+    # (13.1) or the pre-existing "source_system" field real integrations
+    # already send today, so this doesn't break any existing sender.
+    source = str(payload.get("source") or payload.get("source_system") or "").strip()
+    signature_header = request.headers.get("X-NemoGuard-Signature")
+    verify_webhook_signature(raw_body, source, signature_header)
+    enforce_replay_protection(payload)
 
     orchestrator = IncidentOrchestrator()
     result = await orchestrator.process_webhook(payload)
