@@ -6,6 +6,7 @@ import { LiveOperationsConsole } from '../../components/LiveOperationsConsole';
 import { severityPill, EmptyState, needsAttention } from '../../components/dashboard/shared';
 import type { IncidentSummary } from '../../components/dashboard/shared';
 import type { AgentEvent } from '../../hooks/useIncidentEvents';
+import { authFetch } from '../../contexts/AuthGateContext';
 
 // Operational readiness row — inspired by a UI exploration on the
 // `darshan-dev` branch (an "Operations" page summarizing service
@@ -79,7 +80,7 @@ export function AgentOperationsPage() {
     useEffect(() => {
         let cancelled = false;
         const load = () => {
-            fetch('/api/v2/incidents?state=all')
+            authFetch('/api/v2/incidents?state=all')
                 .then((r) => r.json())
                 .then((data) => {
                     if (!cancelled && Array.isArray(data)) {
@@ -104,7 +105,7 @@ export function AgentOperationsPage() {
         }
         let cancelled = false;
         setLoadingEvents(true);
-        fetch(`/api/v2/incidents/${selectedId}/events`)
+        authFetch(`/api/v2/incidents/${selectedId}/events`)
             .then((r) => r.json())
             .then((data) => {
                 if (!cancelled && Array.isArray(data)) {

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { authFetch } from '../contexts/AuthGateContext';
 
 export function useIncidentData(incidentId: string | null) {
   const [evidence, setEvidence] = useState<any[]>([]);
@@ -41,11 +42,11 @@ export function useIncidentData(incidentId: string | null) {
     const fetchOnce = async () => {
       try {
         const [evRes, hypRes, planRes, impactRes, alertsRes] = await Promise.all([
-          fetch(`/api/v2/incidents/${incidentId}/evidence`),
-          fetch(`/api/v2/incidents/${incidentId}/hypotheses`),
-          fetch(`/api/v2/incidents/${incidentId}/plans`),
-          fetch(`/api/v2/incidents/${incidentId}/impact`),
-          fetch(`/api/v2/incidents/${incidentId}/alerts`)
+          authFetch(`/api/v2/incidents/${incidentId}/evidence`),
+          authFetch(`/api/v2/incidents/${incidentId}/hypotheses`),
+          authFetch(`/api/v2/incidents/${incidentId}/plans`),
+          authFetch(`/api/v2/incidents/${incidentId}/impact`),
+          authFetch(`/api/v2/incidents/${incidentId}/alerts`)
         ]);
 
         const evData = await evRes.json();

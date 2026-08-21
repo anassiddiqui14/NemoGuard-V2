@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { authFetch } from '../contexts/AuthGateContext';
 
 export interface NotificationItem {
     id: string;
@@ -17,7 +18,7 @@ export function useNotifications() {
 
         const poll = async () => {
             try {
-                const res = await fetch('/api/v2/incidents?state=open');
+                const res = await authFetch('/api/v2/incidents?state=open');
                 const incidents = await res.json();
                 if (!Array.isArray(incidents) || cancelled) return;
 

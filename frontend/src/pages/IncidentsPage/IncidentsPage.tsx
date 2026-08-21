@@ -4,6 +4,7 @@ import { Search, ListChecks } from 'lucide-react';
 import { severityPill, statusBadge, formatElapsedSeconds, EmptyState } from '../../components/dashboard/shared';
 import { IncidentWorkspace } from '../../components/dashboard/IncidentWorkspace';
 import type { IncidentSummary } from '../../components/dashboard/shared';
+import { authFetch } from '../../contexts/AuthGateContext';
 
 type SortKey = 'detected_at' | 'severity' | 'status';
 
@@ -22,7 +23,7 @@ export function IncidentsPage() {
 
     const fetchAll = async () => {
         try {
-            const res = await fetch('/api/v2/incidents?state=all');
+            const res = await authFetch('/api/v2/incidents?state=all');
             const data = await res.json();
             if (Array.isArray(data)) setIncidents(data);
         } catch {

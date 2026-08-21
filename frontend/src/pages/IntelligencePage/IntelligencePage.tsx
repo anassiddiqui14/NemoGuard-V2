@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Layers, AlertOctagon, FileSearch, Clock3, ShieldCheck, TrendingUp } from 'lucide-react';
 import { fadeInUp, severityPill, needsAttention, EmptyState } from '../../components/dashboard/shared';
 import type { IncidentSummary } from '../../components/dashboard/shared';
+import { authFetch } from '../../contexts/AuthGateContext';
 
 // The "Intelligence" page — a decision-ready, at-a-glance risk overview
 // across the whole incident response system, distinct from the per-
@@ -98,8 +99,8 @@ export function IntelligencePage() {
         const load = async () => {
             try {
                 const [openRes, allRes] = await Promise.all([
-                    fetch('/api/v2/incidents?state=open'),
-                    fetch('/api/v2/incidents?state=all'),
+                    authFetch('/api/v2/incidents?state=open'),
+                    authFetch('/api/v2/incidents?state=all'),
                 ]);
                 const openData = (await openRes.json()) as IncidentSummary[];
                 const allData = (await allRes.json()) as IncidentSummary[];

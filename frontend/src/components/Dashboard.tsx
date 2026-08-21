@@ -7,6 +7,7 @@ import { IncidentWorkspace } from './dashboard/IncidentWorkspace';
 import { GreetingBar } from './shell/GreetingBar';
 import type { IncidentSummary } from './dashboard/shared';
 import { needsAttention } from './dashboard/shared';
+import { authFetch } from '../contexts/AuthGateContext';
 
 export function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -26,8 +27,8 @@ export function Dashboard() {
   const refreshQueue = async () => {
     try {
       const [openRes, allRes] = await Promise.all([
-        fetch('/api/v2/incidents?state=open'),
-        fetch('/api/v2/incidents?state=all'),
+        authFetch('/api/v2/incidents?state=open'),
+        authFetch('/api/v2/incidents?state=all'),
       ]);
       const openData = (await openRes.json()) as IncidentSummary[];
       const allData = (await allRes.json()) as IncidentSummary[];
