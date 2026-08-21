@@ -15,6 +15,16 @@ Usage:
         --role commander \
         --name "Jane Doe"
 
+    # A single account can legitimately hold multiple independent roles
+    # (e.g. a senior engineer who is both the operational commander AND
+    # the designated approver for their team) -- pass a comma-separated
+    # list to grant more than one:
+    python scripts/create_user.py \
+        --email lead@yourcompany.com \
+        --password "a strong unique password" \
+        --role commander,approver \
+        --name "Team Lead"
+
 Requires POSTGRES_URL (or defaults to the docker-compose value) and can be
 run from the host if `psycopg2` + network access to postgres are available,
 or via:
@@ -42,11 +52,28 @@ def main():
     parser = argparse.ArgumentParser(description="Provision a real NemoGuard operator account.")
     parser.add_argument("--email", required=True)
     parser.add_argument("--password", required=True)
-    parser.add_argument("--role", default="commander", choices=sorted(VALID_ROLES))
+    # Previously a plain single-value `choices=` argument, so a `platform_user`
+    # could only ever be provisioned with exactly one role. That's fine for
+    # most accounts (least privilege by default), but there was no way to
+    # actually create a real account for someone who legitimately holds more
+    # than one of the spec's independent roles (e.g. commander AND approver)
+    # without hand-editing the database -- now accepts a comma-separated list.
+    parser.add_argument(
+        "--role",
+        default="commander",
+        help=f"Comma-separated list of one or more roles. Valid roles: {', '.join(sorted(VALID_ROLES))}",
+    )
     parser.add_argument("--name", default=None, help="Display name (defaults to the email's local part).")
     parser.add_argument("--tenant-id", default="default_tenant")
     parser.add_argument("--workspace-id", default="default_workspace")
     args = parser.parse_args()
+
+    roles = [r.strip() for r in args.role.split(",") if r.strip()]
+    invalid = [r for r in roles if r not in VALID_ROLES]
+    if invalid:
+        parser.error(f"Invalid role(s): {', '.join(invalid)}. Valid roles: {', '.join(sorted(VALID_ROLES))}")
+    if not roles:
+        parser.error("At least one role must be specified.")
 
     email = args.email.strip().lower()
     display_name = args.name or email.split("@")[0]
@@ -73,10 +100,10 @@ def main():
                 workspace_id = EXCLUDED.workspace_id,
                 is_active = TRUE
             """,
-            (user_id, email, password_hash, display_name, [args.role], args.tenant_id, args.workspace_id),
+            (user_id, email, password_hash, display_name, roles, args.tenant_id, args.workspace_id),
         )
 
-    print(f"Provisioned account for {email} with role '{args.role}'.")
+    print(f"Provisioned account for {email} with role(s) '{', '.join(roles)}'.")
     print("The login page will now require real credentials for this deployment.")
 
 
