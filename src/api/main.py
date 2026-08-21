@@ -364,7 +364,7 @@ def get_all_alerts(current_user: User = Depends(get_current_user)):
         cols = [col[0] for col in cursor.description]
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
-# --- 12.3 Context Endpoints (for NemoClaw Agents) ---
+# --- 12.3 Context Endpoints (for investigation agents) ---
 
 @app.get("/api/v2/context/alerts/{incident_id}")
 def get_incident_alerts_context(incident_id: str, current_user: User = Depends(get_current_user)):
@@ -514,12 +514,17 @@ def agent_findings(incident_id: str, payload: dict, current_user: User = Depends
 
 @app.get("/api/v2/incidents/{incident_id}/agent-logs")
 def agent_logs(incident_id: str, current_user: User = Depends(get_current_user)):
+    # Legacy endpoint, not called by the current React frontend (which
+    # renders live agent activity from /events and the audit trail
+    # instead). Left in place for backward compatibility with any external
+    # tooling that may still poll it, but the branding of its filename/
+    # placeholder text should stay consistent with the product name.
     import os
-    log_file = f"logs/{incident_id}_nemoclaw.log"
+    log_file = f"logs/{incident_id}_agent.log"
     if os.path.exists(log_file):
         with open(log_file, "r") as f:
             return {"logs": f.read()}
-    return {"logs": "Initializing NemoClaw Agent..."}
+    return {"logs": "Initializing NemoGuard investigation agents..."}
 
 class ApprovalRequest(BaseModel):
     decision: str

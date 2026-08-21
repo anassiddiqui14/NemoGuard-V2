@@ -27,7 +27,7 @@ function ReadinessRow({ incidents }: { incidents: IncidentSummary[] }) {
         },
         {
             icon: <Brain className="w-4 h-4" />,
-            label: 'NemoClaw investigation agents',
+            label: 'NemoGuard investigation agents',
             status: activeCount > 0 ? 'Working' : 'Standing by',
             tone: activeCount > 0 ? ('active' as const) : ('healthy' as const),
         },
