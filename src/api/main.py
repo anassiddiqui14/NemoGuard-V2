@@ -16,7 +16,7 @@ from src.domain.correlator import CorrelatorEngine
 from src.domain.models import Incident, Alert
 from src.utils.telemetry import setup_telemetry
 from src.api.auth import (
-    get_current_user, require_role, User, get_mock_token,
+    get_current_user, require_role, require_any_role, User, get_mock_token,
     LoginRequest, verify_password, issue_token_for_user, IS_DEV_ENV,
 )
 
@@ -335,7 +335,7 @@ def get_all_alerts(current_user: User = Depends(get_current_user)):
 # --- 12.3 Context Endpoints (for NemoClaw Agents) ---
 
 @app.get("/api/v2/context/alerts/{incident_id}")
-def get_incident_alerts_context(incident_id: str):
+def get_incident_alerts_context(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
         cursor = conn.execute("""
@@ -348,7 +348,7 @@ def get_incident_alerts_context(incident_id: str):
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
 @app.get("/api/v2/context/logs/{incident_id}")
-def get_incident_logs_context(incident_id: str):
+def get_incident_logs_context(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT primary_run_id FROM incident WHERE incident_id = %s", (incident_id,))
@@ -359,13 +359,13 @@ def get_incident_logs_context(incident_id: str):
         return []
 
 @app.get("/api/v2/context/cmdb")
-def get_cmdb_context():
+def get_cmdb_context(current_user: User = Depends(get_current_user)):
     import json
     with open("data/mock_dimensions/cmdb.json", "r") as f:
         return json.load(f)
 
 @app.get("/api/v2/context/runbooks")
-def get_runbooks_context():
+def get_runbooks_context(current_user: User = Depends(get_current_user)):
     import json
     with open("data/mock_dimensions/runbooks.json", "r") as f:
         return json.load(f)
@@ -412,7 +412,7 @@ async def ingest_webhook(payload: dict, request: Request):
     return result
 
 @app.post("/api/v2/incidents/{incident_id}/triage")
-async def triage_incident(incident_id: str, current_user: User = Depends(get_current_user)):
+async def triage_incident(incident_id: str, current_user: User = Depends(require_role("operator"))):
     """
     Triage can take a long time, so we schedule it in Temporal.
     """
@@ -443,13 +443,13 @@ async def triage_incident(incident_id: str, current_user: User = Depends(get_cur
         return {"accepted": False, "incident_id": incident_id, "status": "NO_TEMPORAL_CLIENT"}
 
 @app.post("/api/v2/incidents/{incident_id}/agent-findings")
-def agent_findings(incident_id: str, payload: dict, current_user: User = Depends(get_current_user)):
+def agent_findings(incident_id: str, payload: dict, current_user: User = Depends(require_role("operator"))):
     orchestrator = IncidentOrchestrator()
     res = orchestrator.save_agent_findings(incident_id, payload)
     return res
 
 @app.get("/api/v2/incidents/{incident_id}/agent-logs")
-def agent_logs(incident_id: str):
+def agent_logs(incident_id: str, current_user: User = Depends(get_current_user)):
     import os
     log_file = f"logs/{incident_id}_nemoclaw.log"
     if os.path.exists(log_file):
@@ -466,7 +466,7 @@ class FeedbackRequest(BaseModel):
     feedback: str
 
 @app.post("/api/v2/incidents/{incident_id}/feedback")
-def submit_feedback(incident_id: str, req: FeedbackRequest, current_user: User = Depends(get_current_user)):
+def submit_feedback(incident_id: str, req: FeedbackRequest, current_user: User = Depends(require_role("operator"))):
     orchestrator = IncidentOrchestrator()
     res = orchestrator.triage_feedback(incident_id, req.feedback, submitted_by=current_user.user_id)
     if "error" in res:
@@ -474,7 +474,7 @@ def submit_feedback(incident_id: str, req: FeedbackRequest, current_user: User =
     return res
 
 @app.post("/api/v2/incidents/{incident_id}/plans/{plan_id}/approve")
-async def approve_plan(incident_id: str, plan_id: str, req: ApprovalRequest, current_user: User = Depends(get_current_user)):
+async def approve_plan(incident_id: str, plan_id: str, req: ApprovalRequest, current_user: User = Depends(require_role("approver"))):
     global temporal_client
 
     # Validate the plan_hash actually matches the current plan content (defense against stale/tampered approvals).

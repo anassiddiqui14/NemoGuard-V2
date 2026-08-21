@@ -65,16 +65,66 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+# ---------------------------------------------------------------------------
+# Role hierarchy (build plan Priority 7 / spec §11.2).
+#
+# Minimum roles: viewer, operator, commander, approver, admin, auditor,
+# service. Each role listed below inherits every permission of the roles
+# in its "includes" set, matching the spec's additive definitions
+# (e.g. "operator: viewer + trigger triage, add notes"). `admin` is a
+# superset of every operational role (but NOT of `auditor`'s restriction
+# against operational mutation, nor does it need to be -- admin already
+# has broader access by design). `approver` and `auditor` are deliberately
+# NOT included in this operational hierarchy: approval authority and
+# audit-read authority are separate concerns from the
+# viewer->operator->commander operational ladder, per the spec's role
+# table, and must be granted explicitly.
+# ---------------------------------------------------------------------------
+_ROLE_HIERARCHY = {
+    "viewer": {"viewer"},
+    "operator": {"viewer", "operator"},
+    "commander": {"viewer", "operator", "commander"},
+    "approver": {"approver"},
+    "auditor": {"auditor"},
+    "admin": {"viewer", "operator", "commander", "approver", "auditor", "admin"},
+    "service": {"service"},
+}
+
+
+def _effective_roles(user_roles: List[str]) -> set:
+    effective = set()
+    for r in user_roles:
+        effective |= _ROLE_HIERARCHY.get(r, {r})
+    return effective
+
+
 def require_role(required_role: str):
     """
-    Dependency generator for RBAC.
+    Dependency generator for RBAC. Grants access if the user holds
+    `required_role` directly, OR holds any role whose hierarchy (per
+    _ROLE_HIERARCHY) includes `required_role` -- e.g. a `commander` token
+    satisfies a `require_role("operator")` check, since commander is
+    additive over operator per spec §11.2.
     """
     async def role_checker(current_user: User = Depends(get_current_user)):
-        if "admin" in current_user.roles:
-            return current_user # Admins can access everything
-        if required_role not in current_user.roles:
-            raise HTTPException(status_code=403, detail="Not enough permissions")
-        return current_user
+        if required_role in _effective_roles(current_user.roles):
+            return current_user
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    return role_checker
+
+
+def require_any_role(*acceptable_roles: str):
+    """
+    Like require_role, but grants access if the user's effective roles
+    intersect ANY of the acceptable_roles -- for endpoints where multiple
+    independent roles are each sufficient (e.g. approve_plan should accept
+    either "approver" or "admin", which are not related by inheritance).
+    """
+    async def role_checker(current_user: User = Depends(get_current_user)):
+        effective = _effective_roles(current_user.roles)
+        if effective.intersection(acceptable_roles):
+            return current_user
+        raise HTTPException(status_code=403, detail="Not enough permissions")
     return role_checker
 
 # Mock Endpoint to generate a test token — only reachable when ENV is

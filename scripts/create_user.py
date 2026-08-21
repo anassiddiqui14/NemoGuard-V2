@@ -30,7 +30,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.store.postgres_database import PostgresDatabase
 from src.api.auth import hash_password
 
-VALID_ROLES = {"commander", "admin", "viewer"}
+# Full role set per docs/NemoGuard_Enterprise_Hardening_and_Productization_Build_Plan.md
+# §11.2. Previously only {"commander", "admin", "viewer"} were provisionable
+# here, meaning there was no way to actually create a real "operator",
+# "approver", "auditor", or "service" account despite src/api/auth.py's
+# require_role()/require_any_role() already enforcing all seven roles.
+VALID_ROLES = {"viewer", "operator", "commander", "approver", "admin", "auditor", "service"}
 
 
 def main():
