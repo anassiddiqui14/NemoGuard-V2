@@ -120,6 +120,20 @@ async def startup_event():
             if not cursor.fetchone():
                 print("Initializing database schema...")
                 db.init_schema()
+            else:
+                # init_schema() (which also runs apply_pending_migrations())
+                # only runs on a genuinely fresh database -- but every
+                # existing deployment restart previously skipped ALL
+                # migration files entirely, since apply_pending_migrations()
+                # was only ever called as a side effect of init_schema().
+                # This silently meant new migrations (schema changes, new
+                # tables) never reached any already-provisioned database
+                # unless it happened to be wiped and recreated. Explicitly
+                # re-run migrations on every startup for existing databases
+                # too; every migration file uses CREATE TABLE IF NOT EXISTS /
+                # ADD COLUMN IF NOT EXISTS guards, so this is safe/idempotent.
+                print("Applying any pending migrations...")
+                db.apply_pending_migrations()
     except Exception as e:
         print(f"Failed to initialize database: {e}")
         
@@ -454,7 +468,7 @@ class FeedbackRequest(BaseModel):
 @app.post("/api/v2/incidents/{incident_id}/feedback")
 def submit_feedback(incident_id: str, req: FeedbackRequest, current_user: User = Depends(get_current_user)):
     orchestrator = IncidentOrchestrator()
-    res = orchestrator.triage_feedback(incident_id, req.feedback)
+    res = orchestrator.triage_feedback(incident_id, req.feedback, submitted_by=current_user.user_id)
     if "error" in res:
         raise HTTPException(status_code=500, detail=res["error"])
     return res

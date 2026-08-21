@@ -260,8 +260,21 @@ class IncidentOrchestrator:
         self._log_audit(incident_id, "Impact Agent", "IMPACT_CALCULATED", f"Identified {len(impacts)} affected downstream assets.")
         self._log_audit(incident_id, "Commander", "PLAN_CREATED", f"Formulated {len(steps)}-step recovery plan {plan_id} (risk: {plan_risk}).")
         
-    def save_agent_findings(self, incident_id: str, llm_response: Dict[str, Any], critic_passed: bool = True, critic_feedback: str = "") -> Dict[str, Any]:
-        """Saves the JSON output from the NemoClaw agents into the database."""
+    def save_agent_findings(
+        self, incident_id: str, llm_response: Dict[str, Any], critic_passed: bool = True,
+        critic_feedback: str = "", parent_plan_id: str = None, feedback_reference: str = None,
+        plan_version: int = 1,
+    ) -> Dict[str, Any]:
+        """
+        Saves the JSON output from the NemoClaw agents into the database.
+
+        `parent_plan_id` / `feedback_reference` / `plan_version` support the
+        plan-versioning model (build plan Priority 6 / spec §10.3): when this
+        is a re-investigation triggered by a plan rejection, the new
+        action_plan row is linked back to the plan it supersedes and the
+        specific feedback record that triggered the revision, rather than
+        being indistinguishable from a first-pass plan.
+        """
         now = datetime.now(timezone.utc).isoformat()
         
         if "error" in llm_response:
@@ -340,9 +353,26 @@ class IncidentOrchestrator:
             if not critic_passed and critic_feedback:
                 rationale = f"[SAFETY REVIEW REQUIRED] {critic_feedback}\n\n{rationale}"
             conn.execute("""
-                INSERT INTO action_plan (action_plan_id, incident_id, agent_run_id, plan_version, status, overall_risk, rationale, expected_outcome, rollback_summary, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (plan_id, incident_id, "SYSTEM", 1, plan_status, plan_data.get("risk", "MEDIUM"), rationale, plan_data.get("expected_outcome", ""), "Manual Rollback Required", now))
+                INSERT INTO action_plan (action_plan_id, incident_id, agent_run_id, plan_version, status, overall_risk, rationale, expected_outcome, rollback_summary, created_at, parent_plan_id, feedback_reference)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (plan_id, incident_id, "SYSTEM", plan_version, plan_status, plan_data.get("risk", "MEDIUM"), rationale, plan_data.get("expected_outcome", ""), "Manual Rollback Required", now, parent_plan_id, feedback_reference))
+
+            # If this plan supersedes a previously rejected plan, mark that
+            # old plan (and the feedback record that triggered this
+            # revision) with a pointer to the new plan, and mark the old
+            # plan SUPERSEDED so it's unambiguous which plan is current
+            # without deleting/mutating its original content (spec §10.3:
+            # "Old approved/rejected plans must remain immutable").
+            if parent_plan_id:
+                conn.execute(
+                    "UPDATE action_plan SET status = 'SUPERSEDED' WHERE action_plan_id = %s AND status != 'SUPERSEDED'",
+                    (parent_plan_id,),
+                )
+            if feedback_reference:
+                conn.execute(
+                    "UPDATE plan_feedback SET resulting_plan_id = %s WHERE plan_feedback_id = %s",
+                    (plan_id, feedback_reference),
+                )
             
             # Action Steps
             for i, step in enumerate(plan_data.get("steps", []), 1):
@@ -360,10 +390,29 @@ class IncidentOrchestrator:
                 (rca_statement, rca_confidence, incident_id)
             )
 
-        self.state_service.transition(
-            incident_id=incident_id, to=IncidentState.PLAN_READY,
-            actor="Commander", reason=f"Recovery plan {plan_id} synthesized from multi-agent findings.",
-        )
+        # This function is invoked both for the FIRST plan produced for an
+        # incident (which is legitimately at INVESTIGATING -> PLAN_READY)
+        # AND for plan revisions after a human rejection (build plan
+        # Priority 6), where the incident may already be sitting at
+        # PLAN_READY (rejection happened before approval) or AWAITING_APPROVAL
+        # (rejection happened after an approval attempt that was later
+        # reversed). The state machine correctly disallows a PLAN_READY ->
+        # PLAN_READY self-transition and has no direct AWAITING_APPROVAL ->
+        # PLAN_READY edge, so handle both cases explicitly rather than
+        # assuming a fresh INVESTIGATING -> PLAN_READY transition always
+        # applies.
+        current_state = self.state_service.get_current_state(incident_id)
+        if current_state == IncidentState.AWAITING_APPROVAL:
+            self.state_service.transition(
+                incident_id=incident_id, to=IncidentState.INVESTIGATING,
+                actor="Commander", reason="Returning to investigation to produce a revised plan.",
+            )
+            current_state = IncidentState.INVESTIGATING
+        if current_state != IncidentState.PLAN_READY:
+            self.state_service.transition(
+                incident_id=incident_id, to=IncidentState.PLAN_READY,
+                actor="Commander", reason=f"Recovery plan {plan_id} synthesized from multi-agent findings.",
+            )
         self._log_audit(incident_id, "Commander", "PLAN_CREATED", f"Commander synthesized multi-agent findings into recovery plan {plan_id}.")
         
         return {"status": "success", "plan_id": plan_id}
@@ -652,88 +701,116 @@ class IncidentOrchestrator:
             self._log_audit(incident_id, "Verifier", "VERIFICATION_FAILED", "One or more actions failed independent verification; incident NOT marked resolved.")
             self._log_audit(incident_id, "Commander", "INCIDENT_ESCALATED", "Plan execution did not verify successfully. Human intervention required.")
 
-    def triage_feedback(self, incident_id: str, feedback_text: str) -> Dict[str, Any]:
-        """Handles user feedback on an existing action plan and generates a revised plan."""
+    def triage_feedback(self, incident_id: str, feedback_text: str, submitted_by: str = "unknown") -> Dict[str, Any]:
+        """
+        Handles a human rejecting an existing action plan.
+
+        Per docs/NemoGuard_Enterprise_Hardening_and_Productization_Build_Plan.md
+        Priority 6 / spec §10.2-10.3: human feedback is NOT just a string fed
+        into a prompt to patch the existing plan's text in place. It becomes
+        authoritative NEW EVIDENCE that re-enters the full investigation
+        (RCA -> Impact -> Runbook -> Critic), because the rejection may mean
+        the root-cause hypothesis itself was wrong, not just the plan's
+        wording. The previous implementation destructively DELETEd the old
+        plan's steps and UPDATEd its rationale in place -- losing the
+        original rejected plan's content and the feedback itself as durable,
+        auditable records. This version:
+          1. Persists the feedback as its own immutable plan_feedback row.
+          2. Marks the rejected plan superseded (not deleted/mutated).
+          3. Re-runs the full LangGraph investigation with the feedback
+             threaded into RCA as authoritative context.
+          4. Persists the result as a NEW action_plan row, versioned and
+             linked back to its parent via parent_plan_id/feedback_reference.
+        """
         with self.db.get_connection() as conn:
-            # 1. Fetch existing plan
-            cursor = conn.execute("SELECT action_plan_id, rationale, expected_outcome, overall_risk FROM action_plan WHERE incident_id = %s ORDER BY created_at DESC LIMIT 1", (incident_id,))
+            cursor = conn.execute(
+                "SELECT action_plan_id, plan_version FROM action_plan WHERE incident_id = %s ORDER BY created_at DESC LIMIT 1",
+                (incident_id,),
+            )
             plan_row = cursor.fetchone()
             if not plan_row:
                 return {"error": "No existing action plan found for this incident."}
-            
-            plan_id = plan_row[0]
-            existing_plan = {
-                "rationale": plan_row[1],
-                "expected_outcome": plan_row[2],
-                "risk": plan_row[3],
-                "steps": []
-            }
-            
-            # Fetch existing steps
-            cursor = conn.execute("SELECT action_type, tool_name, risk_level FROM action_step WHERE action_plan_id = %s ORDER BY sequence_no ASC", (plan_id,))
+            rejected_plan_id, prev_version = plan_row[0], plan_row[1] or 1
+
+        now = datetime.now(timezone.utc).isoformat()
+        plan_feedback_id = self._generate_id("PFB")
+        with self.db.get_connection() as conn:
+            conn.execute("""
+                INSERT INTO plan_feedback (plan_feedback_id, incident_id, rejected_plan_id, feedback_text, submitted_by, submitted_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (plan_feedback_id, incident_id, rejected_plan_id, feedback_text, submitted_by, now))
+
+        self._log_audit(
+            incident_id, submitted_by, "PLAN_REJECTED",
+            f"Plan {rejected_plan_id} rejected with feedback: {feedback_text}",
+        )
+
+        # Re-fetch alerts for this incident so the re-investigation has the
+        # same real alert context as the original triage.
+        alerts_data = []
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT alert.alert_id, alert.severity, alert.alert_type, alert.source_system, alert.message FROM alert "
+                "JOIN incident_alert ON alert.alert_id = incident_alert.alert_id "
+                "WHERE incident_alert.incident_id = %s",
+                (incident_id,),
+            )
             for row in cursor.fetchall():
-                existing_plan["steps"].append({
-                    "action": row[0],
-                    "tool": row[1],
-                    "risk": row[2]
+                alerts_data.append({
+                    "alert_id": row[0], "severity": row[1], "alert_type": row[2],
+                    "source_system": row[3], "message": row[4],
                 })
 
-        prompt = f"""
-        The user rejected the previous action plan for Incident ID: {incident_id}.
-        
-        User Feedback:
-        {feedback_text}
-        
-        Previous Action Plan:
-        {json.dumps(existing_plan, indent=2)}
-        
-        Generate a new, revised action plan that addresses the user's feedback. 
-        The plan MUST be highly technical and actionable (provide exact bash commands, SQL scripts, or API calls).
-        
-        Output a strict JSON object with this exact structure:
-        {{
-            "rationale": "Why we are doing this revised plan",
-            "expected_outcome": "What this will fix",
-            "risk": "LOW|MEDIUM|HIGH",
-            "steps": [
-              {{"action": "Describe exact technical step", "tool": "tool_name", "risk": "LOW|MEDIUM|HIGH"}}
-            ]
-        }}
-        """
+        from src.domain.agents.langgraph_investigator import LangGraphInvestigator
+        investigator = LangGraphInvestigator()
 
-        llm_response = self.call_llm_json(prompt)
-        
-        if "error" in llm_response:
-            return llm_response
+        try:
+            final_state = asyncio.run(
+                investigator.investigate(
+                    incident_id, alerts_data, audit_callback=self._log_audit,
+                    feedback_context=feedback_text,
+                )
+            )
+        except Exception as e:
+            return {"error": f"Re-investigation after feedback failed: {e}"}
 
-        # Update the database
-        with self.db.get_connection() as conn:
-            # Delete old steps
-            conn.execute("DELETE FROM action_step WHERE action_plan_id = %s", (plan_id,))
-            
-            # Update plan
-            conn.execute("""
-                UPDATE action_plan 
-                SET rationale = %s, expected_outcome = %s, overall_risk = %s, plan_version = plan_version + 1, status = 'PENDING_APPROVAL'
-                WHERE action_plan_id = %s
-            """, (
-                llm_response.get("rationale", ""), 
-                llm_response.get("expected_outcome", ""), 
-                llm_response.get("risk", "MEDIUM"),
-                plan_id
-            ))
-            
-            # Insert new steps
-            for i, step in enumerate(llm_response.get("steps", []), 1):
-                risk = step.get("risk", "LOW")
-                conn.execute("""
-                    INSERT INTO action_step (action_step_id, action_plan_id, sequence_no, action_type, tool_name, risk_level, requires_approval, parameters_json, preconditions_json, expected_postconditions_json, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (self._generate_id("STP"), plan_id, i, step.get("action", ""), step.get("tool", "manual"), risk, 1 if risk in ["MEDIUM", "HIGH"] else 0, "{}", "{}", "{}", "PENDING"))
+        rca_res = final_state.get("rca_result", {})
+        impact_res = final_state.get("impact_result", {})
+        plan_res = final_state.get("final_plan", {})
 
-        self._log_audit(incident_id, "Feedback Agent", "PLAN_REVISED", f"Action plan {plan_id} revised based on user feedback.")
-        
-        return {"status": "success", "plan_id": plan_id}
+        rca_hypotheses = rca_res.get("hypotheses") or [{
+            "statement": rca_res.get("finding", "Unknown root cause"),
+            "cause_type": rca_res.get("cause_type", "OTHER"),
+            "confidence": rca_res.get("confidence", 0.9),
+        }]
+
+        llm_response = {
+            "evidence": rca_res.get("evidence", []),
+            "hypotheses": rca_hypotheses,
+            "impacts": impact_res.get("impacts", []),
+            "action_plan": {
+                "rationale": plan_res.get("rationale", ""),
+                "expected_outcome": plan_res.get("expected_outcome", ""),
+                "risk": plan_res.get("risk", "MEDIUM"),
+                "steps": plan_res.get("steps", []),
+            },
+        }
+
+        result = self.save_agent_findings(
+            incident_id, llm_response,
+            critic_passed=final_state.get("critic_passed", True),
+            critic_feedback=final_state.get("critic_feedback", ""),
+            parent_plan_id=rejected_plan_id,
+            feedback_reference=plan_feedback_id,
+            plan_version=prev_version + 1,
+        )
+        if "error" not in result:
+            self._log_audit(
+                incident_id, "Commander", "PLAN_REVISED",
+                f"Plan revised to v{prev_version + 1} ({result.get('plan_id')}) after re-investigation "
+                f"informed by human feedback on rejected plan {rejected_plan_id}.",
+            )
+        return result
 
     async def process_webhook(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """

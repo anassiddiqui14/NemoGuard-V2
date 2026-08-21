@@ -11,7 +11,13 @@ from src.domain.agents.agent_tools import _get_read_only_tools_schema, execute_t
 class InvestigationState(TypedDict):
     incident_id: str
     alerts: List[Dict[str, Any]]
-    
+    # Non-empty when this investigation is a re-run triggered by a human
+    # rejecting a previous plan (see docs build plan Priority 6 / spec
+    # §10.2). Threaded into RCA so the re-investigation is actually informed
+    # by what the human said was wrong, rather than independently arriving
+    # at the exact same conclusion and producing an identical plan.
+    feedback_context: str
+
     rca_result: Dict[str, Any]
     impact_result: Dict[str, Any]
     runbook_result: Dict[str, Any]
@@ -154,7 +160,7 @@ class LangGraphInvestigator:
         
         # Define nodes
         async def run_rca(state: InvestigationState):
-            res = await self.rca_agent.analyze(state["incident_id"])
+            res = await self.rca_agent.analyze(state["incident_id"], feedback_context=state.get("feedback_context", ""))
             return {"rca_result": res}
             
         async def run_impact(state: InvestigationState):
@@ -228,12 +234,24 @@ class LangGraphInvestigator:
         
         return workflow.compile()
         
-    async def investigate(self, incident_id: str, alerts: List[Dict] = None, audit_callback=None):
+    async def investigate(self, incident_id: str, alerts: List[Dict] = None, audit_callback=None, feedback_context: str = ""):
+        """
+        Runs the full investigation graph (RCA -> Impact + Runbook -> Critic).
+
+        `feedback_context`: non-empty when this is a RE-investigation
+        triggered by a human rejecting a previous plan (see
+        IncidentOrchestrator.request_plan_revision / build plan Priority 6).
+        When present, it is threaded into the RCA agent's prompt as
+        authoritative new evidence, so the re-run genuinely reconsiders the
+        root cause in light of what the human said was wrong rather than
+        deterministically re-deriving the exact same conclusion.
+        """
         if alerts is None:
             alerts = []
         state = {
             "incident_id": incident_id,
             "alerts": alerts,
+            "feedback_context": feedback_context,
             "rca_result": {},
             "impact_result": {},
             "runbook_result": {},

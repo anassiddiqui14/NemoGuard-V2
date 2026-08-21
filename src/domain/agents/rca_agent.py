@@ -100,14 +100,27 @@ You MUST return ONLY valid JSON in this exact format as your final response once
 """
         )
 
-    async def analyze(self, incident_id: str) -> Dict[str, Any]:
+    async def analyze(self, incident_id: str, feedback_context: str = "") -> Dict[str, Any]:
+        feedback_block = f"""
+        IMPORTANT -- this incident was previously investigated, and a human operator REJECTED
+        the resulting recovery plan with the following feedback. Treat this feedback as
+        authoritative new evidence: it may indicate your prior root-cause hypothesis was wrong,
+        incomplete, or that additional diagnostics are needed before proposing another plan.
+        Re-investigate with this feedback specifically in mind rather than repeating the same
+        conclusion.
+
+        HUMAN FEEDBACK ON PREVIOUS PLAN:
+        {feedback_context}
+        """ if feedback_context else ""
+
         prompt = f"""
-        Analyze the root cause for incident {incident_id}. 
+        Analyze the root cause for incident {incident_id}.
         Use the `query_logs` tool to gather evidence before returning your JSON conclusion.
         If this looks like a LocalStack-lab-sourced incident and the failing job writes to a
         database table, also use the real observability + data-integrity tools described in
         your instructions (query_cloudwatch_logs, list_s3_objects/read_s3_object,
         check_table_staleness) to build a complete, verified picture.
+        {feedback_block}
         """
         
         # LocalStack-lab investigations legitimately involve several distinct
