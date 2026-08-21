@@ -375,6 +375,7 @@ class IncidentOrchestrator:
         import asyncio
         from src.domain.agents.rca_agent import RCAAgent
         from src.domain.agents.dependency_agent import DependencyAgent
+        from src.domain.agents.runbook_agent import RunbookAgent
         
         # 1. RCA Agent Execution
         self._log_audit(incident_id, "SYSTEM", "FALLBACK_RCA_STARTED", "Invoking native Python RCA Agent with Tool Calling")
@@ -394,9 +395,44 @@ class IncidentOrchestrator:
         dep_result = asyncio.run(dep_agent.analyze(hypothesis_statement))
         
         impacts_from_agent = dep_result.get("impacts", [])
-        
+
+        # 3. Runbook Agent Execution -- per
+        # docs/NemoGuard_Enterprise_Hardening_and_Productization_Build_Plan.md
+        # Priority 4 / docs/IMPROVEMENT_PLAN.md §2.6: this fallback path
+        # previously hardcoded a fake, unrelated 4-step "schema rollback /
+        # loyalty_id" recovery plan regardless of what the actual incident
+        # was (a partial write, a poison-pill message, a pipeline crash --
+        # anything). That's not a fallback plan, it's a WRONG plan presented
+        # with the same confidence as a correct one. Query the real
+        # RunbookAgent (which searches the actual runbook library keyed off
+        # the RCA finding) so even the degraded fallback path proposes
+        # steps that are actually relevant to this incident.
+        self._log_audit(incident_id, "SYSTEM", "FALLBACK_RUNBOOK_STARTED", "Invoking native Python Runbook Agent with Tool Calling")
+        alerts_for_runbook = []
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT alert.severity, alert.alert_type, alert.source_system, alert.message FROM alert "
+                "JOIN incident_alert ON alert.alert_id = incident_alert.alert_id "
+                "WHERE incident_alert.incident_id = %s",
+                (incident_id,)
+            )
+            for row in cursor.fetchall():
+                alerts_for_runbook.append({
+                    "severity": row[0], "alert_type": row[1],
+                    "source_system": row[2], "message": row[3],
+                })
+        runbook_agent = RunbookAgent()
+        runbook_result = asyncio.run(runbook_agent.analyze(alerts_for_runbook, hypothesis_statement))
+        agent_steps = runbook_result.get("steps") or []
+        if not agent_steps or "error" in runbook_result:
+            # Genuine last-resort fallback: no hardcoded remediation guess,
+            # just an honest escalation step so a human takes it from here.
+            agent_steps = [
+                {"action": "No matching runbook found and Runbook Agent was unavailable — escalate to on-call engineer for manual triage.", "tool": "manual_escalation", "risk": "LOW"},
+            ]
+
         plan_risk = "MEDIUM"
-        plan_rationale = "Fallback AI Agent executed triage using tools."
+        plan_rationale = f"Fallback AI Agent executed triage using tools. Runbook: {runbook_result.get('finding', 'N/A')}"
         plan_outcome = "System expects normal operation after manual intervention."
 
         with self.db.get_connection() as conn:
@@ -439,19 +475,14 @@ class IncidentOrchestrator:
                 INSERT INTO action_plan (action_plan_id, incident_id, agent_run_id, plan_version, status, overall_risk, rationale, expected_outcome, rollback_summary, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (plan_id, incident_id, "Commander", 1, "PENDING_APPROVAL", plan_risk, plan_rationale, plan_outcome,
-                  "Restore schema mapping v118 and re-deploy with backward compatibility flag enabled", now))
-            
-            steps = [
-                ("Rollback schema mapping to v118 (restore loyalty_id column)", "schema_rollback", "MEDIUM"),
-                ("Validate schema compatibility against all consumers", "schema_validate", "LOW"),
-                ("Re-trigger customer_profile ingestion pipeline", "pipeline_trigger", "MEDIUM"),
-                ("Verify downstream job execution and data freshness", "health_check", "LOW"),
-            ]
-            for i, (action, tool, risk) in enumerate(steps, 1):
+                  "Manual rollback required — see individual step details.", now))
+
+            for i, step in enumerate(agent_steps, 1):
+                risk = step.get("risk", "MEDIUM")
                 conn.execute("""
                     INSERT INTO action_step (action_step_id, action_plan_id, sequence_no, action_type, tool_name, risk_level, requires_approval, parameters_json, preconditions_json, expected_postconditions_json, status)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (self._generate_id("STP"), plan_id, i, action, tool, risk, 1 if risk == "MEDIUM" else 0, "{}", "{}", "{}", "PENDING"))
+                """, (self._generate_id("STP"), plan_id, i, step.get("action", ""), step.get("tool", "manual"), risk, 1 if risk in ("MEDIUM", "HIGH") else 0, "{}", "{}", "{}", "PENDING"))
                 
             conn.execute(
                 "UPDATE incident SET actual_root_cause = %s, rca_confidence = %s WHERE incident_id = %s",
@@ -464,9 +495,9 @@ class IncidentOrchestrator:
         )
         self._log_audit(incident_id, "RCA Agent", "HYPOTHESIS_CREATED", f"RCA Agent isolated root cause using tools with {confidence*100}% confidence.")
         self._log_audit(incident_id, "Impact Agent", "IMPACT_CALCULATED", f"Impact Agent identified {len(impacts_from_agent)} affected downstream assets from CMDB.")
-        self._log_audit(incident_id, "Runbook Agent", "RUNBOOK_RETRIEVED", "Runbook Agent matched incident to standard recovery steps.")
+        self._log_audit(incident_id, "Runbook Agent", "RUNBOOK_RETRIEVED", f"Runbook Agent matched incident to {len(agent_steps)} recovery step(s) from the real runbook library.")
         self._log_audit(incident_id, "Safety Agent", "SAFETY_VALIDATION_PASSED", "Safety Agent validated plan parameters and verified blast radius is contained.")
-        self._log_audit(incident_id, "Commander", "PLAN_CREATED", f"Commander formulated 4-step recovery plan {plan_id} (risk: {plan_risk}). Human approval required for MEDIUM-risk steps.")
+        self._log_audit(incident_id, "Commander", "PLAN_CREATED", f"Commander formulated {len(agent_steps)}-step recovery plan {plan_id} (risk: {plan_risk}). Human approval required for MEDIUM/HIGH-risk steps.")
         
         return {"status": "success", "plan_id": plan_id}
 
@@ -705,15 +736,64 @@ class IncidentOrchestrator:
         return {"status": "success", "plan_id": plan_id}
 
     async def process_webhook(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Processes incoming webhooks via the WatcherAgent to determine if it's a valid alert and if it correlates."""
+        """
+        Processes incoming webhooks. The Watcher Agent (LLM) is still used for
+        the parts an LLM genuinely does better than deterministic code --
+        classifying arbitrary, wildly-varying webhook payload shapes as
+        signal vs. noise, normalizing them into NemoGuard's canonical alert
+        schema, and detecting recovery/resolution language.
+
+        HOWEVER, per docs/NemoGuard_Enterprise_Hardening_and_Productization_Build_Plan.md
+        Priority 4 and docs/IMPROVEMENT_PLAN.md §2.7: the actual CORRELATION
+        decision (does this alert belong to an existing incident, and which
+        one) is now checked deterministically FIRST using
+        CorrelatorEngine.best_match_for_alert() against the real,
+        already-normalized fields (run_id, alert_type, opened_ts, CMDB
+        topology) of alerts already attached to each active incident. The
+        LLM's own `correlated_incident_id` guess is only trusted when the
+        deterministic engine found no strong match -- "deterministic truth,
+        probabilistic advice", not the reverse.
+        """
         import psycopg2.extras
-        
-        # 1. Fetch active incidents
+        from src.domain.correlator import CorrelatorEngine
+        from src.domain.models import Alert
+
+        # 1. Fetch active incidents AND the alerts already correlated to
+        # each one, so the deterministic correlator has real data to score
+        # against (not just incident metadata).
         active_incidents = []
+        alerts_by_incident: Dict[str, List[Any]] = {}
         with self.db.get_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
             cursor.execute("SELECT incident_id, title, summary, primary_run_id, status FROM incident WHERE status NOT IN ('RESOLVED', 'CLOSED', 'CANCELLED')")
             active_incidents = [dict(row) for row in cursor.fetchall()]
+
+            if active_incidents:
+                incident_ids = [i["incident_id"] for i in active_incidents]
+                cursor.execute(
+                    "SELECT ia.incident_id, a.alert_id, a.run_id, a.opened_ts, a.severity, a.alert_type, a.source_system, a.message, a.status "
+                    "FROM incident_alert ia JOIN alert a ON ia.alert_id = a.alert_id "
+                    "WHERE ia.incident_id = ANY(%s)",
+                    (incident_ids,),
+                )
+                for row in cursor.fetchall():
+                    try:
+                        opened_ts = row["opened_ts"]
+                        if not isinstance(opened_ts, datetime):
+                            opened_ts = datetime.fromisoformat(str(opened_ts))
+                        alert_obj = Alert(
+                            alert_id=row["alert_id"],
+                            run_id=row["run_id"],
+                            opened_ts=opened_ts,
+                            severity=row["severity"] or "info",
+                            alert_type=row["alert_type"] or "UNKNOWN",
+                            source_system=row["source_system"] or "Unknown",
+                            message=row["message"] or "",
+                            status=row["status"] or "open",
+                        )
+                    except Exception:
+                        continue
+                    alerts_by_incident.setdefault(row["incident_id"], []).append(alert_obj)
 
         watcher = WatcherAgent()
         analysis = await watcher.analyze(payload, active_incidents)
@@ -737,23 +817,55 @@ class IncidentOrchestrator:
         
         alert_id = self._generate_id("WEB-ALT")
         now = datetime.now(timezone.utc).isoformat()
-        
+
+        # 2. Deterministic first-pass correlation check against the real
+        # normalized alert fields, run BEFORE trusting the LLM's own
+        # correlated_incident_id guess. If the deterministic engine finds a
+        # strong match (score >= min_cluster_score), that decision wins and
+        # is used verbatim, with real, explainable reasons (not an opaque
+        # LLM "reasoning" string) -- see CorrelatorEngine.best_match_for_alert.
+        correlator = CorrelatorEngine()
+        new_alert_obj = Alert(
+            alert_id=alert_id, run_id=run_id, opened_ts=datetime.now(timezone.utc),
+            severity=severity, alert_type=alert_type, source_system=source_system,
+            message=message, status="open",
+        )
+        deterministic_incident_id, deterministic_score, deterministic_reasons = (
+            correlator.best_match_for_alert(new_alert_obj, alerts_by_incident)
+        )
+        deterministic_match = deterministic_incident_id is not None and deterministic_score >= correlator.min_cluster_score
+
         # Insert the new alert into the DB
         with self.db.get_connection() as conn:
             conn.execute("""
                 INSERT INTO alert (alert_id, run_id, opened_ts, severity, alert_type, source_system, message, status)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, 'open')
             """, (alert_id, run_id, now, severity, alert_type, source_system, message))
-            
-            # Check if AI correlated this to an existing incident
-            correlated_incident_id = analysis.get("correlated_incident_id")
-            
+
+            if deterministic_match:
+                # Deterministic engine found strong, explainable evidence --
+                # trust it over the LLM's own guess (which may point at a
+                # different incident, or none at all).
+                correlated_incident_id = deterministic_incident_id
+                correlation_score = deterministic_score
+                correlation_reasoning = (
+                    f"Deterministic correlation (score={deterministic_score:.2f}): "
+                    + ("; ".join(deterministic_reasons) if deterministic_reasons else "matched an existing alert in this incident.")
+                )
+            else:
+                # No confident deterministic signal -- fall back to the LLM's
+                # own correlation guess (still validated against the actual
+                # active-incident list to prevent it hallucinating an ID).
+                correlated_incident_id = analysis.get("correlated_incident_id")
+                correlation_score = analysis.get("confidence", 0.95)
+                correlation_reasoning = analysis.get("reasoning")
+
             if correlated_incident_id and any(i['incident_id'] == correlated_incident_id for i in active_incidents):
                 # Map to existing incident
                 conn.execute("""
                     INSERT INTO incident_alert (incident_id, alert_id, correlation_score, correlation_reasons_json, added_at)
                     VALUES (%s, %s, %s, %s, %s)
-                """, (correlated_incident_id, alert_id, analysis.get("confidence", 0.95), json.dumps([analysis.get("reasoning")]), now))
+                """, (correlated_incident_id, alert_id, correlation_score, json.dumps([correlation_reasoning]), now))
 
                 # Update incident summary
                 conn.execute("""
@@ -804,33 +916,22 @@ class IncidentOrchestrator:
                         "reasoning": analysis.get("reasoning")
                     }
 
-                self._log_audit(correlated_incident_id, "Watcher Agent", "ALERT_CORRELATED", f"Alert {alert_id} dynamically correlated to this incident by AI. Reasoning: {analysis.get('reasoning')}")
+                self._log_audit(
+                    correlated_incident_id, "Watcher Agent" if not deterministic_match else "Correlator Engine",
+                    "ALERT_CORRELATED",
+                    f"Alert {alert_id} correlated to this incident. {correlation_reasoning}",
+                )
 
                 return {
                     "status": "ingested_and_correlated",
                     "alert_id": alert_id,
                     "incident_id": correlated_incident_id,
-                    "reasoning": analysis.get("reasoning")
+                    "reasoning": correlation_reasoning
                 }
                 
             # Otherwise, Simple Correlation: For now, create a new incident immediately for HIGH or CRITICAL alerts.
             elif severity in ["high", "critical"]:
-                from src.domain.correlator import CorrelatorEngine
-                from src.domain.models import Alert
-                
-                alert_obj = Alert(
-                    alert_id=alert_id,
-                    run_id=run_id,
-                    opened_ts=datetime.now(timezone.utc),
-                    severity=severity,
-                    alert_type=alert_type,
-                    source_system=source_system,
-                    message=message,
-                    status="open"
-                )
-                
-                correlator = CorrelatorEngine()
-                cluster = {"primary_alert": alert_obj, "alerts": [alert_obj], "duplicate_count": 0, "cluster_score": 1.0}
+                cluster = {"primary_alert": new_alert_obj, "alerts": [new_alert_obj], "duplicate_count": 0, "cluster_score": 1.0}
                 incident = correlator.create_incident(cluster)
                 
                 conn.execute("""

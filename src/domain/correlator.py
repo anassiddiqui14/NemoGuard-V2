@@ -71,6 +71,61 @@ class CorrelatorEngine:
                 return True
         return False
 
+    def best_match_for_alert(
+        self, alert: Alert, candidate_alerts_by_incident: Dict[str, List[Alert]]
+    ) -> Tuple[Any, float, List[str]]:
+        """
+        Deterministic first-pass correlation check (spec §8 / build plan
+        Priority 4): given a newly-normalized alert and a map of
+        {incident_id: [alerts already correlated to that incident]}, returns
+        the (incident_id, score, signal_reasons) of the best-matching active
+        incident using ONLY the deterministic pairwise scoring rules in
+        calculate_pairwise_score -- same-run-id, time proximity, matching
+        error signature, and CMDB topology adjacency.
+
+        This is intentionally independent of any LLM judgment. It exists so
+        that when the deterministic signal is strong (score >=
+        min_cluster_score), the caller can attach/create the correlation
+        immediately WITHOUT spending an LLM call on a decision that already
+        has clear, explainable, deterministic ground truth -- and so the UI
+        can show a real answer to "why was this alert consolidated into this
+        incident" rather than an opaque LLM "reasoning" string.
+
+        For each candidate incident, the score used is the MAX pairwise score
+        across all of that incident's already-correlated alerts (an alert
+        need only strongly match ONE existing member of an incident's alert
+        set to justify joining it, not all of them).
+
+        Returns (None, 0.0, []) if there are no candidates or no alert in
+        any candidate incident has run_id/alert_type/opened_ts information
+        (e.g. malformed historical data).
+        """
+        best_incident_id = None
+        best_score = 0.0
+        best_reasons: List[str] = []
+
+        for incident_id, existing_alerts in candidate_alerts_by_incident.items():
+            for existing in existing_alerts:
+                score = self.calculate_pairwise_score(alert, existing)
+                if score > best_score:
+                    best_score = score
+                    best_incident_id = incident_id
+                    reasons = []
+                    if alert.run_id and existing.run_id and alert.run_id == existing.run_id:
+                        reasons.append("same run_id")
+                    time_diff = abs((self._normalize_dt(alert.opened_ts) - self._normalize_dt(existing.opened_ts)).total_seconds())
+                    if time_diff <= 60:
+                        reasons.append(f"occurred within {int(time_diff)}s of an existing alert")
+                    elif time_diff <= self.time_window.total_seconds():
+                        reasons.append(f"occurred within {int(time_diff)}s (within correlation window) of an existing alert")
+                    if alert.alert_type == existing.alert_type:
+                        reasons.append(f"matching alert_type '{alert.alert_type}'")
+                    if self._is_topologically_related(alert.run_id, existing.run_id):
+                        reasons.append("topologically adjacent resource in CMDB")
+                    best_reasons = reasons
+
+        return best_incident_id, best_score, best_reasons
+
     def calculate_pairwise_score(self, alert1: Alert, alert2: Alert) -> float:
         """
         Calculate correlation score between two alerts using time, identity, and topology.
