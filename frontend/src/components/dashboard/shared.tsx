@@ -113,6 +113,25 @@ export function needsAttention(status: string | undefined) {
     return up.includes('APPROVAL') || up === 'NEEDS_REVIEW';
 }
 
+// Every terminal incident status -- i.e. one where the incident is fully
+// done being worked, whatever the outcome. Mirrors the backend's own
+// "open" filter (src/api/main.py's list_incidents: `status NOT IN
+// ('RESOLVED', 'FAILED', 'CLOSED', 'CANCELLED')`). Several frontend
+// components independently re-derived their own "is this incident still
+// active" check and only ever excluded RESOLVED -- meaning a page showing
+// nothing but CANCELLED/FAILED incidents still displayed "Monitoring" /
+// "Working" system-health indicators as if a real incident were in
+// progress. Centralizing this here keeps every such check in sync with the
+// backend's actual definition of "open" going forward.
+export function isTerminalStatus(status: string | undefined) {
+    const up = status?.toUpperCase() || '';
+    return up === 'RESOLVED' || up === 'FAILED' || up === 'CLOSED' || up === 'CANCELLED';
+}
+
+export function isActiveIncident(status: string | undefined) {
+    return !isTerminalStatus(status);
+}
+
 export function EmptyState({ icon, title, subtitle, action }: { icon: React.ReactNode; title: string; subtitle?: string; action?: React.ReactNode }) {
     return (
         <div className="h-full flex flex-col items-center justify-center text-center px-6 py-8">

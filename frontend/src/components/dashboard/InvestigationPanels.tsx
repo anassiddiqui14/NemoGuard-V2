@@ -206,12 +206,38 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                     <div className="h-[190px] w-full">
                         {impact.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
+                                {/*
+                                  Every radar axis below is derived from real
+                                  incident_impact rows -- previously this chart
+                                  plotted three entirely FABRICATED axes
+                                  ("Dashboards", "Latency", "Risk") as flat
+                                  constants (2, 2, 8) whenever ANY impact
+                                  existed, regardless of the incident's actual
+                                  severity or blast radius -- meaning the chart
+                                  looked visually identical for a minor and a
+                                  catastrophic incident. Replaced with axes
+                                  computed purely from real columns already
+                                  returned by GET /incidents/{id}/impact:
+                                  impact_type (Jobs/Products counts) and
+                                  impact_score + impact_status (a genuine
+                                  average-severity axis and a genuine
+                                  currently-blocked-asset-ratio axis).
+                                */}
                                 <RadarChart cx="50%" cy="50%" outerRadius="75%" data={[
-                                    { subject: 'Jobs', A: impact.filter((i) => i.impact_type?.includes('Job')).length || 1, fullMark: 10 },
-                                    { subject: 'Products', A: impact.filter((i) => !i.impact_type?.includes('Job')).length || 1, fullMark: 5 },
-                                    { subject: 'Dashboards', A: impact.length > 0 ? 2 : 0, fullMark: 5 },
-                                    { subject: 'Latency', A: impact.length > 0 ? 2 : 0, fullMark: 10 },
-                                    { subject: 'Risk', A: impact.length > 0 ? 8 : 0, fullMark: 10 },
+                                    { subject: 'Jobs', A: impact.filter((i) => i.impact_type?.includes('Job')).length, fullMark: Math.max(impact.length, 5) },
+                                    { subject: 'Products', A: impact.filter((i) => !i.impact_type?.includes('Job')).length, fullMark: Math.max(impact.length, 5) },
+                                    {
+                                        subject: 'Avg. severity',
+                                        A: Math.round(
+                                            (impact.reduce((sum, i) => sum + (typeof i.impact_score === 'number' ? i.impact_score : 0), 0) / impact.length) * 10,
+                                        ),
+                                        fullMark: 10,
+                                    },
+                                    {
+                                        subject: 'Blocked assets',
+                                        A: impact.filter((i) => (i.impact_status || i.status)?.toUpperCase() === 'BLOCKED').length,
+                                        fullMark: Math.max(impact.length, 5),
+                                    },
                                 ]}>
                                     <PolarGrid stroke="rgba(255,255,255,0.06)" />
                                     <PolarAngleAxis dataKey="subject" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9.5 }} />

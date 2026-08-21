@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Cpu, ChevronRight, Radio, Brain, ShieldCheck as ShieldCheckIcon } from 'lucide-react';
 import { AgentConstellation } from '../../components/AgentConstellation';
 import { LiveOperationsConsole } from '../../components/LiveOperationsConsole';
-import { severityPill, EmptyState, needsAttention } from '../../components/dashboard/shared';
+import { severityPill, EmptyState, needsAttention, isActiveIncident } from '../../components/dashboard/shared';
 import type { IncidentSummary } from '../../components/dashboard/shared';
 import type { AgentEvent } from '../../hooks/useIncidentEvents';
 import { authFetch } from '../../contexts/AuthGateContext';
@@ -15,8 +15,13 @@ import { authFetch } from '../../contexts/AuthGateContext';
 // page is already the natural home for "is the agentic system itself
 // healthy" questions (as opposed to per-incident status).
 function ReadinessRow({ incidents }: { incidents: IncidentSummary[] }) {
-    const reviewCount = incidents.filter((i) => needsAttention(i.status)).length;
-    const activeCount = incidents.filter((i) => i.status?.toUpperCase() !== 'RESOLVED').length;
+    // Previously only excluded RESOLVED, so a queue containing nothing but
+    // CANCELLED/FAILED incidents still showed "Monitoring"/"Working" here as
+    // if real work were actively in progress. isActiveIncident() matches the
+    // backend's own definition of "open" (excludes every terminal status:
+    // RESOLVED, FAILED, CLOSED, CANCELLED).
+    const reviewCount = incidents.filter((i) => isActiveIncident(i.status) && needsAttention(i.status)).length;
+    const activeCount = incidents.filter((i) => isActiveIncident(i.status)).length;
 
     const items = [
         {
