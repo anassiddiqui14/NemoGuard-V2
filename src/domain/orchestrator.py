@@ -12,6 +12,8 @@ from typing import Dict, Any, List
 
 from src.store.postgres_database import PostgresDatabase
 from src.domain.enums import IncidentState
+from src.domain.incident_state_service import IncidentStateService
+from src.domain.agents.base_agent import _sanitize_and_parse_json
 from src.domain.agents.rca_agent import RCAAgent
 from src.domain.agents.dependency_agent import DependencyAgent
 from src.domain.agents.runbook_agent import RunbookAgent
@@ -26,6 +28,7 @@ class IncidentOrchestrator:
     def __init__(self, db_path: str = os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db")):
         self.db_path = db_path
         self.db = PostgresDatabase(db_path)
+        self.state_service = IncidentStateService(self.db)
         # NVIDIA_API_KEY MUST be provided via environment (.env / secrets manager).
         # No hardcoded fallback key is used — see docs/IMPROVEMENT_PLAN.md (Security §1).
         if not os.environ.get("NVIDIA_API_KEY"):
@@ -81,27 +84,14 @@ class IncidentOrchestrator:
                 if content.endswith("```"):
                     content = content[:-3]
                     
-                # Fix unescaped newlines in JSON strings (common LLM failure for bash scripts)
-                content = content.replace("\n", "\\n")
-                # But we actually want real newlines between keys to be valid JSON, 
-                # so fixing it perfectly with regex is complex. Let's rely on the LLM, 
-                # but handle trailing commas and basic fixes.
-                content = content.replace("\\n", "\n") # Revert, as python json handles newlines in some cases or LLM handles it.
-                
+                # Parse tolerating literal control characters (e.g. raw
+                # newlines) inside JSON string values -- see
+                # base_agent._sanitize_and_parse_json for why the previous
+                # "escape then immediately un-escape" approach here was a
+                # complete no-op that never fixed anything.
                 try:
-                    import re
-                    # very basic fix for common unescaped newlines inside string values:
-                    # we will just try json.loads directly first
-                    return json.loads(content)
+                    return _sanitize_and_parse_json(content)
                 except Exception as parse_e:
-                    # Attempt a naive fix for newlines inside strings
-                    try:
-                        # Sometimes LLMs don't escape newlines in string literals
-                        fixed_content = re.sub(r'(%s<!\\)\n', r'\\n', content)
-                        # The above breaks real JSON structure. So we don't do it.
-                        pass
-                    except:
-                        pass
                     print("JSON PARSE ERROR. Raw Content:", content[-200:])
                     return {"error": f"{str(parse_e)}. Content might be truncated or invalid."}
         except Exception as e:
@@ -258,9 +248,13 @@ class IncidentOrchestrator:
                 """, (self._generate_id("STP"), plan_id, i, step.get("action", ""), step.get("tool", ""), risk, 1 if risk in ["MEDIUM", "HIGH"] else 0, "{}", "{}", "{}", "PENDING"))
                 
             conn.execute(
-                "UPDATE incident SET actual_root_cause = %s, rca_confidence = %s, status = %s WHERE incident_id = %s",
-                (hypothesis, 0.95, IncidentState.PLAN_READY.value, incident_id)
+                "UPDATE incident SET actual_root_cause = %s, rca_confidence = %s WHERE incident_id = %s",
+                (hypothesis, 0.95, incident_id)
             )
+        self.state_service.transition(
+            incident_id=incident_id, to=IncidentState.PLAN_READY,
+            actor="RCA Agent", reason="Dynamic triage produced a recovery plan.",
+        )
 
         self._log_audit(incident_id, "RCA Agent", "HYPOTHESIS_CREATED", f"Identified {cause_type} as probable root cause.")
         self._log_audit(incident_id, "Impact Agent", "IMPACT_CALCULATED", f"Identified {len(impacts)} affected downstream assets.")
@@ -362,10 +356,14 @@ class IncidentOrchestrator:
             rca_statement = primary_hypothesis.get("statement", "") if primary_hypothesis else "AI Triage Completed"
             rca_confidence = primary_hypothesis.get("confidence", 0.0) if primary_hypothesis else 0.0
             conn.execute(
-                "UPDATE incident SET actual_root_cause = %s, rca_confidence = %s, status = %s WHERE incident_id = %s",
-                (rca_statement, rca_confidence, IncidentState.PLAN_READY.value, incident_id)
+                "UPDATE incident SET actual_root_cause = %s, rca_confidence = %s WHERE incident_id = %s",
+                (rca_statement, rca_confidence, incident_id)
             )
-            
+
+        self.state_service.transition(
+            incident_id=incident_id, to=IncidentState.PLAN_READY,
+            actor="Commander", reason=f"Recovery plan {plan_id} synthesized from multi-agent findings.",
+        )
         self._log_audit(incident_id, "Commander", "PLAN_CREATED", f"Commander synthesized multi-agent findings into recovery plan {plan_id}.")
         
         return {"status": "success", "plan_id": plan_id}
@@ -456,10 +454,14 @@ class IncidentOrchestrator:
                 """, (self._generate_id("STP"), plan_id, i, action, tool, risk, 1 if risk == "MEDIUM" else 0, "{}", "{}", "{}", "PENDING"))
                 
             conn.execute(
-                "UPDATE incident SET actual_root_cause = %s, rca_confidence = %s, status = %s WHERE incident_id = %s",
-                (hypothesis_statement, 0.93, IncidentState.PLAN_READY.value, incident_id)
+                "UPDATE incident SET actual_root_cause = %s, rca_confidence = %s WHERE incident_id = %s",
+                (hypothesis_statement, 0.93, incident_id)
             )
 
+        self.state_service.transition(
+            incident_id=incident_id, to=IncidentState.PLAN_READY,
+            actor="Commander", reason=f"Fallback triage produced recovery plan {plan_id}.",
+        )
         self._log_audit(incident_id, "RCA Agent", "HYPOTHESIS_CREATED", f"RCA Agent isolated root cause using tools with {confidence*100}% confidence.")
         self._log_audit(incident_id, "Impact Agent", "IMPACT_CALCULATED", f"Impact Agent identified {len(impacts_from_agent)} affected downstream assets from CMDB.")
         self._log_audit(incident_id, "Runbook Agent", "RUNBOOK_RETRIEVED", "Runbook Agent matched incident to standard recovery steps.")
@@ -518,6 +520,27 @@ class IncidentOrchestrator:
         intents = action_steps_to_intents(steps, incident_run_id=incident_run_id)
         compiled = plan_compiler.compile_plan(incident_id, plan_id, plan_version, intents)
 
+        # Walk the incident forward through whatever intermediate lifecycle
+        # states it hasn't yet passed through on the way to EXECUTING. Plan
+        # approval (main.py::approve_plan) only updates action_plan.status
+        # today, not incident.status, so an incident reaching execute_plan()
+        # is very often still sitting at PLAN_READY. Rather than skip the
+        # state machine (which would defeat the point of enforcing it), we
+        # explicitly advance through AWAITING_APPROVAL -> EXECUTING here,
+        # tolerating an incident that's already further along (e.g. a retry).
+        current_state = self.state_service.get_current_state(incident_id)
+        if current_state == IncidentState.PLAN_READY:
+            self.state_service.transition(
+                incident_id=incident_id, to=IncidentState.AWAITING_APPROVAL,
+                actor="SYSTEM", reason="Plan approved by human operator; awaiting execution.",
+            )
+            current_state = IncidentState.AWAITING_APPROVAL
+        if current_state == IncidentState.AWAITING_APPROVAL:
+            self.state_service.transition(
+                incident_id=incident_id, to=IncidentState.EXECUTING,
+                actor="Executor", reason=f"Beginning execution of approved plan {plan_id}.",
+            )
+
         all_verified = True
         with self.db.get_connection() as conn:
             conn.execute("UPDATE action_plan SET status = 'EXECUTING', compiled_plan_hash = %s WHERE action_plan_id = %s", (compiled.plan_hash, plan_id))
@@ -568,10 +591,28 @@ class IncidentOrchestrator:
 
             if all_verified:
                 conn.execute("UPDATE action_plan SET status = 'EXECUTED' WHERE action_plan_id = %s", (plan_id,))
-                conn.execute("UPDATE incident SET status = %s, resolved_at = %s WHERE incident_id = %s", (IncidentState.RESOLVED.value, now, incident_id))
             else:
                 conn.execute("UPDATE action_plan SET status = 'FAILED' WHERE action_plan_id = %s", (plan_id,))
-                conn.execute("UPDATE incident SET status = %s WHERE incident_id = %s", (IncidentState.FAILED.value, incident_id))
+
+        if all_verified:
+            self.state_service.transition(
+                incident_id=incident_id, to=IncidentState.VERIFYING,
+                actor="Verifier", reason="All action executions completed; running independent verification.",
+            )
+            self.state_service.transition(
+                incident_id=incident_id, to=IncidentState.RESOLVED,
+                actor="Verifier", reason="Independent verification passed for all executed actions.",
+                extra_columns={"resolved_at": now},
+            )
+        else:
+            self.state_service.transition(
+                incident_id=incident_id, to=IncidentState.VERIFYING,
+                actor="Verifier", reason="All action executions completed; running independent verification.",
+            )
+            self.state_service.transition(
+                incident_id=incident_id, to=IncidentState.FAILED,
+                actor="Verifier", reason="One or more actions failed independent verification.",
+            )
 
         if all_verified:
             self._log_audit(incident_id, "Verifier", "VERIFICATION_PASSED", "Independent verification passed for all executed actions.")
@@ -735,10 +776,19 @@ class IncidentOrchestrator:
                 # externally (not via an executed NemoGuard plan) so operators
                 # can tell the two cases apart.
                 if analysis.get("is_recovery_signal"):
-                    conn.execute(
-                        "UPDATE incident SET status = %s, resolved_at = %s, updated_at = %s WHERE incident_id = %s",
-                        (IncidentState.RESOLVED.value, now, now, correlated_incident_id)
-                    )
+                    try:
+                        self.state_service.transition(
+                            incident_id=correlated_incident_id, to=IncidentState.RESOLVED,
+                            actor="Watcher Agent",
+                            reason=f"External recovery signal from {source_system} (alert {alert_id}).",
+                            extra_columns={"resolved_at": now},
+                        )
+                    except Exception as e:
+                        # Incident may already be in a terminal state (e.g. a
+                        # second recovery signal arriving after the first
+                        # already resolved it) -- don't let that raise out of
+                        # webhook ingestion.
+                        print(f"Could not auto-resolve {correlated_incident_id} from recovery signal: {e}")
                     self._log_audit(
                         correlated_incident_id,
                         "Watcher Agent",

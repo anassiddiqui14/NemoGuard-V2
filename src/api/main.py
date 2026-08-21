@@ -150,9 +150,17 @@ def get_overview():
         with db.get_connection() as conn:
             cur = conn.execute("SELECT COUNT(*) FROM incident WHERE status != 'RESOLVED'")
             open_incidents = cur.fetchone()[0]
-            cur = conn.execute("SELECT COUNT(*) FROM incident WHERE status != 'RESOLVED' AND severity = 'SEV-1'")
+            # Canonical severity values are stored with underscores (SEV_1,
+            # SEV_2, ...) per the Severity enum (src/domain/enums.py) and the
+            # CorrelatorEngine's severity_map, which writes Severity.SEV_1.value
+            # == "SEV_1" into the incident.severity column. A previous version
+            # of this query filtered on the hyphenated display form ("SEV-1"),
+            # which never matches any stored row, silently zeroing out these
+            # two KPIs. The frontend is responsible for rendering the
+            # underscore form as hyphenated ("SEV-1") for display only.
+            cur = conn.execute("SELECT COUNT(*) FROM incident WHERE status != 'RESOLVED' AND severity = 'SEV_1'")
             critical = cur.fetchone()[0]
-            cur = conn.execute("SELECT COUNT(*) FROM incident WHERE status != 'RESOLVED' AND severity = 'SEV-2'")
+            cur = conn.execute("SELECT COUNT(*) FROM incident WHERE status != 'RESOLVED' AND severity = 'SEV_2'")
             high = cur.fetchone()[0]
             cur = conn.execute("SELECT COUNT(*) FROM alert WHERE status = 'acknowledged'")
             correlated = cur.fetchone()[0]
@@ -363,11 +371,18 @@ async def triage_incident(incident_id: str, current_user: User = Depends(get_cur
     """
     global temporal_client
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
-    with db.get_connection() as conn:
-        conn.execute(
-            "UPDATE incident SET status = %s WHERE incident_id = %s",
-            (IncidentState.INVESTIGATING.value, incident_id),
+    from src.domain.incident_state_service import IncidentStateService, IncidentNotFoundError
+    from src.domain.state_machine import InvalidTransitionError
+    state_service = IncidentStateService(db)
+    try:
+        state_service.transition(
+            incident_id=incident_id, to=IncidentState.INVESTIGATING,
+            actor=current_user.user_id, reason="Manual triage requested via API.",
         )
+    except IncidentNotFoundError:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    except InvalidTransitionError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
     if temporal_client:
         await temporal_client.start_workflow(

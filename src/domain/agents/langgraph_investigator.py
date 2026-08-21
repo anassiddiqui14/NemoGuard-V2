@@ -120,7 +120,16 @@ format as your final response (do not wrap it in markdown):
         a CloudWatch metric, or a table's staleness) before combining everything into a
         final recovery plan.
         """
-        result = await self.call_llm_with_tools(prompt, _get_read_only_tools_schema(), execute_tool_call)
+        # The critic independently re-verifies specific claims using its 19
+        # read-only tools. Empirically (observed against a real LocalStack
+        # partial-write incident) the critic methodically works through
+        # MORE distinct tools than RCA before concluding -- query_logs,
+        # get_cmdb_context, get_runbook, read_runbook_document,
+        # describe_lambda_invocation, query_cloudwatch_logs, list_s3_objects,
+        # read_s3_object, check_table_staleness, ... -- so give it a larger
+        # budget than RCA rather than an equal one; 10 was still observed to
+        # be insufficient.
+        result = await self.call_llm_with_tools(prompt, _get_read_only_tools_schema(), execute_tool_call, max_iterations=20)
 
         # Structural re-check: don't just trust the LLM's own "passed" claim.
         final_plan = result.get("final_plan") or {}

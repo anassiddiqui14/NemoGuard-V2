@@ -3,6 +3,77 @@ import json
 from typing import Dict, Any
 from openai import AsyncOpenAI
 
+
+def _sanitize_and_parse_json(content: str) -> Dict[str, Any]:
+    """
+    Parses LLM-produced JSON, tolerating literal (unescaped) control
+    characters -- most commonly raw newlines -- inside string literals.
+
+    Background: Nemotron (and LLMs generally) sometimes emit a JSON string
+    value containing an actual newline character instead of the required
+    `\\n` escape sequence (e.g. a multi-paragraph "feedback" field). Per the
+    JSON spec this is invalid and `json.loads` raises
+    "Invalid control character at: ...".
+
+    The previous "fix" for this (`content.replace("\\n", "\\\\n"); content =
+    content.replace("\\\\n", "\\n")`) was a complete no-op -- it replaced
+    every literal newline with an escaped one, then immediately reversed
+    that exact replacement, leaving the string byte-for-byte unchanged. It
+    never actually escaped anything, so any response containing a raw
+    newline inside a string value (observed in practice from the Grounding
+    Critic's multi-sentence "feedback" field) still failed to parse,
+    silently degrading a genuine successful investigation into an "LLM
+    error" and forcing a fallback path.
+
+    This function instead walks the raw text character-by-character,
+    tracking whether we are currently inside a JSON string literal (i.e.
+    between an opening and closing unescaped double-quote), and only
+    escapes control characters (newline, carriage return, tab) when they
+    occur INSIDE a string -- structural whitespace between JSON tokens is
+    left untouched. This is a targeted repair of genuinely malformed input,
+    not a semantic change to well-formed JSON.
+    """
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    out = []
+    in_string = False
+    escaped = False
+    for ch in content:
+        if in_string:
+            if escaped:
+                out.append(ch)
+                escaped = False
+                continue
+            if ch == "\\":
+                out.append(ch)
+                escaped = True
+                continue
+            if ch == '"':
+                in_string = False
+                out.append(ch)
+                continue
+            if ch == "\n":
+                out.append("\\n")
+                continue
+            if ch == "\r":
+                out.append("\\r")
+                continue
+            if ch == "\t":
+                out.append("\\t")
+                continue
+            out.append(ch)
+        else:
+            if ch == '"':
+                in_string = True
+            out.append(ch)
+
+    sanitized = "".join(out)
+    return json.loads(sanitized)
+
+
 class BaseAgent:
     def __init__(self, agent_name: str, system_prompt: str, model: str):
         self.agent_name = agent_name
@@ -59,11 +130,8 @@ class BaseAgent:
             if content.endswith("```"):
                 content = content[:-3]
                 
-            content = content.replace("\n", "\\n")
-            content = content.replace("\\n", "\n")
-            
             try:
-                return json.loads(content)
+                return _sanitize_and_parse_json(content)
             except Exception as parse_e:
                 return {"error": f"{str(parse_e)}. Content might be truncated."}
                 
@@ -71,16 +139,32 @@ class BaseAgent:
             print(f"{self.agent_name} LLM Error: {e}")
             return {"error": str(e)}
 
-    async def call_llm_with_tools(self, prompt: str, tools: list, execute_tool_fn) -> Dict[str, Any]:
-        """Calls LLM iteratively. If LLM wants to call a tool, calls execute_tool_fn."""
+    async def call_llm_with_tools(self, prompt: str, tools: list, execute_tool_fn, max_iterations: int = 5) -> Dict[str, Any]:
+        """
+        Calls LLM iteratively. If LLM wants to call a tool, calls execute_tool_fn.
+
+        `max_iterations` bounds the number of LLM round-trips (each round-trip may
+        include multiple tool calls in one response). The previous hardcoded
+        value of 5 was too low for agents whose system prompts (e.g. RCAAgent
+        in LocalStack-lab mode) legitimately instruct them to call several
+        distinct real-infrastructure tools (query_cloudwatch_logs, list_s3_objects,
+        read_s3_object, describe_lambda_invocation, check_table_staleness,
+        list_recent_changes, ...) plus a final answer turn -- guaranteeing the
+        cap was hit on any sufficiently thorough investigation and silently
+        degrading every such agent to an "exceeded max iterations" error
+        (observed in practice: RCA and Runbook agents both failed this way on
+        a real LocalStack partial-write incident, forcing the Grounding Critic
+        to fall back to synthesizing its own substitute plan). Callers that
+        genuinely need more tool calls should pass a higher explicit value
+        rather than relying on this default.
+        """
         messages = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": prompt}
         ]
-        
+
         try:
             iteration_count = 0
-            max_iterations = 5
             while iteration_count < max_iterations:
                 iteration_count += 1
                 print(f"[{self.agent_name}] Calling LLM with {len(tools)} tools... (Iter {iteration_count}/{max_iterations})")
@@ -135,11 +219,8 @@ class BaseAgent:
                     if content.endswith("```"):
                         content = content[:-3]
                         
-                    content = content.replace("\n", "\\n")
-                    content = content.replace("\\n", "\n")
-                    
                     try:
-                        return json.loads(content)
+                        return _sanitize_and_parse_json(content)
                     except Exception as parse_e:
                         return {"error": f"{str(parse_e)}. Content might be truncated."}
             

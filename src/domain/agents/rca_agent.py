@@ -110,5 +110,16 @@ You MUST return ONLY valid JSON in this exact format as your final response once
         check_table_staleness) to build a complete, verified picture.
         """
         
-        response = await self.call_llm_with_tools(prompt, _get_full_tools_schema(), execute_tool_call)
+        # LocalStack-lab investigations legitimately involve several distinct
+        # real-infrastructure tool calls (query_cloudwatch_logs, list_s3_objects,
+        # read_s3_object, describe_lambda_invocation, check_table_staleness,
+        # list_recent_changes, ...) before a final answer -- the previous
+        # default of 5 iterations was too tight and caused this agent to fail
+        # with "exceeded maximum allowed tool iterations" on real lab incidents,
+        # forcing the Grounding Critic to fall back to a substitute plan
+        # instead of a genuine RCA finding. Give RCA a larger budget than the
+        # BaseAgent default since it is the most tool-intensive agent and the
+        # most consequential to get right.
+        max_iters = 12 if LOCALSTACK_LAB_ENABLED else 5
+        response = await self.call_llm_with_tools(prompt, _get_full_tools_schema(), execute_tool_call, max_iterations=max_iters)
         return response

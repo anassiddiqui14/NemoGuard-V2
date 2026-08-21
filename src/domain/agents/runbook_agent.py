@@ -71,5 +71,11 @@ If no specific runbook is found, still return at least one generic step (e.g. "E
         {rca_finding}
         """
         
-        response = await self.call_llm_with_tools(prompt, _get_full_tools_schema(), execute_tool_call)
+        # Nominally this agent only needs 2 tool calls (get_runbook,
+        # read_runbook_document) + 1 final-answer turn = 3 iterations, but give
+        # it a bit of headroom above the BaseAgent default in LocalStack-lab
+        # mode since real runbook documents can be long enough that the model
+        # sometimes re-reads or clarifies before committing to a final plan.
+        max_iters = 8 if LOCALSTACK_LAB_ENABLED else 5
+        response = await self.call_llm_with_tools(prompt, _get_full_tools_schema(), execute_tool_call, max_iterations=max_iters)
         return response
