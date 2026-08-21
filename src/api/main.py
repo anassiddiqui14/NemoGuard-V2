@@ -228,6 +228,32 @@ def list_incidents(state: str = "open", current_user: User = Depends(get_current
 
 # --- 12.2 Incident detail endpoints ---
 
+def _require_incident_in_tenant(db: PostgresDatabase, incident_id: str, tenant_id: str) -> None:
+    """
+    Verifies `incident_id` exists AND belongs to `tenant_id`, raising 404 if
+    not (never 403 -- see get_incident's comment on why 404 is deliberate
+    for both "doesn't exist" and "wrong tenant").
+
+    Per docs/NemoGuard_Enterprise_Hardening_and_Productization_Build_Plan.md
+    Priority 8 / spec §12.3: every sub-resource endpoint scoped by
+    incident_id (evidence, hypotheses, impact, plans, events, alerts) MUST
+    verify the incident belongs to the caller's tenant, not just that
+    *an* incident with that ID exists somewhere. These sub-resource tables
+    (evidence, hypothesis, action_plan, audit_event, ...) do carry their own
+    tenant_id column, but it is never explicitly populated on INSERT
+    (always the column default) -- so the incident's own tenant_id is the
+    reliable source of truth to check against, not the sub-resource row's
+    own (effectively unset) tenant_id.
+    """
+    with db.get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT 1 FROM incident WHERE incident_id = %s AND tenant_id = %s",
+            (incident_id, tenant_id),
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Incident not found")
+
+
 @app.get("/api/v2/incidents/{incident_id}")
 def get_incident(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
@@ -254,6 +280,7 @@ def get_incident_summary(incident_id: str, current_user: User = Depends(get_curr
 @app.get("/api/v2/incidents/{incident_id}/hypotheses")
 def get_hypotheses(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT * FROM hypothesis WHERE incident_id = %s ORDER BY confidence DESC", (incident_id,))
         cols = [col[0] for col in cursor.description]
@@ -266,6 +293,7 @@ def get_hypotheses(incident_id: str, current_user: User = Depends(get_current_us
 @app.get("/api/v2/incidents/{incident_id}/evidence")
 def get_evidence(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT * FROM evidence WHERE incident_id = %s ORDER BY collected_at ASC", (incident_id,))
         cols = [col[0] for col in cursor.description]
@@ -274,6 +302,7 @@ def get_evidence(incident_id: str, current_user: User = Depends(get_current_user
 @app.get("/api/v2/incidents/{incident_id}/impact")
 def get_impact(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     with db.get_connection() as conn:
         cursor = conn.execute("""
             SELECT i.*, d.name as asset_name, d.freshness_sla_minutes 
@@ -291,6 +320,7 @@ def get_impact(incident_id: str, current_user: User = Depends(get_current_user))
 def get_plans(incident_id: str, current_user: User = Depends(get_current_user)):
     from src.domain.plan_hash import compute_plan_hash
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT * FROM action_plan WHERE incident_id = %s ORDER BY created_at DESC", (incident_id,))
         cols = [col[0] for col in cursor.description]
@@ -307,6 +337,7 @@ def get_plans(incident_id: str, current_user: User = Depends(get_current_user)):
 @app.get("/api/v2/incidents/{incident_id}/events")
 def get_events(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT * FROM audit_event WHERE incident_id = %s ORDER BY created_at ASC", (incident_id,))
         cols = [col[0] for col in cursor.description]
@@ -315,6 +346,7 @@ def get_events(incident_id: str, current_user: User = Depends(get_current_user))
 @app.get("/api/v2/incidents/{incident_id}/alerts")
 def get_incident_alerts(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     with db.get_connection() as conn:
         cursor = conn.execute("""
             SELECT a.* FROM alert a
@@ -418,6 +450,7 @@ async def triage_incident(incident_id: str, current_user: User = Depends(require
     """
     global temporal_client
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     from src.domain.incident_state_service import IncidentStateService, IncidentNotFoundError
     from src.domain.state_machine import InvalidTransitionError
     state_service = IncidentStateService(db)
@@ -444,6 +477,8 @@ async def triage_incident(incident_id: str, current_user: User = Depends(require
 
 @app.post("/api/v2/incidents/{incident_id}/agent-findings")
 def agent_findings(incident_id: str, payload: dict, current_user: User = Depends(require_role("operator"))):
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     orchestrator = IncidentOrchestrator()
     res = orchestrator.save_agent_findings(incident_id, payload)
     return res
@@ -467,6 +502,8 @@ class FeedbackRequest(BaseModel):
 
 @app.post("/api/v2/incidents/{incident_id}/feedback")
 def submit_feedback(incident_id: str, req: FeedbackRequest, current_user: User = Depends(require_role("operator"))):
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     orchestrator = IncidentOrchestrator()
     res = orchestrator.triage_feedback(incident_id, req.feedback, submitted_by=current_user.user_id)
     if "error" in res:
@@ -479,6 +516,7 @@ async def approve_plan(incident_id: str, plan_id: str, req: ApprovalRequest, cur
 
     # Validate the plan_hash actually matches the current plan content (defense against stale/tampered approvals).
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     from src.domain.plan_hash import compute_plan_hash
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT * FROM action_plan WHERE action_plan_id = %s", (plan_id,))
@@ -534,6 +572,8 @@ async def approve_plan(incident_id: str, plan_id: str, req: ApprovalRequest, cur
 @app.post("/api/v2/incidents/{incident_id}/plans/{plan_id}/execute")
 async def execute_plan(incident_id: str, plan_id: str, current_user: User = Depends(require_role("commander"))):
     # Manual override / direct execution path (also used as fallback by /approve).
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     orchestrator = IncidentOrchestrator()
     orchestrator.execute_plan(incident_id, plan_id)
     return {"status": "EXECUTING"}
@@ -610,11 +650,19 @@ async def stream_events(incident_id: str, token: Optional[str] = None):
     if not token:
         raise HTTPException(status_code=401, detail="Missing token query parameter")
     try:
-        _jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = _jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except _jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
     except _jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Per docs build plan Priority 8 / spec §12.5 ("SSE cannot leak another
+    # tenant's events"): decoding the token only proves the caller holds
+    # SOME valid JWT -- it does not by itself prove they're allowed to see
+    # THIS incident's audit stream. Previously any valid token from any
+    # tenant could stream any incident's live agent-reasoning trail.
+    stream_db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(stream_db, incident_id, payload.get("tenant_id", "default_tenant"))
 
     async def event_generator():
         yield ": ping\n\n"

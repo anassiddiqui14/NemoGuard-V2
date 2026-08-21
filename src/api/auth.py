@@ -135,8 +135,17 @@ def get_mock_token(role: str = "admin"):
             "sub": "mock-user-123", 
             "email": "test@nemoguard.com", 
             "roles": [role],
-            "tenant_id": "tenant_A",
-            "workspace_id": "ws_alpha"
+            # Previously hardcoded to "tenant_A"/"ws_alpha", which never
+            # matches the "default_tenant" every demo/seed incident row
+            # actually carries (see migrations/002_domain_model.sql's
+            # column default) -- so once WP-002/WP-006's tenant scoping
+            # was added, the mock-login demo flow started returning 404 for
+            # every single incident sub-resource despite the incidents
+            # genuinely existing. Align the mock token's tenant with the
+            # actual default tenant used everywhere else so the dev-mode
+            # demo flow keeps working.
+            "tenant_id": "default_tenant",
+            "workspace_id": "default_workspace"
         },
         expires_delta=timedelta(days=1)
     )
