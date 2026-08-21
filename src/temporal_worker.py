@@ -7,6 +7,10 @@ from temporalio.worker import Worker
 from src.domain.workflows.incident_workflow import IncidentLifecycleWorkflow
 from src.domain.activities.triage_activity import triage_incident_activity
 from src.domain.activities.execution_activity import execute_plan_activity
+from src.domain.activities.lifecycle_activity import (
+    transition_incident_state_activity,
+    log_escalation_audit_event_activity,
+)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -22,7 +26,12 @@ async def main():
         client,
         task_queue="incident-task-queue",
         workflows=[IncidentLifecycleWorkflow],
-        activities=[triage_incident_activity, execute_plan_activity],
+        activities=[
+            triage_incident_activity,
+            execute_plan_activity,
+            transition_incident_state_activity,
+            log_escalation_audit_event_activity,
+        ],
     )
     logging.info("Starting Temporal Worker...")
     await worker.run()

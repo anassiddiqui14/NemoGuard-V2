@@ -608,6 +608,59 @@ async def execute_plan(incident_id: str, plan_id: str, current_user: User = Depe
     return {"status": "EXECUTING"}
 
 
+class CancelRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+@app.post("/api/v2/incidents/{incident_id}/cancel")
+async def cancel_incident(incident_id: str, req: CancelRequest, current_user: User = Depends(require_role("commander"))):
+    """
+    Per docs/NemoGuard_Enterprise_Hardening_and_Productization_Build_Plan.md
+    Priority 10 sections 14.3/14.4 ("cancel ... should be workflow signals").
+    Previously there was NO way to cancel an incident that was blocked
+    awaiting approval other than killing its Temporal workflow completely
+    out-of-band -- which bypasses the incident state machine entirely (no
+    audit trail, no legal-transition check) and leaves the underlying
+    incident row silently stuck at whatever status it was last in.
+
+    Mirrors /approve's signal-first pattern: if a live Temporal workflow
+    exists for this incident, signal it (the workflow itself performs the
+    actual AWAITING_APPROVAL -> CANCELLED state transition + audit event via
+    lifecycle_activity.py, keeping the state machine as the single source of
+    truth). If no live workflow can be reached (stale/absent), fall back to
+    performing the transition directly so the incident doesn't get stuck.
+    """
+    global temporal_client
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
+
+    signaled = False
+    if temporal_client:
+        try:
+            handle = temporal_client.get_workflow_handle(f"incident-{incident_id}")
+            await handle.signal(IncidentLifecycleWorkflow.cancel_incident, {"reason": req.reason or ""})
+            signaled = True
+        except Exception as e:
+            print(f"Temporal cancel signal failed (workflow may be stale/absent), falling back to direct transition: {e}")
+
+    if not signaled:
+        from src.domain.incident_state_service import IncidentStateService, IncidentNotFoundError
+        from src.domain.state_machine import InvalidTransitionError
+        state_service = IncidentStateService(db)
+        try:
+            state_service.transition(
+                incident_id=incident_id, to=IncidentState.CANCELLED,
+                actor=current_user.user_id, reason=req.reason or "Cancelled via API (no live workflow to signal).",
+            )
+        except IncidentNotFoundError:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        except InvalidTransitionError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        return {"status": "cancelled_directly", "reason": "temporal_unavailable_or_stale"}
+
+    return {"status": "signaled_temporal"}
+
+
 # ---------------------------------------------------------------------------
 # Admin: Capability catalog + policy administration (spec §17.3/§17.4).
 # Lets an admin see exactly what real capabilities are registered, what
