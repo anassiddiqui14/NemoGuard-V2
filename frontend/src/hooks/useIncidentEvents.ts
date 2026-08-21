@@ -34,7 +34,16 @@ export function useIncidentEvents(incidentId: string | null) {
         }
 
         setStatus('connecting');
-        const es = new EventSource(`/api/v2/incidents/${incidentId}/events/stream`);
+        // The SSE endpoint now requires authentication (previously it was
+        // completely open, exposing the full live agent-reasoning/audit
+        // trail to any network-reachable client). EventSource cannot send
+        // custom Authorization headers, so the JWT is passed as a query
+        // param instead -- the backend validates it the same way as the
+        // header-based flow (see api/main.py::stream_events).
+        const token = localStorage.getItem('nemoguard_token') || '';
+        const es = new EventSource(
+            `/api/v2/incidents/${incidentId}/events/stream?token=${encodeURIComponent(token)}`,
+        );
         esRef.current = es;
 
         es.onopen = () => setStatus('connected');

@@ -178,9 +178,17 @@ def get_overview():
         return {}
 
 @app.get("/api/v2/incidents")
-def list_incidents(state: str = "open"):
+def list_incidents(state: str = "open", current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
+        # Tenant scoping: every incident row carries a tenant_id (defaulted
+        # to 'default_tenant' for all existing/single-tenant data), but no
+        # query here previously filtered on it -- meaning any authenticated
+        # user could enumerate/read every incident regardless of which
+        # tenant's JWT they held. Scoping by current_user.tenant_id is safe
+        # for the existing single-tenant deployment (all rows already carry
+        # 'default_tenant') and closes the leak the moment a second tenant
+        # exists.
         # Include resolved_at so the frontend can show "time to resolve" for
         # resolved incidents instead of a live-ticking elapsed-time clock that
         # keeps counting up forever even after the incident is closed.
@@ -191,10 +199,15 @@ def list_incidents(state: str = "open"):
             # unchanged active incident in the operator queue.
             cursor = conn.execute(
                 "SELECT incident_id, title, status, severity, detected_at, next_sla_breach_at, owner_team, primary_job_id, summary, resolved_at "
-                "FROM incident WHERE status NOT IN ('RESOLVED', 'FAILED', 'CLOSED', 'CANCELLED') ORDER BY detected_at DESC"
+                "FROM incident WHERE tenant_id = %s AND status NOT IN ('RESOLVED', 'FAILED', 'CLOSED', 'CANCELLED') ORDER BY detected_at DESC",
+                (current_user.tenant_id,),
             )
         else:
-            cursor = conn.execute("SELECT incident_id, title, status, severity, detected_at, next_sla_breach_at, owner_team, primary_job_id, summary, resolved_at FROM incident ORDER BY detected_at DESC")
+            cursor = conn.execute(
+                "SELECT incident_id, title, status, severity, detected_at, next_sla_breach_at, owner_team, primary_job_id, summary, resolved_at "
+                "FROM incident WHERE tenant_id = %s ORDER BY detected_at DESC",
+                (current_user.tenant_id,),
+            )
             
         cols = [col[0] for col in cursor.description]
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
@@ -202,23 +215,30 @@ def list_incidents(state: str = "open"):
 # --- 12.2 Incident detail endpoints ---
 
 @app.get("/api/v2/incidents/{incident_id}")
-def get_incident(incident_id: str):
+def get_incident(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
-        cursor = conn.execute("SELECT * FROM incident WHERE incident_id = %s", (incident_id,))
+        cursor = conn.execute(
+            "SELECT * FROM incident WHERE incident_id = %s AND tenant_id = %s",
+            (incident_id, current_user.tenant_id),
+        )
         row = cursor.fetchone()
         if not row:
+            # Deliberately returns 404 (not 403) whether the incident simply
+            # doesn't exist OR belongs to another tenant -- avoids confirming
+            # to a caller that an incident ID they don't have access to
+            # actually exists in some other tenant.
             raise HTTPException(status_code=404, detail="Incident not found")
         cols = [col[0] for col in cursor.description]
         return dict(zip(cols, row))
 
 @app.get("/api/v2/incidents/{incident_id}/summary")
-def get_incident_summary(incident_id: str):
+def get_incident_summary(incident_id: str, current_user: User = Depends(get_current_user)):
     # For now, just return the incident details
-    return get_incident(incident_id)
+    return get_incident(incident_id, current_user)
 
 @app.get("/api/v2/incidents/{incident_id}/hypotheses")
-def get_hypotheses(incident_id: str):
+def get_hypotheses(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT * FROM hypothesis WHERE incident_id = %s ORDER BY confidence DESC", (incident_id,))
@@ -230,7 +250,7 @@ def get_hypotheses(incident_id: str):
         return rows
 
 @app.get("/api/v2/incidents/{incident_id}/evidence")
-def get_evidence(incident_id: str):
+def get_evidence(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT * FROM evidence WHERE incident_id = %s ORDER BY collected_at ASC", (incident_id,))
@@ -238,7 +258,7 @@ def get_evidence(incident_id: str):
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
 @app.get("/api/v2/incidents/{incident_id}/impact")
-def get_impact(incident_id: str):
+def get_impact(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
         cursor = conn.execute("""
@@ -254,7 +274,7 @@ def get_impact(incident_id: str):
         return rows
 
 @app.get("/api/v2/incidents/{incident_id}/plans")
-def get_plans(incident_id: str):
+def get_plans(incident_id: str, current_user: User = Depends(get_current_user)):
     from src.domain.plan_hash import compute_plan_hash
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
@@ -271,7 +291,7 @@ def get_plans(incident_id: str):
         return plans
 
 @app.get("/api/v2/incidents/{incident_id}/events")
-def get_events(incident_id: str):
+def get_events(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT * FROM audit_event WHERE incident_id = %s ORDER BY created_at ASC", (incident_id,))
@@ -279,7 +299,7 @@ def get_events(incident_id: str):
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
 @app.get("/api/v2/incidents/{incident_id}/alerts")
-def get_incident_alerts(incident_id: str):
+def get_incident_alerts(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
         cursor = conn.execute("""
@@ -291,7 +311,7 @@ def get_incident_alerts(incident_id: str):
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
 @app.get("/api/v2/alerts")
-def get_all_alerts():
+def get_all_alerts(current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT * FROM alert ORDER BY opened_ts DESC")
@@ -339,11 +359,24 @@ def get_runbooks_context():
 # --- 12.4 Workflow endpoints ---
 
 @app.post("/api/v2/ingest/webhook")
-async def ingest_webhook(payload: dict):
+async def ingest_webhook(payload: dict, request: Request):
     """
     Generic webhook endpoint for Datadog, PagerDuty, or Email-to-Webhook parsing.
     Passes the payload to the WatcherAgent to determine if it's a valid alert.
+
+    This endpoint is intentionally left open to unauthenticated callers
+    (real monitoring systems can't easily be issued NemoGuard JWTs), but is
+    now bounded by:
+      - a per-source-IP sliding-window rate limit (see rate_limit.py)
+      - a maximum payload size / nesting depth / string length (see
+        webhook_validation.py) before the payload is ever handed to an LLM.
     """
+    from src.api.rate_limit import enforce_webhook_rate_limit
+    from src.api.webhook_validation import validate_webhook_payload
+
+    enforce_webhook_rate_limit(request)
+    validate_webhook_payload(payload)
+
     orchestrator = IncidentOrchestrator()
     result = await orchestrator.process_webhook(payload)
     
@@ -551,7 +584,24 @@ async def reload_capability_policy(current_user: User = Depends(require_role("ad
 
 
 @app.get("/api/v2/incidents/{incident_id}/events/stream")
-async def stream_events(incident_id: str):
+async def stream_events(incident_id: str, token: Optional[str] = None):
+    # EventSource (used by the frontend's SSE client) cannot send custom
+    # Authorization headers, so the token must be passed as a query param.
+    # This endpoint was previously completely unauthenticated -- any
+    # network-reachable client could read the full live agent-reasoning /
+    # audit trail for any incident. Validate the token the same way
+    # get_current_user does, just via query param instead of a header.
+    import jwt as _jwt
+    from src.api.auth import SECRET_KEY, ALGORITHM
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token query parameter")
+    try:
+        _jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except _jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except _jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     async def event_generator():
         yield ": ping\n\n"
         db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))

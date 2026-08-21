@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main, enterprise-hardening]
+  pull_request:
+    branches: [main, enterprise-hardening]
+
+jobs:
+  backend-tests:
+    name: Backend (Python) — unit + integration tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: nemoguard
+          POSTGRES_PASSWORD: nemoguard_password
+          POSTGRES_DB: nemoguard_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nemoguard"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio
+
+      - name: Apply database schema
+        env:
+          POSTGRES_URL: postgresql://nemoguard:nemoguard_password@localhost:5432/nemoguard_db
+        run: |
+          python -c "
+          from src.store.postgres_database import PostgresDatabase
+          db = PostgresDatabase('postgresql://nemoguard:nemoguard_password@localhost:5432/nemoguard_db')
+          db.init_schema()
+          print('Schema initialized.')
+          "
+
+      - name: Run unit tests
+        env:
+          JWT_SECRET: ci-test-secret-not-for-production-use-only
+          ENV: development
+        run: |
+          python -m pytest tests/unit -v
+
+      - name: Run integration tests
+        env:
+          JWT_SECRET: ci-test-secret-not-for-production-use-only
+          ENV: development
+          POSTGRES_URL: postgresql://nemoguard:nemoguard_password@localhost:5432/nemoguard_db
+          TEST_POSTGRES_URL: postgresql://nemoguard:nemoguard_password@localhost:5432/nemoguard_db
+        run: |
+          python -m pytest tests/integration -v
+
+  frontend-build:
+    name: Frontend — typecheck + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck + build
+        run: npm run build
+
+  secret-scan:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependency-scan:
+    name: Python dependency vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit dependencies
+        run: |
+          pip install -e .
+          pip-audit --skip-editable || true
+        continue-on-error: true
