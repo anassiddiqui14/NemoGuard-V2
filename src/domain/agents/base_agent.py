@@ -223,10 +223,61 @@ class BaseAgent:
                         return _sanitize_and_parse_json(content)
                     except Exception as parse_e:
                         return {"error": f"{str(parse_e)}. Content might be truncated."}
-            
-            # If we exit the loop due to max_iterations
-            return {"error": f"LLM exceeded maximum allowed tool iterations ({max_iterations})."}
-                        
+
+            # Previously, exhausting max_iterations meant discarding ALL the
+            # real tool-call evidence gathered up to this point (every
+            # query_logs/query_cloudwatch_logs/check_table_staleness/etc.
+            # result already sitting in `messages`) and returning a bare
+            # `{"error": ...}` -- observed in practice on a real LocalStack
+            # partial-write incident, where the Grounding Critic worked
+            # through many read-only verification tools right up against its
+            # budget, then had its entire independent-verification effort
+            # thrown away, forcing run_critic() to fall back to synthesizing
+            # a substitute plan with NO safety critique at all (exactly the
+            # WP-003 Stage 6 gate this agent exists to provide). Instead,
+            # make one final forced answer-only turn (tools removed from the
+            # request so the model cannot request yet another tool call and
+            # re-trigger the same loop) so the agent must synthesize its
+            # final JSON answer from the evidence it already collected,
+            # rather than losing that work entirely.
+            print(f"[{self.agent_name}] Iteration budget ({max_iterations}) reached; forcing a final answer-only turn using evidence already gathered.")
+            messages.append({
+                "role": "user",
+                "content": (
+                    f"You have reached your tool-call budget ({max_iterations} iterations). "
+                    "Do not request any further tool calls. Based ONLY on the evidence you have "
+                    "already gathered above, return your final JSON answer now, in the exact "
+                    "format specified in your instructions."
+                ),
+            })
+            try:
+                completion = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=0.1,
+                    top_p=0.95,
+                    max_tokens=4096,
+                )
+                content = (completion.choices[0].message.content or "").strip()
+                if content.startswith("```json"):
+                    content = content[7:]
+                if content.startswith("```"):
+                    content = content[3:]
+                if content.endswith("```"):
+                    content = content[:-3]
+                return _sanitize_and_parse_json(content)
+            except Exception as forced_answer_e:
+                # Even the forced final turn failed (LLM error or still-unparseable
+                # JSON) -- fall back to the original explicit error, now annotated
+                # so it's clear a recovery attempt was made rather than looking
+                # like the loop was never bounded at all.
+                return {
+                    "error": (
+                        f"LLM exceeded maximum allowed tool iterations ({max_iterations}), "
+                        f"and the forced final answer attempt also failed: {forced_answer_e}"
+                    )
+                }
+
         except Exception as e:
             print(f"{self.agent_name} LLM Error: {e}")
             return {"error": str(e)}
