@@ -13,6 +13,7 @@ from typing import Dict, Any, List
 from src.store.postgres_database import PostgresDatabase
 from src.domain.enums import IncidentState
 from src.domain.incident_state_service import IncidentStateService
+from src.domain.impact_engine import assess_business_impact
 from src.domain.agents.base_agent import _sanitize_and_parse_json
 from src.domain.agents.rca_agent import RCAAgent
 from src.domain.agents.dependency_agent import DependencyAgent
@@ -43,6 +44,110 @@ class IncidentOrchestrator:
                 INSERT INTO audit_event (audit_event_id, incident_id, actor_type, actor_id, event_type, event_summary, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, (self._generate_id("AUD"), incident_id, "SYSTEM", actor, event_type, summary, datetime.now(timezone.utc).isoformat()))
+
+    def _save_deterministic_impact(
+        self,
+        conn,
+        *,
+        incident_id: str,
+        asset_id: str,
+        impact_type: str,
+        impact_status: str,
+        reason: str,
+        evidence_ids: list[str],
+    ) -> None:
+        """Persist observed impact facts with deterministic business-risk data.
+
+        Agent output may identify an affected asset and describe its observed
+        state, but it must never supply the score or SLA deadline. Those values
+        are calculated from the incident and the persisted CMDB-style
+        ``data_asset`` metadata.
+        """
+        normalized_asset_id = asset_id or "Unknown"
+        conn.execute("""
+            INSERT INTO data_asset (asset_id, asset_type, name)
+            VALUES (%s, 'Unknown', %s)
+            ON CONFLICT (asset_id) DO NOTHING
+        """, (normalized_asset_id, normalized_asset_id))
+
+        incident_cursor = conn.execute("""
+            SELECT severity, environment_id, detected_at
+            FROM incident
+            WHERE incident_id = %s
+        """, (incident_id,))
+        incident = incident_cursor.fetchone()
+        if not incident:
+            raise ValueError(f"Incident {incident_id} does not exist.")
+
+        asset_cursor = conn.execute("""
+            SELECT criticality, freshness_sla_minutes, estimated_user_count, impact_band
+            FROM data_asset
+            WHERE asset_id = %s
+        """, (normalized_asset_id,))
+        asset = asset_cursor.fetchone() or (None, None, None, None)
+        assessment = assess_business_impact(
+            incident_severity=incident[0],
+            incident_environment=incident[1],
+            impact_status=impact_status,
+            detected_at=incident[2],
+            asset_metadata={
+                "criticality": asset[0],
+                "freshness_sla_minutes": asset[1],
+                "estimated_user_count": asset[2],
+                "impact_band": asset[3],
+            },
+        )
+
+        conn.execute("""
+            INSERT INTO incident_impact (
+                incident_id, asset_id, impact_type, impact_status, reason,
+                expected_breach_at, impact_score, evidence_ids_json,
+                business_risk, minutes_to_breach, sla_status,
+                score_components_json
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (incident_id, asset_id) DO UPDATE SET
+                impact_type = EXCLUDED.impact_type,
+                impact_status = EXCLUDED.impact_status,
+                reason = EXCLUDED.reason,
+                expected_breach_at = EXCLUDED.expected_breach_at,
+                impact_score = EXCLUDED.impact_score,
+                evidence_ids_json = EXCLUDED.evidence_ids_json,
+                business_risk = EXCLUDED.business_risk,
+                minutes_to_breach = EXCLUDED.minutes_to_breach,
+                sla_status = EXCLUDED.sla_status,
+                score_components_json = EXCLUDED.score_components_json
+        """, (
+            incident_id,
+            normalized_asset_id,
+            impact_type or "Unknown",
+            impact_status or "AT_RISK",
+            reason or "",
+            assessment.expected_breach_at,
+            assessment.impact_score,
+            json.dumps(evidence_ids),
+            assessment.business_risk,
+            assessment.minutes_to_breach,
+            assessment.sla_status,
+            json.dumps(assessment.score_components, sort_keys=True),
+        ))
+
+        # The incident-level deadline is the earliest known asset SLA. A
+        # missing asset SLA leaves the existing known deadline untouched; it
+        # never fabricates a generic 30-minute countdown.
+        if assessment.expected_breach_at:
+            conn.execute("""
+                UPDATE incident
+                SET next_sla_breach_at = CASE
+                    WHEN next_sla_breach_at IS NULL
+                      OR next_sla_breach_at > %s THEN %s
+                    ELSE next_sla_breach_at
+                END
+                WHERE incident_id = %s
+            """, (
+                assessment.expected_breach_at,
+                assessment.expected_breach_at,
+                incident_id,
+            ))
 
     def call_llm_json(self, prompt: str) -> Dict[str, Any]:
         """Calls NVIDIA Nemotron and strictly extracts JSON response."""
@@ -217,19 +322,19 @@ class IncidentOrchestrator:
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (hyp_id, incident_id, "RCA-Agent", 1, hypothesis, cause_type, 0.95, "PROBABLE_CAUSE", json.dumps(evidence_ids), "[]", "[]", now))
 
-            # Impact analysis
+            # Impact analysis: LLMs identify affected assets and observed
+            # state; the deterministic engine owns risk scores and SLA facts.
             impacts = plan_data.get("impacts", [])
             for impact in impacts:
-                asset_id = impact.get("asset", "Unknown")
-                conn.execute("""
-                    INSERT INTO data_asset (asset_id, asset_type, name)
-                    VALUES (%s, 'Unknown', %s)
-                    ON CONFLICT (asset_id) DO NOTHING
-                """, (asset_id, asset_id))
-                conn.execute("""
-                    INSERT INTO incident_impact (incident_id, asset_id, impact_type, impact_status, reason, impact_score, evidence_ids_json)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (incident_id, asset_id, impact.get("type", "Unknown"), impact.get("status", "AT_RISK"), impact.get("reason", ""), 0.9, json.dumps(evidence_ids[:2])))
+                self._save_deterministic_impact(
+                    conn,
+                    incident_id=incident_id,
+                    asset_id=impact.get("asset", "Unknown"),
+                    impact_type=impact.get("type", "Unknown"),
+                    impact_status=impact.get("status", "AT_RISK"),
+                    reason=impact.get("reason", ""),
+                    evidence_ids=evidence_ids[:2],
+                )
 
             # Action Plan
             plan_id = self._generate_id("PLN")
@@ -329,18 +434,17 @@ class IncidentOrchestrator:
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (hyp_id, incident_id, "SYSTEM", idx+1, hyp.get("statement", ""), hyp.get("cause_type", "OTHER"), hyp.get("confidence", 0.5), "PROBABLE_CAUSE", json.dumps(evidence_ids), "[]", "[]", now))
                 
-            # 3. Insert Impacts
+            # 3. Persist observed impacts with deterministic score/SLA facts.
             for imp in llm_response.get("impacts", []):
-                asset_id = imp.get("asset_id", "Unknown")
-                conn.execute("""
-                    INSERT INTO data_asset (asset_id, asset_type, name)
-                    VALUES (%s, 'Unknown', %s)
-                    ON CONFLICT (asset_id) DO NOTHING
-                """, (asset_id, asset_id))
-                conn.execute("""
-                    INSERT INTO incident_impact (incident_id, asset_id, impact_type, impact_status, reason, impact_score, evidence_ids_json)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (incident_id, asset_id, imp.get("impact_type", "Unknown"), imp.get("status", "AT_RISK"), imp.get("reason", ""), imp.get("score", 0.5), json.dumps(evidence_ids)))
+                self._save_deterministic_impact(
+                    conn,
+                    incident_id=incident_id,
+                    asset_id=imp.get("asset_id", "Unknown"),
+                    impact_type=imp.get("impact_type", "Unknown"),
+                    impact_status=imp.get("status", "AT_RISK"),
+                    reason=imp.get("reason", ""),
+                    evidence_ids=evidence_ids,
+                )
                 
             # 4. Insert Action Plan
             plan_data = llm_response.get("action_plan", {})
@@ -505,18 +609,18 @@ class IncidentOrchestrator:
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (hyp_id, incident_id, "RCA-Agent", 1, hypothesis_statement, cause_type, 0.93, "PROBABLE_CAUSE", json.dumps(evidence_ids), "[]", "[]", now))
 
-            # Impact analysis
+            # Impact analysis: dependency-agent observations are retained, but
+            # the score and SLA state are calculated from persisted metadata.
             for imp in impacts_from_agent:
-                asset_id = imp.get("asset_id", "Unknown")
-                conn.execute("""
-                    INSERT INTO data_asset (asset_id, asset_type, name)
-                    VALUES (%s, 'Unknown', %s)
-                    ON CONFLICT (asset_id) DO NOTHING
-                """, (asset_id, asset_id))
-                conn.execute("""
-                    INSERT INTO incident_impact (incident_id, asset_id, impact_type, impact_status, reason, impact_score, evidence_ids_json)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (incident_id, asset_id, imp.get("impact_type"), imp.get("status"), imp.get("reason"), 0.9, "[]"))
+                self._save_deterministic_impact(
+                    conn,
+                    incident_id=incident_id,
+                    asset_id=imp.get("asset_id", "Unknown"),
+                    impact_type=imp.get("impact_type", "Unknown"),
+                    impact_status=imp.get("status", "AT_RISK"),
+                    reason=imp.get("reason", ""),
+                    evidence_ids=[],
+                )
 
             # Action Plan
             plan_id = self._generate_id("PLN")
@@ -572,6 +676,7 @@ class IncidentOrchestrator:
         from src.capabilities import plan_compiler, execution_engine
         from src.capabilities.intent_mapper import action_steps_to_intents
         from src.capabilities.models import VerificationStatus
+        from src.capabilities.plan_compiler import UnsupportedCapabilityError
 
         now = datetime.now(timezone.utc).isoformat()
 
@@ -598,7 +703,30 @@ class IncidentOrchestrator:
             incident_run_id = row[0] if row and row[0] else ""
 
         intents = action_steps_to_intents(steps, incident_run_id=incident_run_id)
-        compiled = plan_compiler.compile_plan(incident_id, plan_id, plan_version, intents)
+        try:
+            compiled = plan_compiler.compile_plan(incident_id, plan_id, plan_version, intents)
+        except UnsupportedCapabilityError as exc:
+            # Fail closed: no unrecognized/free-text operation may enter the
+            # execution engine. Preserve the plan for a human to translate
+            # into an explicitly registered governed capability and make the
+            # blocked automation outcome visible in the audit trail.
+            with self.db.get_connection() as conn:
+                conn.execute(
+                    "UPDATE action_plan SET status = %s WHERE action_plan_id = %s",
+                    (exc.code, plan_id),
+                )
+            self._log_audit(
+                incident_id,
+                "Capability Gateway",
+                exc.code,
+                f"Plan {plan_id} was not executed because {exc}. Human action is required.",
+            )
+            return {
+                "status": exc.code,
+                "plan_id": plan_id,
+                "intent_type": exc.intent.intent_type,
+                "reason": exc.intent.reason,
+            }
 
         # Walk the incident forward through whatever intermediate lifecycle
         # states it hasn't yet passed through on the way to EXECUTING. Plan
@@ -700,6 +828,12 @@ class IncidentOrchestrator:
         else:
             self._log_audit(incident_id, "Verifier", "VERIFICATION_FAILED", "One or more actions failed independent verification; incident NOT marked resolved.")
             self._log_audit(incident_id, "Commander", "INCIDENT_ESCALATED", "Plan execution did not verify successfully. Human intervention required.")
+
+        return {
+            "status": "EXECUTED" if all_verified else "FAILED_VERIFICATION",
+            "plan_id": plan_id,
+            "compiled_plan_hash": compiled.plan_hash,
+        }
 
     def triage_feedback(self, incident_id: str, feedback_text: str, submitted_by: str = "unknown") -> Dict[str, Any]:
         """
@@ -842,7 +976,17 @@ class IncidentOrchestrator:
         alerts_by_incident: Dict[str, List[Any]] = {}
         with self.db.get_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            cursor.execute("SELECT incident_id, title, summary, primary_run_id, status FROM incident WHERE status NOT IN ('RESOLVED', 'CLOSED', 'CANCELLED')")
+            # Terminal states (RESOLVED, FAILED, CLOSED, CANCELLED) must all
+            # be excluded here, matching the backend's other "open incident"
+            # definitions (see api/main.py's list_incidents). Previously
+            # FAILED was missing from this exclusion list, which meant a
+            # brand-new real alert could be deterministically/LLM-correlated
+            # onto an incident that had already terminated in failure days
+            # or weeks earlier -- observed live: a fresh CloudWatch alarm was
+            # matched (0.95 confidence) onto an 11-day-old FAILED incident by
+            # alarm-name/service proximity alone, with no check that the
+            # target incident was still actually open/actionable.
+            cursor.execute("SELECT incident_id, title, summary, primary_run_id, status FROM incident WHERE status NOT IN ('RESOLVED', 'FAILED', 'CLOSED', 'CANCELLED')")
             active_incidents = [dict(row) for row in cursor.fetchall()]
 
             if active_incidents:
@@ -1025,7 +1169,7 @@ class IncidentOrchestrator:
                     incident.summary,
                     incident.primary_run_id,
                     incident.correlation_confidence,
-                    (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
+                    None,
                     1
                 ))
                 

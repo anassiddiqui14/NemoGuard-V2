@@ -305,15 +305,25 @@ def get_impact(incident_id: str, current_user: User = Depends(get_current_user))
     _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     with db.get_connection() as conn:
         cursor = conn.execute("""
-            SELECT i.*, d.name as asset_name, d.freshness_sla_minutes 
-            FROM incident_impact i 
-            LEFT JOIN data_asset d ON i.asset_id = d.asset_id 
+            SELECT
+                i.*,
+                d.name AS asset_name,
+                d.criticality AS asset_criticality,
+                d.freshness_sla_minutes,
+                d.estimated_user_count,
+                d.impact_band,
+                d.business_process,
+                d.owner_team AS asset_owner_team
+            FROM incident_impact i
+            LEFT JOIN data_asset d ON i.asset_id = d.asset_id
             WHERE i.incident_id = %s
+            ORDER BY i.impact_score DESC, i.asset_id ASC
         """, (incident_id,))
         cols = [col[0] for col in cursor.description]
         rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
         for r in rows:
-            r['evidence_ids'] = json.loads(r['evidence_ids_json'])
+            r['evidence_ids'] = json.loads(r['evidence_ids_json'] or '[]')
+            r['score_components'] = json.loads(r.get('score_components_json') or '{}')
         return rows
 
 @app.get("/api/v2/incidents/{incident_id}/plans")
@@ -594,12 +604,18 @@ async def approve_plan(incident_id: str, plan_id: str, req: ApprovalRequest, cur
         except Exception as e:
             print(f"Temporal signal failed (workflow may be stale/absent), falling back to direct execution: {e}")
 
-    # Fallback: if we couldn't reach a live Temporal workflow, execute directly so the incident
-    # doesn't get stuck in APPROVED forever (closes the gap documented in the architecture doc §8.3).
-    if not signaled and req.decision == "approve":
-        orchestrator = IncidentOrchestrator()
-        orchestrator.execute_plan(incident_id, plan_id)
-        return {"status": "executed_directly", "reason": "temporal_unavailable_or_stale"}
+    # Fallback: if we couldn't reach a live Temporal workflow, execute only
+    # through the same governed Capability Gateway path. Normalize UI/API
+    # decision casing so APPROVED and approve behave identically.
+    if not signaled and req.decision.strip().upper() == "APPROVED":
+        result = IncidentOrchestrator().execute_plan(incident_id, plan_id)
+        if result.get("status") == "MANUAL_ACTION_REQUIRED":
+            raise HTTPException(status_code=409, detail=result)
+        return {
+            "status": "executed_directly",
+            "reason": "temporal_unavailable_or_stale",
+            "execution": result,
+        }
 
     return {"status": "signaled_temporal" if signaled else "success"}
 
@@ -608,9 +624,10 @@ async def execute_plan(incident_id: str, plan_id: str, current_user: User = Depe
     # Manual override / direct execution path (also used as fallback by /approve).
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
-    orchestrator = IncidentOrchestrator()
-    orchestrator.execute_plan(incident_id, plan_id)
-    return {"status": "EXECUTING"}
+    result = IncidentOrchestrator().execute_plan(incident_id, plan_id)
+    if result.get("status") == "MANUAL_ACTION_REQUIRED":
+        raise HTTPException(status_code=409, detail=result)
+    return result
 
 
 class CancelRequest(BaseModel):
