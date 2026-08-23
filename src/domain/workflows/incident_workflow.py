@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 from temporalio import workflow
 from temporalio.common import RetryPolicy
@@ -107,10 +108,19 @@ class IncidentLifecycleWorkflow:
         # incident nobody acted on would block this workflow (and sit at
         # PLAN_READY) forever with zero automated escalation.
         workflow.logger.info(f"Waiting for human approval for {incident_id} (timeout={effective_timeout})")
-        approval_received = await workflow.wait_condition(
-            lambda: self.approval_decision is not None or self.cancel_requested,
-            timeout=effective_timeout,
-        )
+        # `workflow.wait_condition` returns None after its predicate becomes
+        # true. It signals an elapsed timeout by raising asyncio.TimeoutError,
+        # rather than by returning a falsey value. Treating its return value
+        # as a boolean would therefore classify every real approval/cancel
+        # signal as a timeout and prevent approved plans from executing.
+        timed_out = False
+        try:
+            await workflow.wait_condition(
+                lambda: self.approval_decision is not None or self.cancel_requested,
+                timeout=effective_timeout,
+            )
+        except asyncio.TimeoutError:
+            timed_out = True
 
         if self.cancel_requested:
             workflow.logger.info(f"Cancellation requested for {incident_id}: {self.cancel_reason}")
@@ -119,7 +129,7 @@ class IncidentLifecycleWorkflow:
             )
             return {"status": "completed", "action": "cancelled"}
 
-        if not approval_received:
+        if timed_out:
             # Timed out waiting for a decision -- escalate rather than
             # blocking forever (build plan section 14.4 "escalation
             # timeout"). Moves the incident back to INVESTIGATING (a legal
@@ -163,7 +173,15 @@ class IncidentLifecycleWorkflow:
         Signal received from the API when a human clicks 'Approve' or 'Reject'.
         signal_data should be like: {"decision": "approve", "plan_id": "PLN-123"}
         """
-        self.approval_decision = signal_data.get("decision")
+        # API clients historically used both "approve" and the UI-style
+        # "APPROVED". Canonicalize at the workflow boundary so a valid human
+        # approval cannot be mistaken for a rejection after a restart.
+        raw_decision = signal_data.get("decision", "")
+        normalized_decision = raw_decision.strip().lower() if isinstance(raw_decision, str) else ""
+        self.approval_decision = {
+            "approved": "approve",
+            "rejected": "reject",
+        }.get(normalized_decision, normalized_decision)
         self.plan_id = signal_data.get("plan_id")
 
     @workflow.signal(name="cancel_incident")

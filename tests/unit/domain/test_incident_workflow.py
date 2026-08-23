@@ -191,6 +191,37 @@ class TestIncidentLifecycleWorkflow:
         assert "AWAITING_APPROVAL" in transitions_to
         assert "EXECUTING" in transitions_to
 
+    async def test_uppercase_approved_signal_executes_plan(self, env):
+        """The UI/API may send APPROVED; it must be treated as an approval."""
+        incident_id = "INC-TEST-UPPERCASE-APPROVAL"
+        task_queue = f"test-queue-{uuid.uuid4().hex[:8]}"
+        with env.auto_time_skipping_disabled():
+            async with Worker(
+                env.client,
+                task_queue=task_queue,
+                workflows=[IncidentLifecycleWorkflow],
+                activities=[
+                    fake_triage_incident_activity,
+                    fake_execute_plan_activity,
+                    fake_transition_incident_state_activity,
+                    fake_log_escalation_audit_event_activity,
+                ],
+            ):
+                handle = await env.client.start_workflow(
+                    IncidentLifecycleWorkflow.run,
+                    args=[incident_id, 3600],
+                    id=f"incident-{incident_id}",
+                    task_queue=task_queue,
+                )
+                await handle.signal(
+                    IncidentLifecycleWorkflow.approve_plan,
+                    {"decision": "APPROVED", "plan_id": "PLN-UPPERCASE"},
+                )
+                result = await handle.result()
+
+        assert result == {"status": "completed", "action": "executed"}
+        assert "EXECUTING" in [call["to"] for call in _transition_calls]
+
     async def test_reject_signal_returns_to_investigating_without_executing(self, env):
         incident_id = "INC-TEST-REJECT"
         task_queue = f"test-queue-{uuid.uuid4().hex[:8]}"

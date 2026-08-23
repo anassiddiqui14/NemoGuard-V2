@@ -273,6 +273,160 @@ ever reached the UI.
 2. Rebuilt and redeployed the `frontend` container; confirmed `curl` to
    `http://localhost:80/` returns `200`.
 
+## WP-008 — Temporal Approval Durability ✅ VALIDATED (2026-08-21)
+
+Validated the durable approval path across an actual isolated Temporal worker
+interruption against the real local Temporal, FastAPI, Postgres, and Capability
+Gateway services using `scripts/run_temporal_durability_test.py`.
+
+**Confirmed live:**
+- The production `IncidentLifecycleWorkflow` reaches persisted
+  `AWAITING_APPROVAL`, survives shutdown of its only isolated queue worker,
+  and resumes on a replacement worker after the `wait_condition`
+  timeout-handling correction.
+- The API accepts the UI-style uppercase `APPROVED` decision, validates the
+  plan hash, and returns `signaled_temporal`.
+- The controlled workflow completed through the real governed execution and
+  independent verification path.
+- Persistence is exactly-once for the fixture: one `ACTION_EXECUTED` audit
+  event, one passed `verification_result`, one succeeded action step, plan
+  `EXECUTED`, and incident `RESOLVED`.
+- Non-mutating revalidation against the new restarted-worker fixture still
+  reports the same one-action/one-verification terminal evidence.
+- `tests/unit/domain/test_incident_workflow.py` passes (`8 passed`) and
+  deterministically covers approval, uppercase approval normalization,
+  rejection, cancellation, approval timeout escalation, and
+  cancellation-priority behavior.
+
+The definitive procedure and retained evidence are documented in
+`docs/testing/temporal_durability_test.md`.
+
+**Validated evidence:**
+- Fresh fixture:
+  `INC-DURABILITY-RESTART-20260821135402-E28F14AB`.
+- Worker A stopped only after the persisted approval wait became active;
+  worker B resumed the same workflow on the same task queue.
+- API approval: `{"status":"signaled_temporal"}`.
+- Workflow completion: `{"status":"completed","action":"executed"}`.
+- Durable database revalidation: exactly one `ACTION_EXECUTED`, exactly one
+  `action_execution`, exactly one passed verification, step `SUCCEEDED`,
+  plan `EXECUTED`, incident `RESOLVED`.
+- Focused workflow regression suite: `8 passed`.
+- Full isolated unit suite: `137 passed` (`pytest tests/unit -q`).
+
+**Deployment-topology follow-up (not an application gate):**
+For release-environment assurance, stage a comparable test that stops and
+starts the deployed Compose `temporal-worker` container itself during
+`AWAITING_APPROVAL`. The current harness proves Temporal's actual
+workflow/worker recovery semantics, but deliberately leaves container
+orchestration behavior to deployment validation.
+
+## WP-009 — Governed Execution Only ✅ DONE (2026-08-21)
+
+Implemented the production safety rule from
+`NemoGuard_Next_Phase_Engineering_Execution_Plan_2026-08-21.md` §3.1/§6:
+an LLM-derived or legacy free-text plan step can no longer fall through to
+`ops.manual_step` or any other weaker executor.
+
+**Changed:**
+- `src/capabilities/plan_compiler.py`
+  - Replaced the unknown-intent fallback with
+    `UnsupportedCapabilityError`.
+  - `compile_plan()` now fails closed with
+    `MANUAL_ACTION_REQUIRED` when an intent is absent from the explicit,
+    registered `INTENT_TO_CAPABILITY` mapping.
+  - A stale mapping to an unregistered capability raises a configuration
+    error rather than attempting execution.
+- `src/domain/orchestrator.py::execute_plan`
+  - Catches unsupported compilation before any incident lifecycle
+    transition or capability execution.
+  - Persists `action_plan.status = MANUAL_ACTION_REQUIRED`, writes a
+    `MANUAL_ACTION_REQUIRED` audit event, and returns a structured outcome
+    identifying the unmapped intent and operator-visible reason.
+  - Returns explicit terminal execution results:
+    `EXECUTED` or `FAILED_VERIFICATION`, including the compiled-plan hash.
+- `src/api/main.py`
+  - Both `/execute` and the Temporal-unavailable `/approve` fallback
+    propagate the governed execution result.
+  - A blocked unsupported plan is returned as HTTP `409 Conflict`, not as
+    a misleading execution success.
+  - Direct-fallback approval decisions are normalized so `APPROVED` and
+    `approved` behave consistently.
+- `tests/unit/test_plan_compiler.py`
+  - Added regression coverage proving a mapped action resolves to its
+    registered governed capability and that arbitrary/legacy manual intents
+    fail with `MANUAL_ACTION_REQUIRED` before an execution path exists.
+
+`ops.manual_step` may remain in the registry for explicit compatibility or
+diagnostic use, but it is no longer selected by unknown production intent
+compilation.
+
+**Validation:**
+- Focused safety tests: `3 passed`.
+- Full isolated unit suite:
+  `JWT_SECRET=nemoguard-test-secret-for-pytest-only PYTHONPATH=. .venv/bin/python -m pytest tests/unit -q`
+  → `137 passed`.
+- Full repository invocation reached `142 passed`; its 9 remaining
+  integration failures are environment-coupling failures in
+  `tests/integration/test_multi_tenancy.py`: test-issued JWTs use the
+  ephemeral pytest secret while requests target a separately running API
+  configured with a different secret, so all responses are `401` before
+  tenant-isolation assertions execute. This is not attributable to WP-009.
+
+## WP-010 — Deterministic Business Impact & SLA Risk ✅ DONE (2026-08-21)
+
+Implemented an auditable, deterministic impact calculation path so business
+risk and SLA urgency are derived from persisted incident and CMDB metadata,
+not LLM output or a generic synthetic deadline.
+
+**Changed:**
+- `src/domain/impact_engine.py`
+  - Added the pure, database-free `assess_business_impact()` engine.
+  - Produces a normalized `impact_score`, categorical `business_risk`,
+    `expected_breach_at`, `minutes_to_breach`, `sla_status`, and a
+    component-level score explanation.
+  - Scores from canonical incident severity (`SEV_1`–`SEV_4` and descriptive
+    equivalents), environment, observed impact state, asset criticality,
+    estimated affected users, and configured impact band.
+  - Calculates an SLA deadline only from the affected asset's configured
+    `freshness_sla_minutes`; absent or invalid SLA data is explicitly
+    `UNKNOWN`, never an invented countdown.
+- `migrations/009_business_impact_engine.sql`
+  - Adds durable `business_risk`, `minutes_to_breach`, `sla_status`, and
+    `score_components_json` fields plus an incident/SLA-status index.
+- `src/domain/orchestrator.py`
+  - Replaced all three direct `incident_impact` writes (LangGraph, dynamic,
+    and native fallback triage) with one idempotent
+    `_save_deterministic_impact()` persistence path.
+  - Retains agent-produced asset/status/reason as observed evidence while
+    discarding agent-provided or hardcoded scores.
+  - Updates `incident.next_sla_breach_at` only with the earliest known
+    metadata-derived asset deadline; new webhook incidents begin with no
+    fabricated 30-minute breach time.
+- `src/api/main.py`
+  - Enriches and orders the existing impact endpoint with deterministic
+    score components, SLA state, business-risk label, and relevant asset
+    metadata, without changing its list response contract.
+- `frontend/src/components/dashboard/InvestigationPanels.tsx`
+  - Replaced the display-only average-severity/blocked-assets framing with
+    server-authoritative business-risk and SLA-at-risk metrics.
+  - Each asset now displays its calculated risk score and SLA state,
+    including the explicit `SLA UNKNOWN` safety state.
+- `tests/unit/domain/test_impact_engine.py`
+  - Covers critical high-blast-radius impact, near-breach SLA, elapsed/breached
+    SLA, and the no-fabricated-deadline behavior for absent SLA metadata.
+
+**Validation:**
+- Focused deterministic engine suite:
+  `.venv/bin/python -m pytest tests/unit/domain/test_impact_engine.py -q`
+  → `4 passed`.
+- Touched backend syntax:
+  `.venv/bin/python -m py_compile src/domain/impact_engine.py src/domain/orchestrator.py src/api/main.py`
+  → passed.
+- Frontend production build:
+  `npm --prefix frontend run build`
+  → passed (`tsc -b && vite build`).
+
 ## Phase 4+ — Deferred (see IMPLEMENTATION_PLAN_FROM_GPT_SPEC.md rationale)
 
 Multi-tenancy, SSO/SCIM, customer-side connector runtimes, a dedicated
