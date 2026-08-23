@@ -1,0 +1,67 @@
+{
+  "run_at": "2026-08-23T15:57:13.064156+00:00",
+  "results": [
+    {
+      "check_id": "AUTH-no-token-rejected",
+      "title": "Protected endpoint rejects requests with no bearer token",
+      "passed": true,
+      "detail": "expected 401/403, got 401"
+    },
+    {
+      "check_id": "RBAC-GET-/api/v2/admin/capabilities",
+      "title": "GET /api/v2/admin/capabilities denies role=viewer",
+      "passed": true,
+      "detail": "expected 403, got 403"
+    },
+    {
+      "check_id": "RBAC-GET-/api/v2/admin/capabilities",
+      "title": "GET /api/v2/admin/capabilities denies role=operator",
+      "passed": true,
+      "detail": "expected 403, got 403"
+    },
+    {
+      "check_id": "RBAC-POST-/api/v2/admin/capabilities/reload-policy",
+      "title": "POST /api/v2/admin/capabilities/reload-policy denies role=commander",
+      "passed": true,
+      "detail": "expected 403, got 403"
+    },
+    {
+      "check_id": "RBAC-POST-/api/v2/incidents/INC-DOES-NOT-EXIST/triage",
+      "title": "POST /api/v2/incidents/INC-DOES-NOT-EXIST/triage denies role=viewer",
+      "passed": true,
+      "detail": "expected 403, got 403"
+    },
+    {
+      "check_id": "RBAC-admin-capabilities-allowed",
+      "title": "GET /api/v2/admin/capabilities allows role=admin",
+      "passed": true,
+      "detail": "got 200"
+    },
+    {
+      "check_id": "PRIV-ESC-viewer-reload-policy",
+      "title": "viewer cannot reload capability policy",
+      "passed": true,
+      "detail": "expected 403, got 403"
+    },
+    {
+      "check_id": "PRIV-ESC-viewer-agent-findings",
+      "title": "viewer cannot post agent-findings (operator+ only)",
+      "passed": true,
+      "detail": "expected 403, got 403"
+    },
+    {
+      "check_id": "PLAN-HASH-mismatch-rejected",
+      "title": "Approving with a wrong plan_hash is never silently accepted",
+      "passed": true,
+      "detail": "expected 404 or 409 (never 200), got 404"
+    },
+    {
+      "check_id": "TENANT-nonexistent-incident-404",
+      "title": "Nonexistent incident returns 404 (not a leaking 403/500)",
+      "passed": true,
+      "detail": "expected 404, got 404"
+    }
+  ],
+  "passed": 10,
+  "total": 10
+}
