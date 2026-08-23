@@ -9,6 +9,7 @@ import { SituationHeader } from './SituationHeader';
 import { AlertsPanel, AgentAndHypothesisRow, ActivityAndImpactRow } from './InvestigationPanels';
 import { RecoveryRail } from './RecoveryRail';
 import { EvidenceModal } from './EvidenceModal';
+import { CancelIncidentModal } from './CancelIncidentModal';
 import { PlanApprovalModal } from '../PlanApprovalModal';
 import { WorkspaceTabs } from './WorkspaceTabs';
 import { EmptyState } from './shared';
@@ -43,6 +44,8 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [triageStarting, setTriageStarting] = useState(false);
     const [safetyAcknowledged, setSafetyAcknowledged] = useState(false);
+    const [cancelling, setCancelling] = useState(false);
+    const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
 
     const { evidence, hypothesis, hypotheses, plan, impact, alerts, loading: dataLoading } = useIncidentData(incidentId);
     const { events: liveEvents, status: sseStatus } = useIncidentEvents(incidentId);
@@ -133,6 +136,36 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
         }
     };
 
+    const handleConfirmCancelIncident = async (reason: string) => {
+        if (!selectedIncident) return;
+        setCancelling(true);
+        try {
+            const res = await authFetch(`/api/v2/incidents/${selectedIncident.incident_id}/cancel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: reason || undefined }),
+            });
+            if (!res.ok) {
+                let detail = `HTTP ${res.status}`;
+                try {
+                    const body = await res.json();
+                    detail = body?.detail || detail;
+                } catch {
+                    // response wasn't JSON; fall back to the status code above
+                }
+                toast.error(`Failed to cancel incident: ${detail}`);
+                return;
+            }
+            toast.success('Incident cancelled.');
+            setIsCancelModalOpen(false);
+            onRefreshParent();
+        } catch (e) {
+            toast.error(`Failed to cancel incident: ${e instanceof Error ? e.message : 'network error'}`);
+        } finally {
+            setCancelling(false);
+        }
+    };
+
     const isNeedsReview = plan?.status === 'NEEDS_REVIEW';
     const isIncidentResolved = selectedIncident?.status?.toUpperCase() === 'RESOLVED';
     const isPlanExecuted = plan?.status === 'EXECUTED' || plan?.status === 'APPROVED';
@@ -177,6 +210,8 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
                         hypothesis={hypothesis}
                         triageStarting={triageStarting}
                         handleStartTriage={handleStartTriage}
+                        onCancelIncident={() => setIsCancelModalOpen(true)}
+                        cancelling={cancelling}
                     />
                 }
                 investigation={
@@ -229,6 +264,17 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
             <AnimatePresence>
                 {isModalOpen && plan && (
                     <PlanApprovalModal incidentId={incidentId} plan={plan} onClose={() => setIsModalOpen(false)} onRefreshPlan={onRefreshParent} />
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {isCancelModalOpen && selectedIncident && (
+                    <CancelIncidentModal
+                        incidentId={selectedIncident.incident_id}
+                        submitting={cancelling}
+                        onClose={() => setIsCancelModalOpen(false)}
+                        onConfirm={handleConfirmCancelIncident}
+                    />
                 )}
             </AnimatePresence>
         </div>

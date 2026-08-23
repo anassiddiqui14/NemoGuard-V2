@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { PlayCircle, ShieldAlert, Clock, Users, Briefcase, Layers, AlarmClock } from 'lucide-react';
+import { PlayCircle, ShieldAlert, Clock, Users, Briefcase, Layers, AlarmClock, XCircle } from 'lucide-react';
 import { LifecycleStepper, formatElapsedSeconds, severityPill, statusBadge } from './shared';
 import type { IncidentSummary } from './shared';
 
@@ -11,6 +11,14 @@ interface Props {
     hypothesis: any;
     triageStarting: boolean;
     handleStartTriage: () => void;
+    // Cancelling is a distinct, human-in-the-loop lifecycle exit available at
+    // any point while an incident is still open — previously there was NO
+    // way to cancel an incident from the UI at all once it was created,
+    // regardless of stage (before a plan exists, awaiting approval, etc.),
+    // even though the backend has supported POST /cancel (a real Temporal
+    // signal, not a fake status flip) since WP-009's predecessor work.
+    onCancelIncident?: () => void;
+    cancelling?: boolean;
 }
 
 function Metric({ icon, label, value, sub, accent }: { icon: React.ReactNode; label: string; value: React.ReactNode; sub: string; accent?: string }) {
@@ -88,9 +96,18 @@ function SlaBreachCard({ incident, impact }: { incident: IncidentSummary; impact
     );
 }
 
-export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, triageStarting, handleStartTriage }: Props) {
+export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, triageStarting, handleStartTriage, onCancelIncident, cancelling }: Props) {
     const status = selectedIncident?.status?.toUpperCase() || '';
     const canTriage = selectedIncident && (status === 'DETECTED' || status === '');
+    // The backend's IncidentState machine (src/domain/state_machine.py)
+    // deliberately only permits CANCELLED as an outgoing transition from
+    // AWAITING_APPROVAL, not from every open state — cancelling mid-agent
+    // investigation isn't a supported operation (the agents own that phase;
+    // there's nothing running yet to safely tear down). Gating the button on
+    // the same condition the backend actually enforces avoids presenting a
+    // control that would otherwise fail with an HTTP 409 for every other
+    // open status (DETECTED, INVESTIGATING, PLAN_READY, etc.).
+    const canCancel = selectedIncident?.status?.toUpperCase() === 'AWAITING_APPROVAL' && !!onCancelIncident;
 
     return (
         <motion.div
@@ -134,16 +151,30 @@ export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, 
                         </div>
                     )}
 
-                    {canTriage && (
-                        <button
-                            onClick={handleStartTriage}
-                            disabled={triageStarting}
-                            className="press-scale inline-flex items-center gap-2 text-[13px] px-4 py-2 rounded-xl bg-gradient-to-r from-primary to-agent-active text-white hover:brightness-110 transition font-semibold disabled:opacity-60 shadow-lg shadow-primary/20"
-                        >
-                            <PlayCircle className="w-4 h-4" />
-                            {triageStarting ? 'Starting investigation…' : 'Start Triage Now'}
-                        </button>
-                    )}
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                        {canTriage && (
+                            <button
+                                onClick={handleStartTriage}
+                                disabled={triageStarting}
+                                className="press-scale inline-flex items-center gap-2 text-[13px] px-4 py-2 rounded-xl bg-gradient-to-r from-primary to-agent-active text-white hover:brightness-110 transition font-semibold disabled:opacity-60 shadow-lg shadow-primary/20"
+                            >
+                                <PlayCircle className="w-4 h-4" />
+                                {triageStarting ? 'Starting investigation…' : 'Start Triage Now'}
+                            </button>
+                        )}
+
+                        {canCancel && (
+                            <button
+                                onClick={onCancelIncident}
+                                disabled={cancelling}
+                                title="Stand this incident down without executing a recovery plan."
+                                className="press-scale inline-flex items-center gap-2 text-[13px] px-4 py-2 rounded-xl ring-1 ring-critical/35 text-critical hover:bg-critical/10 transition font-semibold disabled:opacity-60"
+                            >
+                                <XCircle className="w-4 h-4" />
+                                {cancelling ? 'Cancelling…' : 'Cancel Incident'}
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {selectedIncident && status !== 'RESOLVED' && <SlaBreachCard incident={selectedIncident} impact={impact} />}
