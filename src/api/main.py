@@ -795,6 +795,135 @@ async def reload_capability_policy(current_user: User = Depends(require_role("ad
     return {"status": "reloaded", "config_path": str(policy._CONFIG_PATH)}
 
 
+# ---------------------------------------------------------------------------
+# Adoption Readiness Dashboard (spec §20). Every value below is either read
+# directly from a persisted, real validation-run JSON artifact under
+# docs/validation/ (produced by scripts/run_validation_suite.py,
+# run_security_validation.py, run_ai_evaluation.py, or a pytest run) or
+# computed live from the actual incident/alert tables -- nothing here is
+# hardcoded or estimated. Missing artifacts are reported as "unknown"
+# rather than a fabricated placeholder value.
+# ---------------------------------------------------------------------------
+
+def _load_latest_validation_artifact(prefix: str) -> Optional[dict]:
+    """Reads the most recently modified docs/validation/{prefix}*.json
+    file, if any exists. Returns None (never a fabricated stand-in) when
+    no such artifact has been generated yet in this deployment."""
+    import glob
+    candidates = sorted(
+        glob.glob(f"docs/validation/{prefix}*.json"),
+        key=os.path.getmtime,
+        reverse=True,
+    )
+    if not candidates:
+        return None
+    try:
+        with open(candidates[0]) as f:
+            data = json.load(f)
+        data["_source_file"] = candidates[0]
+        return data
+    except Exception:
+        return None
+
+
+@app.get("/api/v2/admin/adoption-readiness")
+async def get_adoption_readiness(current_user: User = Depends(require_role("admin"))):
+    unit_tests = _load_latest_validation_artifact("unit_test_result")
+    scenario_suite = _load_latest_validation_artifact("core_suite_result")
+    security_suite = _load_latest_validation_artifact("security_result")
+    ai_eval = _load_latest_validation_artifact("ai_eval_result")
+
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    operational_metrics: Dict[str, Any] = {}
+    try:
+        with db.get_connection() as conn:
+            cur = conn.execute("SELECT COUNT(*) FROM incident WHERE tenant_id = %s", (current_user.tenant_id,))
+            total_incidents = cur.fetchone()[0]
+
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM incident WHERE tenant_id = %s AND status NOT IN ('RESOLVED', 'FAILED', 'CLOSED', 'CANCELLED')",
+                (current_user.tenant_id,),
+            )
+            active_incidents = cur.fetchone()[0]
+
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM alert a JOIN incident_alert ia ON a.alert_id = ia.alert_id "
+                "JOIN incident i ON ia.incident_id = i.incident_id WHERE i.tenant_id = %s",
+                (current_user.tenant_id,),
+            )
+            total_correlated_alerts = cur.fetchone()[0]
+
+            # Alert compression ratio (plan §16): how many raw alerts map
+            # into how few incidents -- a real, currently-observable ratio,
+            # not a marketing estimate. Guards against a divide-by-zero
+            # when no incidents exist yet in this tenant.
+            alert_compression_ratio = (
+                round(total_correlated_alerts / total_incidents, 2) if total_incidents else None
+            )
+
+            # Median time-to-resolve, computed only over incidents that
+            # actually have both a detected_at and resolved_at timestamp --
+            # never estimated for incidents still open.
+            cur = conn.execute(
+                "SELECT detected_at, resolved_at FROM incident "
+                "WHERE tenant_id = %s AND resolved_at IS NOT NULL AND detected_at IS NOT NULL",
+                (current_user.tenant_id,),
+            )
+            resolve_durations_sec = []
+            for detected_at, resolved_at in cur.fetchall():
+                try:
+                    d = datetime.fromisoformat(str(detected_at).replace("Z", "+00:00"))
+                    r = datetime.fromisoformat(str(resolved_at).replace("Z", "+00:00"))
+                    resolve_durations_sec.append((r - d).total_seconds())
+                except Exception:
+                    continue
+            median_mttr_seconds = None
+            if resolve_durations_sec:
+                resolve_durations_sec.sort()
+                mid = len(resolve_durations_sec) // 2
+                median_mttr_seconds = (
+                    resolve_durations_sec[mid]
+                    if len(resolve_durations_sec) % 2
+                    else (resolve_durations_sec[mid - 1] + resolve_durations_sec[mid]) / 2
+                )
+
+            operational_metrics = {
+                "total_incidents": total_incidents,
+                "active_incidents": active_incidents,
+                "total_correlated_alerts": total_correlated_alerts,
+                "alert_compression_ratio": alert_compression_ratio,
+                "resolved_incident_count_with_known_mttr": len(resolve_durations_sec),
+                "median_mttr_seconds": round(median_mttr_seconds, 1) if median_mttr_seconds is not None else None,
+            }
+    except Exception as e:
+        operational_metrics = {"error": str(e)}
+
+    def _summarize(artifact: Optional[dict], label: str) -> dict:
+        if not artifact:
+            return {"available": False, "label": label}
+        passed = artifact.get("passed")
+        total = artifact.get("total")
+        metrics = artifact.get("metrics")  # ai_eval_result carries its own metrics block
+        return {
+            "available": True,
+            "label": label,
+            "passed": passed,
+            "total": total,
+            "metrics": metrics,
+            "run_at": artifact.get("run_at"),
+            "source_file": artifact.get("_source_file"),
+        }
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "unit_tests": _summarize(unit_tests, "Unit Test Suite"),
+        "scenario_suite": _summarize(scenario_suite, "Real-AWS Scenario Suite (WP-VAL-002)"),
+        "security_suite": _summarize(security_suite, "Security & Governance Suite (WP-VAL-003)"),
+        "ai_evaluation": _summarize(ai_eval, "AI Evaluation Benchmark (WP-VAL-004)"),
+        "operational_metrics": operational_metrics,
+    }
+
+
 
 @app.get("/api/v2/incidents/{incident_id}/events/stream")
 async def stream_events(incident_id: str, token: Optional[str] = None):
