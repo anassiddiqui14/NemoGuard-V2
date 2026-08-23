@@ -549,3 +549,71 @@ def verify_row_count_matches_expected(table_name: str, run_id: str, expected_row
             conn.close()
         except Exception:
             pass
+
+
+def quarantine_poison_messages(queue_url: str, required_field: str, max_messages: int = 10, dry_run: bool = True) -> str:
+    """Real remediation for a "poison pill" SQS backup (e.g. the
+    poison_pill scenario -- a message missing a required field that a
+    consumer Lambda cannot process and which, without a DLQ, sits stuck
+    redelivering forever): receives up to max_messages from the queue,
+    inspects each message body as JSON, and DELETES only the ones
+    genuinely missing `required_field` -- the actual poison messages --
+    while leaving every valid message strictly untouched (it becomes
+    visible again for the real consumer after this call's short
+    VisibilityTimeout expires, exactly as if this function had never
+    touched it).
+
+    dry_run=True (the default) reports which messages WOULD be removed
+    without deleting anything, mirroring cleanup_partial_write's
+    dry-run-first pattern for a destructive queue operation.
+
+    A message whose body is not valid JSON, or is JSON but has no
+    consistent notion of "required field" (e.g. it's a list, not an
+    object), is treated as malformed and quarantined the same way a
+    missing-field message is -- both are messages the real consumer
+    cannot successfully process.
+    """
+    try:
+        sqs = _aws_client("sqs")
+        resp = sqs.receive_message(
+            QueueUrl=queue_url,
+            MaxNumberOfMessages=min(max_messages, 10),
+            VisibilityTimeout=5,
+            WaitTimeSeconds=1,
+        )
+        messages = resp.get("Messages", [])
+
+        quarantined = []
+        left_in_queue = []
+        for m in messages:
+            is_poison = True
+            try:
+                body = json.loads(m["Body"])
+                if isinstance(body, dict) and required_field in body:
+                    is_poison = False
+            except Exception:
+                is_poison = True  # unparseable body is itself a poison message
+
+            if is_poison:
+                quarantined.append({"message_id": m["MessageId"], "body": m["Body"]})
+                if not dry_run:
+                    sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=m["ReceiptHandle"])
+            else:
+                left_in_queue.append(m["MessageId"])
+
+        return json.dumps({
+            "queue_url": queue_url,
+            "required_field": required_field,
+            "dry_run": dry_run,
+            "messages_inspected": len(messages),
+            "quarantined_count": len(quarantined),
+            "quarantined_message_ids": [q["message_id"] for q in quarantined],
+            "left_in_queue_message_ids": left_in_queue,
+            "conclusion": (
+                f"Would quarantine {len(quarantined)} of {len(messages)} inspected message(s) missing '{required_field}' (dry run -- nothing deleted)."
+                if dry_run else
+                f"Quarantined (deleted) {len(quarantined)} of {len(messages)} inspected message(s) missing '{required_field}'."
+            ),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": f"Failed to quarantine poison messages on {queue_url}: {e}"})

@@ -45,3 +45,7 @@ capabilities:
   ops.manual_step:
     risk_level: LOW
     autonomy_mode: HUMAN_APPROVAL_REQUIRED
+
+  queue.quarantine_poison_message:
+    risk_level: MEDIUM
+    autonomy_mode: HUMAN_APPROVAL_REQUIRED

@@ -35,6 +35,7 @@ _EXACT_TOOL_NAME_MAP = {
     "idempotent_rerun_order_events_job": "RERUN_WRITE_JOB",
     "rerun_ingest_job": "RERUN_INGEST_JOB",
     "verify_row_count_matches_expected": "VERIFY_ROW_COUNT",
+    "quarantine_poison_messages": "QUARANTINE_POISON_MESSAGE",
 }
 
 
@@ -54,6 +55,8 @@ def _keyword_intent_type(tool_name: str, action_type: str) -> str:
         return "VERIFY_ROW_COUNT"
     if "rerun" in text or "retry" in text or "re-run" in text or "re-trigger" in text or "trigger" in text:
         return "RERUN_INGEST_JOB"
+    if "poison" in text or "quarantine" in text:
+        return "QUARANTINE_POISON_MESSAGE"
     return "MANUAL"  # deliberately unmapped -> ops.manual_step fallback
 
 
@@ -80,6 +83,12 @@ def action_step_to_intent(action_step: Dict[str, Any], incident_run_id: str = ""
         parameters.setdefault("run_id", incident_run_id or parameters.get("run_id", ""))
     if intent_type == "RERUN_INGEST_JOB":
         parameters.setdefault("run_id", incident_run_id or parameters.get("run_id", ""))
+    if intent_type == "QUARANTINE_POISON_MESSAGE":
+        # Best-effort defaults matching the real notification queue/schema
+        # used by the poison_pill scenario -- the capability's own
+        # precondition_check still refuses to run if the queue is genuinely
+        # empty, so an incorrect guess here is safe, never destructive.
+        parameters.setdefault("required_field", "user_id")
 
     return ActionIntent(
         intent_type=intent_type,

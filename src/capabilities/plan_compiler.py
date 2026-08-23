@@ -45,6 +45,7 @@ INTENT_TO_CAPABILITY: Dict[str, str] = {
     "RERUN_WRITE_JOB": "data.idempotent_rerun_order_events_job",
     "RERUN_INGEST_JOB": "compute.rerun_ingest_job",
     "VERIFY_ROW_COUNT": "ops.verify_row_count_matches_expected",
+    "QUARANTINE_POISON_MESSAGE": "queue.quarantine_poison_message",
 }
 
 

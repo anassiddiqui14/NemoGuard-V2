@@ -341,3 +341,78 @@ register(
     _manual_step_execute,
     _manual_step_verify,
 )
+
+
+# --- queue.quarantine_poison_message (ACTION, destructive but scoped) ------
+# Closes a real capability-gateway gap identified during WP-VAL-002/004
+# validation work: the poison_pill scenario is a fully validated, real
+# failure mode (a message missing a required field, e.g. 'user_id',
+# stuck redelivering to a consumer Lambda that keeps crashing on it) but
+# had NO registered remediation capability -- only read-only diagnostics
+# (peek_sqs_messages, get_sqs_queue_attributes) existed. Any recovery
+# plan step proposing to actually fix a poison-pill backup could
+# therefore only ever compile to the ops.manual_step fallback, even
+# though this is a real, safely-automatable remediation.
+
+def _quarantine_precondition(args: Dict[str, Any]) -> Tuple[bool, str]:
+    from src.domain.tools.aws_observability_tools import peek_sqs_messages
+    peek = json.loads(peek_sqs_messages(args["queue_url"], max_messages=args.get("max_messages", 10)))
+    if peek.get("error"):
+        return False, peek["error"]
+    if not peek.get("messages"):
+        return False, "Queue currently has no messages to inspect; quarantine would be a no-op and is refused."
+    return True, f"Confirmed {len(peek['messages'])} message(s) present on the queue to inspect."
+
+
+def _quarantine_execute(args: Dict[str, Any]) -> Dict[str, Any]:
+    from src.domain.tools.aws_observability_tools import quarantine_poison_messages
+    return json.loads(quarantine_poison_messages(
+        args["queue_url"], args["required_field"],
+        max_messages=args.get("max_messages", 10),
+        dry_run=args.get("dry_run", True),
+    ))
+
+
+def _quarantine_verify(args: Dict[str, Any], execute_result: Dict[str, Any]) -> VerificationOutcome:
+    if execute_result.get("dry_run"):
+        return VerificationOutcome(
+            action_id=args.get("_action_id", ""),
+            capability_id="queue.quarantine_poison_message",
+            status=VerificationStatus.SKIPPED,
+            checked_at=datetime.now(timezone.utc),
+            details=execute_result,
+        )
+    # Independent re-check: re-peek the queue and confirm none of the
+    # quarantined message IDs are still present (never trust the
+    # execute step's own "success" claim -- re-derive it from real state).
+    from src.domain.tools.aws_observability_tools import peek_sqs_messages
+    after = json.loads(peek_sqs_messages(args["queue_url"], max_messages=args.get("max_messages", 10)))
+    remaining_ids = {m["message_id"] for m in after.get("messages", [])}
+    quarantined_ids = set(execute_result.get("quarantined_message_ids", []))
+    still_present = quarantined_ids & remaining_ids
+    ok = not still_present and execute_result.get("quarantined_count", 0) >= 0
+    return VerificationOutcome(
+        action_id=args.get("_action_id", ""),
+        capability_id="queue.quarantine_poison_message",
+        status=VerificationStatus.PASSED if ok else VerificationStatus.FAILED,
+        checked_at=datetime.now(timezone.utc),
+        details={"quarantined_ids_still_present": list(still_present), "quarantined_count": execute_result.get("quarantined_count", 0)},
+        recommended_next_state="RESOLVED" if ok else "ESCALATED",
+    )
+
+
+register(
+    CapabilityDefinition(
+        capability_id="queue.quarantine_poison_message",
+        version="1.0.0",
+        kind=CapabilityKind.ACTION,
+        description="Inspects an SQS queue and deletes messages missing a required field (the real poison-pill pattern), leaving valid messages untouched.",
+        risk_level=RiskLevel.MEDIUM,
+        autonomy_mode=AutonomyMode.HUMAN_APPROVAL_REQUIRED,
+        supports_dry_run=True,
+        required_args=["queue_url", "required_field"],
+    ),
+    _quarantine_precondition,
+    _quarantine_execute,
+    _quarantine_verify,
+)
