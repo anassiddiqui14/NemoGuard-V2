@@ -25,6 +25,13 @@ dev = [
     "pytest",
     "pytest-asyncio",
 ]
+# Only needed to run scripts/run_validation_suite.py (WP-VAL-002) and the
+# localstack_lab/ scripts against the real-AWS-emulation lab -- not a
+# runtime dependency of the deployed application itself.
+validation = [
+    "boto3==1.34.144",
+    "botocore==1.34.144",
+]
 
 [build-system]
 requires = ["hatchling"]

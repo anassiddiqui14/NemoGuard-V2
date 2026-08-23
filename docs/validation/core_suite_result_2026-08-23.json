@@ -1,0 +1,103 @@
+{
+  "suite": "core",
+  "run_at": "2026-08-23T15:48:34.930447+00:00",
+  "results": [
+    {
+      "scenario_id": "VAL-SCHEMA-DRIFT-001",
+      "title": "Schema Drift (real Lambda KeyError -> real CloudWatch alarm)",
+      "run_id": "RUN-LOCALSTACK-schema_drift-27946d",
+      "started_at": "2026-08-23T15:43:26.176620+00:00",
+      "completed_at": "2026-08-23T15:44:32.745584+00:00",
+      "trigger_ok": true,
+      "incident_created": true,
+      "incident_id": "INC-8A6077C3",
+      "final_status": "INVESTIGATING",
+      "expected_terminal_states": [
+        "INVESTIGATING",
+        "PLAN_READY",
+        "AWAITING_APPROVAL"
+      ],
+      "passed": true,
+      "failure_reason": null,
+      "poll_seconds": 66.6
+    },
+    {
+      "scenario_id": "VAL-OOM-CRASH-001",
+      "title": "OOM Crash (real MemoryError inside the Lambda)",
+      "run_id": "RUN-LOCALSTACK-oom_crash-241c5b",
+      "started_at": "2026-08-23T15:44:32.745818+00:00",
+      "completed_at": "2026-08-23T15:45:44.330013+00:00",
+      "trigger_ok": true,
+      "incident_created": false,
+      "incident_id": "INC-8A6077C3",
+      "final_status": "INVESTIGATING",
+      "expected_terminal_states": [
+        "INVESTIGATING",
+        "PLAN_READY",
+        "AWAITING_APPROVAL"
+      ],
+      "passed": true,
+      "failure_reason": null,
+      "poll_seconds": 71.6
+    },
+    {
+      "scenario_id": "VAL-DB-OUTAGE-001",
+      "title": "DB Outage (real connection failure from the job)",
+      "run_id": "RUN-LOCALSTACK-db_outage-dc21a5",
+      "started_at": "2026-08-23T15:45:44.330273+00:00",
+      "completed_at": "2026-08-23T15:46:33.004682+00:00",
+      "trigger_ok": true,
+      "incident_created": false,
+      "incident_id": "INC-8A6077C3",
+      "final_status": "INVESTIGATING",
+      "expected_terminal_states": [
+        "INVESTIGATING",
+        "PLAN_READY",
+        "AWAITING_APPROVAL"
+      ],
+      "passed": true,
+      "failure_reason": null,
+      "poll_seconds": 48.7
+    },
+    {
+      "scenario_id": "VAL-PARTIAL-WRITE-001",
+      "title": "Partial Write Crash (Glue-style mid-batch crash)",
+      "run_id": "RUN-LOCALSTACK-order-events-partial_write_crash-7fc48f",
+      "started_at": "2026-08-23T15:46:33.004945+00:00",
+      "completed_at": "2026-08-23T15:47:36.988549+00:00",
+      "trigger_ok": true,
+      "incident_created": true,
+      "incident_id": "INC-B1EAC3D0",
+      "final_status": "INVESTIGATING",
+      "expected_terminal_states": [
+        "INVESTIGATING",
+        "PLAN_READY",
+        "AWAITING_APPROVAL"
+      ],
+      "passed": true,
+      "failure_reason": null,
+      "poll_seconds": 64.0
+    },
+    {
+      "scenario_id": "VAL-POISON-PILL-001",
+      "title": "Poison Pill (malformed SQS message)",
+      "run_id": "RUN-LOCALSTACK-notification-poison_pill-ca2125",
+      "started_at": "2026-08-23T15:47:36.988669+00:00",
+      "completed_at": "2026-08-23T15:48:34.929282+00:00",
+      "trigger_ok": true,
+      "incident_created": true,
+      "incident_id": "INC-17CB6EE5",
+      "final_status": "INVESTIGATING",
+      "expected_terminal_states": [
+        "INVESTIGATING",
+        "PLAN_READY",
+        "AWAITING_APPROVAL"
+      ],
+      "passed": true,
+      "failure_reason": null,
+      "poll_seconds": 57.9
+    }
+  ],
+  "passed": 5,
+  "total": 5
+}
