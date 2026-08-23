@@ -8,7 +8,8 @@ capabilities, with a stable content hash for approval-integrity binding.
 No LLM output is trusted to name a capability directly — the compiler is
 the only place that resolves an intent_type string to a capability_id, via
 the explicit INTENT_TO_CAPABILITY map below. Unknown/unmappable intents are
-compiled to the safe `ops.manual_step` fallback rather than dropped.
+rejected before execution: a human must perform or translate the action into
+a registered governed capability.
 """
 from __future__ import annotations
 
@@ -20,6 +21,19 @@ from typing import Any, Dict, List
 
 from . import registry
 from .models import ActionIntent, CompiledAction, CompiledPlan
+
+
+class UnsupportedCapabilityError(ValueError):
+    """Raised when a plan contains an intent with no registered capability."""
+
+    code = "MANUAL_ACTION_REQUIRED"
+
+    def __init__(self, intent: ActionIntent):
+        self.intent = intent
+        super().__init__(
+            f"{self.code}: intent_type={intent.intent_type!r} has no registered "
+            f"governed capability (reason: {intent.reason!r})"
+        )
 
 
 # Deterministic, explicit mapping from abstract intent types (used by
@@ -35,32 +49,49 @@ INTENT_TO_CAPABILITY: Dict[str, str] = {
 
 
 def _resolve_capability_id(intent: ActionIntent) -> str:
-    return INTENT_TO_CAPABILITY.get(intent.intent_type, "ops.manual_step")
+    capability_id = INTENT_TO_CAPABILITY.get(intent.intent_type)
+    if not capability_id:
+        raise UnsupportedCapabilityError(intent)
+    if not registry.is_registered(capability_id):
+        raise RuntimeError(
+            f"Capability mapping for intent_type={intent.intent_type!r} points to "
+            f"unregistered capability {capability_id!r}"
+        )
+    return capability_id
 
 
-def _compute_idempotency_key(incident_id: str, plan_version: int, sequence: int, capability_id: str, arguments: Dict[str, Any]) -> str:
-    payload = json.dumps({"incident_id": incident_id, "plan_version": plan_version, "sequence": sequence, "capability_id": capability_id, "arguments": arguments}, sort_keys=True, default=str)
+def _compute_idempotency_key(
+    incident_id: str,
+    plan_version: int,
+    sequence: int,
+    capability_id: str,
+    arguments: Dict[str, Any],
+) -> str:
+    payload = json.dumps(
+        {
+            "incident_id": incident_id,
+            "plan_version": plan_version,
+            "sequence": sequence,
+            "capability_id": capability_id,
+            "arguments": arguments,
+        },
+        sort_keys=True,
+        default=str,
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
 
 
-def compile_action(intent: ActionIntent, incident_id: str, plan_version: int, sequence: int) -> CompiledAction:
+def compile_action(
+    intent: ActionIntent, incident_id: str, plan_version: int, sequence: int
+) -> CompiledAction:
     capability_id = _resolve_capability_id(intent)
-
-    if registry.is_registered(capability_id):
-        definition = registry.get_definition(capability_id)
-    else:
-        # Should never happen given the fallback above, but fail safe.
-        capability_id = "ops.manual_step"
-        definition = registry.get_definition(capability_id)
-
+    definition = registry.get_definition(capability_id)
     arguments = dict(intent.parameters)
-    # For the manual-step fallback, always carry the original intent's
-    # reason/expected_effect so a human has full context.
-    if capability_id == "ops.manual_step":
-        arguments.setdefault("instructions", f"{intent.intent_type}: {intent.reason} (target: {intent.target_resource_type}/{intent.target_resource_id})")
 
     action_id = f"ACT-{uuid.uuid4().hex[:10].upper()}"
-    idempotency_key = _compute_idempotency_key(incident_id, plan_version, sequence, capability_id, arguments)
+    idempotency_key = _compute_idempotency_key(
+        incident_id, plan_version, sequence, capability_id, arguments
+    )
 
     return CompiledAction(
         action_id=action_id,
@@ -80,7 +111,9 @@ def compile_action(intent: ActionIntent, incident_id: str, plan_version: int, se
     )
 
 
-def _hash_compiled_plan(incident_id: str, plan_version: int, actions: List[CompiledAction]) -> str:
+def _hash_compiled_plan(
+    incident_id: str, plan_version: int, actions: List[CompiledAction]
+) -> str:
     payload = {
         "incident_id": incident_id,
         "plan_version": plan_version,
@@ -101,11 +134,18 @@ def _hash_compiled_plan(incident_id: str, plan_version: int, actions: List[Compi
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def compile_plan(incident_id: str, plan_id: str, plan_version: int, intents: List[ActionIntent]) -> CompiledPlan:
+def compile_plan(
+    incident_id: str, plan_id: str, plan_version: int, intents: List[ActionIntent]
+) -> CompiledPlan:
     """
     The single entry point for turning a list of agent-proposed ActionIntents
     into a hashable, executable CompiledPlan. Deterministic: same intents in,
     same compiled plan + hash out.
+
+    Raises:
+        UnsupportedCapabilityError: an intent is not mapped to a registered,
+            governed capability. Callers must require manual action rather
+            than route it through a generic execution fallback.
     """
     actions = [
         compile_action(intent, incident_id, plan_version, sequence=i + 1)
