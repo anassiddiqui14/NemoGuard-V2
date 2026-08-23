@@ -67,6 +67,9 @@ services:
       - TEMPORAL_URL=temporal:7233
       - NVIDIA_API_KEY=${NVIDIA_API_KEY:?NVIDIA_API_KEY must be set in .env}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
+      # Default-off staging switch used only by the controlled Compose worker
+      # restart durability exercise. When 0, the worker always runs real triage.
+      - NEMOGUARD_PRECREATED_PLAN_TRIAGE=${NEMOGUARD_PRECREATED_PLAN_TRIAGE:-0}
 
   frontend:
     build:
@@ -78,14 +81,24 @@ services:
 
   simulator:
     build:
-      context: ./simulator_backend
-      dockerfile: Dockerfile.simulator
+      # Build context is the repo root (not ./simulator_backend) so this
+      # image can also bundle localstack_lab/ -- see
+      # simulator_backend/Dockerfile.simulator for why.
+      context: .
+      dockerfile: simulator_backend/Dockerfile.simulator
     container_name: nemoguard-simulator
     ports:
       - "8001:8001"
     environment:
       - POSTGRES_URL=postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db
       - NVIDIA_API_KEY=${NVIDIA_API_KEY:?NVIDIA_API_KEY must be set in .env}
+      # Scenario Cockpit's "real AWS lab" scenarios (/lab/*) talk to
+      # LocalStack over this endpoint. The simulator can start without the
+      # `lab` profile's localstack service running at all -- those specific
+      # endpoints simply report the lab as unavailable in that case (see
+      # main.py's /lab/status) rather than failing the whole service.
+      - LOCALSTACK_ENDPOINT=http://localstack:4566
+      - NEMOGUARD_API_BASE=http://api:8000
 
   # --- LocalStack lab (real-AWS-API simulation for effectiveness testing) ---
   # See localstack_lab/README.md. Provides real S3/Lambda/CloudWatch/SNS/SQS
