@@ -1,0 +1,57 @@
+{
+  "run_at": "2026-08-23T16:29:20.216050+00:00",
+  "results": [
+    {
+      "scenario_id": "AI-EVAL-SCHEMA-DRIFT",
+      "incident_id": "INC-58217155",
+      "top1_cause_type": "SCHEMA_REGRESSION",
+      "top1_confidence": 0.95,
+      "top1_correct": true,
+      "top3_correct": true,
+      "hypothesis_count": 2,
+      "evidence_count": 1,
+      "final_status": "AWAITING_APPROVAL",
+      "false_resolution": false,
+      "passed": true,
+      "failure_reason": null,
+      "poll_seconds": 328.9
+    },
+    {
+      "scenario_id": "AI-EVAL-PARTIAL-WRITE",
+      "incident_id": "INC-A677F641",
+      "top1_cause_type": null,
+      "top1_confidence": null,
+      "top1_correct": false,
+      "top3_correct": false,
+      "hypothesis_count": 0,
+      "evidence_count": 0,
+      "final_status": "INVESTIGATING",
+      "false_resolution": false,
+      "passed": false,
+      "failure_reason": "no hypotheses produced for INC-A677F641 within 360s",
+      "poll_seconds": 366.7
+    },
+    {
+      "scenario_id": "AI-EVAL-POISON-PILL",
+      "incident_id": "INC-6939774F",
+      "top1_cause_type": "DATA_QUALITY",
+      "top1_confidence": 0.95,
+      "top1_correct": true,
+      "top3_correct": true,
+      "hypothesis_count": 2,
+      "evidence_count": 2,
+      "final_status": "AWAITING_APPROVAL",
+      "false_resolution": false,
+      "passed": true,
+      "failure_reason": null,
+      "poll_seconds": 232.3
+    }
+  ],
+  "metrics": {
+    "rca_top1_accuracy": 0.667,
+    "rca_top3_accuracy": 0.667,
+    "false_resolution_count": 0,
+    "scenarios_passed": 2,
+    "scenarios_total": 3
+  }
+}
