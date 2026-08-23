@@ -277,6 +277,61 @@ def get_incident_summary(incident_id: str, current_user: User = Depends(get_curr
     # For now, just return the incident details
     return get_incident(incident_id, current_user)
 
+@app.get("/api/v2/incidents/{incident_id}/evidence-package")
+def get_incident_evidence_package(incident_id: str, current_user: User = Depends(get_current_user)):
+    """
+    Assembles the incident's complete, auditable decision trail into a
+    single exportable JSON document -- per
+    docs/NemoGuard_Validation_Demonstration_and_Adoption_Readiness_Plan.md
+    §21 ("Generate an Incident Evidence Package"): metadata, source alerts,
+    hypotheses, evidence, impact, recovery plan(s), and the full audit
+    timeline in one place, valuable for audits, architecture review,
+    customer adoption conversations, and postmortems.
+
+    This intentionally reuses each existing single-purpose endpoint's own
+    query logic (via direct function calls) rather than re-deriving a
+    second, potentially-drifting copy of the same SQL, and applies the
+    exact same tenant-scoping guarantee (404, not 403, for cross-tenant or
+    nonexistent incidents) as every other incident sub-resource.
+    """
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
+
+    incident = get_incident(incident_id, current_user)
+    hypotheses = get_hypotheses(incident_id, current_user)
+    evidence = get_evidence(incident_id, current_user)
+    impact = get_impact(incident_id, current_user)
+    plans = get_plans(incident_id, current_user)
+    alerts = get_incident_alerts(incident_id, current_user)
+
+    with db.get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT * FROM audit_event WHERE incident_id = %s ORDER BY created_at ASC",
+            (incident_id,),
+        )
+        cols = [col[0] for col in cursor.description]
+        audit_timeline = [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+        cursor = conn.execute(
+            "SELECT * FROM verification_result WHERE incident_id = %s ORDER BY checked_at ASC",
+            (incident_id,),
+        )
+        cols = [col[0] for col in cursor.description]
+        verification_results = [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    return {
+        "package_generated_at": datetime.now(timezone.utc).isoformat(),
+        "package_generated_by": current_user.user_id,
+        "incident": incident,
+        "alerts": alerts,
+        "hypotheses": hypotheses,
+        "evidence": evidence,
+        "impact": impact,
+        "recovery_plans": plans,
+        "verification_results": verification_results,
+        "audit_timeline": audit_timeline,
+    }
+
 @app.get("/api/v2/incidents/{incident_id}/hypotheses")
 def get_hypotheses(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
