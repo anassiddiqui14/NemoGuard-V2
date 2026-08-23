@@ -207,35 +207,24 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                         {impact.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
                                 {/*
-                                  Every radar axis below is derived from real
-                                  incident_impact rows -- previously this chart
-                                  plotted three entirely FABRICATED axes
-                                  ("Dashboards", "Latency", "Risk") as flat
-                                  constants (2, 2, 8) whenever ANY impact
-                                  existed, regardless of the incident's actual
-                                  severity or blast radius -- meaning the chart
-                                  looked visually identical for a minor and a
-                                  catastrophic incident. Replaced with axes
-                                  computed purely from real columns already
-                                  returned by GET /incidents/{id}/impact:
-                                  impact_type (Jobs/Products counts) and
-                                  impact_score + impact_status (a genuine
-                                  average-severity axis and a genuine
-                                  currently-blocked-asset-ratio axis).
+                                  Every axis is derived from authoritative
+                                  incident_impact fields. Risk is calculated
+                                  server-side from persisted incident/CMDB
+                                  metadata; it is not a model-provided score.
                                 */}
                                 <RadarChart cx="50%" cy="50%" outerRadius="75%" data={[
                                     { subject: 'Jobs', A: impact.filter((i) => i.impact_type?.includes('Job')).length, fullMark: Math.max(impact.length, 5) },
                                     { subject: 'Products', A: impact.filter((i) => !i.impact_type?.includes('Job')).length, fullMark: Math.max(impact.length, 5) },
                                     {
-                                        subject: 'Avg. severity',
+                                        subject: 'Business risk',
                                         A: Math.round(
                                             (impact.reduce((sum, i) => sum + (typeof i.impact_score === 'number' ? i.impact_score : 0), 0) / impact.length) * 10,
                                         ),
                                         fullMark: 10,
                                     },
                                     {
-                                        subject: 'Blocked assets',
-                                        A: impact.filter((i) => (i.impact_status || i.status)?.toUpperCase() === 'BLOCKED').length,
+                                        subject: 'SLA at risk',
+                                        A: impact.filter((i) => ['AT_RISK', 'BREACHED'].includes(String(i.sla_status || '').toUpperCase())).length,
                                         fullMark: Math.max(impact.length, 5),
                                     },
                                 ]}>
@@ -262,12 +251,21 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                                         transition={{ delay: 0.08 * idx }}
                                         className="flex items-center justify-between p-2.5 mb-1.5 rounded-lg bg-white/[0.02] ring-1 ring-white/[0.05]"
                                     >
-                                        <span className="font-medium text-[12px] text-text-secondary break-words pr-2 truncate">{imp.asset_name || imp.asset_id}</span>
+                                        <div className="min-w-0 pr-2">
+                                            <div className="font-medium text-[12px] text-text-secondary truncate">{imp.asset_name || imp.asset_id}</div>
+                                            <div className="text-[9.5px] text-text-muted mt-0.5">
+                                                {imp.business_risk ? `${imp.business_risk} risk · ${Math.round((imp.impact_score || 0) * 100)} score` : (imp.impact_status || imp.status || 'AT RISK')}
+                                            </div>
+                                        </div>
                                         <span
-                                            className={`text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${imp.impact_status === 'BLOCKED' || imp.status === 'BLOCKED' ? 'bg-critical/15 text-critical' : 'bg-warning/15 text-warning'
+                                            className={`text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${String(imp.sla_status || '').toUpperCase() === 'BREACHED'
+                                                    ? 'bg-critical/15 text-critical'
+                                                    : String(imp.sla_status || '').toUpperCase() === 'AT_RISK'
+                                                        ? 'bg-warning/15 text-warning'
+                                                        : 'bg-healthy/15 text-healthy'
                                                 }`}
                                         >
-                                            {imp.impact_status || imp.status || 'AT RISK'}
+                                            {imp.sla_status === 'UNKNOWN' ? 'SLA UNKNOWN' : (imp.sla_status || imp.impact_status || imp.status || 'AT RISK')}
                                         </span>
                                     </motion.div>
                                 ))}
