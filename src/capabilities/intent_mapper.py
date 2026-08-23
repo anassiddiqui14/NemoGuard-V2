@@ -38,6 +38,8 @@ _EXACT_TOOL_NAME_MAP = {
     "quarantine_poison_messages": "QUARANTINE_POISON_MESSAGE",
     "find_duplicate_order_ids": "CHECK_DUPLICATE_ORDER_IDS",
     "acknowledge_and_reset_alarm": "ACKNOWLEDGE_ALARM",
+    "start_glue_job_run": "START_GLUE_JOB_RUN",
+    "stop_glue_job_run": "STOP_GLUE_JOB_RUN",
 }
 
 

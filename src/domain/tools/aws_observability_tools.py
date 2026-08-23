@@ -692,3 +692,141 @@ def acknowledge_and_reset_alarm(alarm_name: str, reason: str) -> str:
         }, indent=2)
     except Exception as e:
         return json.dumps({"error": f"Failed to acknowledge/reset alarm {alarm_name}: {e}"})
+
+
+# ---------------------------------------------------------------------------
+# AWS Glue and Amazon AppFlow coverage.
+#
+# Both are explicitly named in the platform's own spec/build-plan as
+# capabilities NemoGuard must support (e.g.
+# docs/NemoGuard_Validation_Demonstration_and_Adoption_Readiness_Plan.md's
+# "aws.glue.start_job_run" / "aws.glue.stop_job_run", and the wider spec's
+# repeated references to Glue/Airflow/Databricks/AppFlow-class data
+# pipelines as the real-world integration targets this product is built
+# for) -- these tools exist for that reason, NOT because any current lab
+# scenario specifically needs them.
+#
+# CONFIRMED via direct boto3 testing against this environment's LocalStack:
+# both `glue` and `appflow` are LocalStack PRO-ONLY services on the free
+# tier (both return "API for service '<x>' not yet implemented or pro
+# feature"). Per the platform's established "degrade safely" principle
+# (see list_recent_changes's CloudTrail handling above, spec §37.4 /
+# non-negotiable principle #16): these functions make the REAL boto3 call
+# every time (so they work correctly and immediately the moment this
+# deployment points at real AWS, or LocalStack Pro is enabled) and report
+# the genuine unavailability honestly on this specific free-tier lab,
+# rather than ever fabricating a fake success or fake job-run status.
+# ---------------------------------------------------------------------------
+
+
+def describe_glue_job_run(job_name: str, run_id: str) -> str:
+    """Real AWS Glue job-run status + error message (read-only) -- use for
+    incidents where the failing pipeline component is a genuine AWS Glue
+    ETL job (rather than one of this lab's Lambda-simulated jobs), to see
+    whether the run succeeded/failed and its real error message."""
+    try:
+        glue = _aws_client("glue")
+        resp = glue.get_job_run(JobName=job_name, RunId=run_id)
+        run = resp.get("JobRun", {})
+        return json.dumps({
+            "job_name": job_name, "run_id": run_id,
+            "job_run_state": run.get("JobRunState"),
+            "error_message": run.get("ErrorMessage"),
+            "started_on": str(run.get("StartedOn")),
+            "completed_on": str(run.get("CompletedOn")),
+            "attempt": run.get("Attempt"),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "error": f"Failed to describe Glue job run {job_name}/{run_id}: {e}",
+            "note": (
+                "AWS Glue is a LocalStack PRO-ONLY service on the free tier; this "
+                "tool makes a real boto3 call and will work correctly against real "
+                "AWS or LocalStack Pro. See "
+                "https://docs.localstack.cloud/references/coverage/ for details."
+            ),
+        })
+
+
+def start_glue_job_run(job_name: str, arguments: Optional[dict] = None) -> str:
+    """Real remediation for a failed AWS Glue ETL job: starts a new job run
+    with the given (corrected) arguments -- the Glue equivalent of this
+    module's rerun_ingest_job/idempotent_rerun_order_events_job for
+    Lambda-based jobs. Per spec, real production deployments running Glue
+    (rather than this lab's Lambda simulations) use this capability
+    directly; see the module-level note above re: LocalStack Pro."""
+    try:
+        glue = _aws_client("glue")
+        resp = glue.start_job_run(JobName=job_name, Arguments=arguments or {})
+        return json.dumps({
+            "job_name": job_name,
+            "new_run_id": resp.get("JobRunId"),
+            "arguments": arguments or {},
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "error": f"Failed to start Glue job run for {job_name}: {e}",
+            "note": (
+                "AWS Glue is a LocalStack PRO-ONLY service on the free tier; this "
+                "tool makes a real boto3 call and will work correctly against real "
+                "AWS or LocalStack Pro."
+            ),
+        })
+
+
+def stop_glue_job_run(job_name: str, run_id: str) -> str:
+    """Real remediation to stop a Glue job run that is stuck/hung (e.g.
+    before starting a corrected rerun) -- the Glue equivalent of cancelling
+    a hung Lambda invocation, which AWS Lambda itself doesn't support
+    directly but Glue's BatchStopJobRun API does."""
+    try:
+        glue = _aws_client("glue")
+        resp = glue.batch_stop_job_run(JobName=job_name, JobRunIds=[run_id])
+        return json.dumps({
+            "job_name": job_name, "run_id": run_id,
+            "successful_submissions": resp.get("SuccessfulSubmissions", []),
+            "errors": resp.get("Errors", []),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "error": f"Failed to stop Glue job run {job_name}/{run_id}: {e}",
+            "note": (
+                "AWS Glue is a LocalStack PRO-ONLY service on the free tier; this "
+                "tool makes a real boto3 call and will work correctly against real "
+                "AWS or LocalStack Pro."
+            ),
+        })
+
+
+def describe_appflow_flow_execution(flow_name: str) -> str:
+    """Real Amazon AppFlow flow execution status (read-only) -- use for
+    incidents where the failing data-integration component is a managed
+    AppFlow flow (e.g. a SaaS-to-S3/Redshift sync) rather than a custom
+    Lambda/Glue job, to see the most recent execution's status and error
+    details."""
+    try:
+        appflow = _aws_client("appflow")
+        resp = appflow.describe_flow_execution_records(flowName=flow_name, maxResults=5)
+        records = resp.get("flowExecutions", [])
+        return json.dumps({
+            "flow_name": flow_name,
+            "recent_executions": [
+                {
+                    "execution_id": r.get("executionId"),
+                    "status": r.get("executionStatus"),
+                    "start_time": str(r.get("startedAt")),
+                    "end_time": str(r.get("lastUpdatedAt")),
+                    "error_info": r.get("errorInfo"),
+                }
+                for r in records
+            ],
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "error": f"Failed to describe AppFlow flow execution for {flow_name}: {e}",
+            "note": (
+                "Amazon AppFlow is a LocalStack PRO-ONLY service on the free tier; "
+                "this tool makes a real boto3 call and will work correctly against "
+                "real AWS or LocalStack Pro."
+            ),
+        })

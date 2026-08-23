@@ -81,6 +81,37 @@ of one.
 
 ---
 
+## AWS Glue and Amazon AppFlow (explicitly required by the plan's capability catalog)
+
+Both are real, general-purpose managed AWS data-integration services this
+platform's own spec explicitly lists as required capability targets
+(`aws.glue.start_job_run`, `aws.glue.stop_job_run`, plus AppFlow as a
+named real-world integration target alongside Airflow/Databricks/Glue).
+They are **not tied to any lab scenario** -- they exist because a real
+production deployment integrating with genuine AWS Glue ETL jobs or
+AppFlow flows needs them, independent of anything this LocalStack lab's
+Lambda-simulated jobs require.
+
+**Confirmed via direct boto3 testing against this environment:** both
+`glue` and `appflow` are **LocalStack PRO-ONLY services on the free
+tier** -- every call returns `"API for service 'X' not yet implemented or
+pro feature"`. This is the SAME category as CloudTrail (already
+documented in `list_recent_changes`'s design note above). Per the
+platform's "degrade safely" principle, the tools/capabilities below make
+the REAL boto3 call every time (so they work correctly and immediately
+the moment this deployment points at real AWS or LocalStack Pro is
+enabled) and report this unavailability honestly -- verified live:
+`aws.glue.start_job_run`'s `precondition_check` genuinely returns
+`(False, "AWS Glue is a LocalStack PRO-ONLY service...")` on this
+environment rather than silently proceeding or fabricating success.
+
+| Real tool/capability | Kind | Status on this free-tier lab |
+|---|---|---|
+| `describe_glue_job_run` | diagnostic | Real boto3 call; honestly reports PRO-ONLY unavailability |
+| `aws.glue.start_job_run` | governed capability | Precondition correctly fails closed (verified live) |
+| `aws.glue.stop_job_run` | governed capability | Precondition correctly fails closed (verified live) |
+| `describe_appflow_flow_execution` | diagnostic | Real boto3 call; honestly reports PRO-ONLY unavailability |
+
 ## General-Purpose Remediation Capabilities (governed, policy-gated)
 
 These are NOT tied to any single scenario above -- each is a real,

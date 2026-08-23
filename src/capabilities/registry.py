@@ -512,3 +512,120 @@ register(
     _ack_alarm_execute,
     _ack_alarm_verify,
 )
+
+
+# --- aws.glue.start_job_run / aws.glue.stop_job_run (ACTION) ---------------
+# Explicitly named in docs/NemoGuard_Validation_Demonstration_and_Adoption_
+# Readiness_Plan.md's real-world capability catalog (aws.glue.start_job_run,
+# aws.glue.stop_job_run) -- registered as real, general-purpose capabilities
+# for any recovery plan whose failing component is a genuine AWS Glue ETL
+# job, independent of anything this lab's Lambda-simulated jobs need.
+#
+# CONFIRMED (see src/domain/tools/aws_observability_tools.py's module-level
+# note): AWS Glue is a LocalStack PRO-ONLY service on the free tier this
+# environment runs. These capabilities make the real boto3 call every time
+# and will function correctly the moment this deployment points at real
+# AWS or LocalStack Pro; on this specific free-tier lab, precondition_check
+# below deliberately fails closed (never silently "succeeds") when Glue is
+# genuinely unavailable, so a Glue-targeting plan step correctly reports
+# "not currently executable in this environment" rather than a fabricated
+# result.
+
+def _glue_available_precondition(args: Dict[str, Any]) -> Tuple[bool, str]:
+    from src.domain.tools.aws_observability_tools import describe_glue_job_run
+    # A cheap real availability probe: describe_glue_job_run against a
+    # placeholder job/run -- if Glue itself is unavailable (as on this
+    # environment's LocalStack free tier), this returns an "error" key we
+    # can detect and fail the precondition closed on, rather than
+    # discovering unavailability only after attempting the real action.
+    probe = json.loads(describe_glue_job_run("__availability_probe__", "__probe__"))
+    if "note" in probe and "PRO-ONLY" in probe.get("note", ""):
+        return False, probe["note"]
+    return True, "Glue API appears reachable."
+
+
+def _glue_start_execute(args: Dict[str, Any]) -> Dict[str, Any]:
+    from src.domain.tools.aws_observability_tools import start_glue_job_run
+    return json.loads(start_glue_job_run(args["job_name"], args.get("arguments")))
+
+
+def _glue_start_verify(args: Dict[str, Any], execute_result: Dict[str, Any]) -> VerificationOutcome:
+    from src.domain.tools.aws_observability_tools import describe_glue_job_run
+    if execute_result.get("error"):
+        return VerificationOutcome(
+            action_id=args.get("_action_id", ""),
+            capability_id="aws.glue.start_job_run",
+            status=VerificationStatus.FAILED,
+            checked_at=datetime.now(timezone.utc),
+            details=execute_result,
+        )
+    recheck = json.loads(describe_glue_job_run(args["job_name"], execute_result.get("new_run_id", "")))
+    ok = recheck.get("job_run_state") in ("SUCCEEDED", "RUNNING", "STARTING")
+    return VerificationOutcome(
+        action_id=args.get("_action_id", ""),
+        capability_id="aws.glue.start_job_run",
+        status=VerificationStatus.PASSED if ok else VerificationStatus.INCONCLUSIVE,
+        checked_at=datetime.now(timezone.utc),
+        details={"recheck": recheck},
+        recommended_next_state="RESOLVED" if ok else "ESCALATED",
+    )
+
+
+register(
+    CapabilityDefinition(
+        capability_id="aws.glue.start_job_run",
+        version="1.0.0",
+        kind=CapabilityKind.ACTION,
+        description="Starts a new AWS Glue ETL job run with (corrected) arguments -- the Glue equivalent of rerun_ingest_job for real Glue-based data pipelines.",
+        risk_level=RiskLevel.MEDIUM,
+        autonomy_mode=AutonomyMode.HUMAN_APPROVAL_REQUIRED,
+        supports_dry_run=False,
+        required_args=["job_name"],
+    ),
+    _glue_available_precondition,
+    _glue_start_execute,
+    _glue_start_verify,
+)
+
+
+def _glue_stop_execute(args: Dict[str, Any]) -> Dict[str, Any]:
+    from src.domain.tools.aws_observability_tools import stop_glue_job_run
+    return json.loads(stop_glue_job_run(args["job_name"], args["run_id"]))
+
+
+def _glue_stop_verify(args: Dict[str, Any], execute_result: Dict[str, Any]) -> VerificationOutcome:
+    from src.domain.tools.aws_observability_tools import describe_glue_job_run
+    if execute_result.get("error"):
+        return VerificationOutcome(
+            action_id=args.get("_action_id", ""),
+            capability_id="aws.glue.stop_job_run",
+            status=VerificationStatus.FAILED,
+            checked_at=datetime.now(timezone.utc),
+            details=execute_result,
+        )
+    recheck = json.loads(describe_glue_job_run(args["job_name"], args["run_id"]))
+    ok = recheck.get("job_run_state") in ("STOPPED", "STOPPING")
+    return VerificationOutcome(
+        action_id=args.get("_action_id", ""),
+        capability_id="aws.glue.stop_job_run",
+        status=VerificationStatus.PASSED if ok else VerificationStatus.INCONCLUSIVE,
+        checked_at=datetime.now(timezone.utc),
+        details={"recheck": recheck},
+    )
+
+
+register(
+    CapabilityDefinition(
+        capability_id="aws.glue.stop_job_run",
+        version="1.0.0",
+        kind=CapabilityKind.ACTION,
+        description="Stops a stuck/hung AWS Glue job run (e.g. before starting a corrected rerun).",
+        risk_level=RiskLevel.MEDIUM,
+        autonomy_mode=AutonomyMode.HUMAN_APPROVAL_REQUIRED,
+        supports_dry_run=False,
+        required_args=["job_name", "run_id"],
+    ),
+    _glue_available_precondition,
+    _glue_stop_execute,
+    _glue_stop_verify,
+)

@@ -48,6 +48,8 @@ INTENT_TO_CAPABILITY: Dict[str, str] = {
     "QUARANTINE_POISON_MESSAGE": "queue.quarantine_poison_message",
     "CHECK_DUPLICATE_ORDER_IDS": "ops.check_duplicate_order_ids",
     "ACKNOWLEDGE_ALARM": "ops.acknowledge_and_reset_alarm",
+    "START_GLUE_JOB_RUN": "aws.glue.start_job_run",
+    "STOP_GLUE_JOB_RUN": "aws.glue.stop_job_run",
 }
 
 

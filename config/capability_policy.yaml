@@ -57,3 +57,11 @@ capabilities:
   ops.acknowledge_and_reset_alarm:
     risk_level: MEDIUM
     autonomy_mode: HUMAN_APPROVAL_REQUIRED
+
+  aws.glue.start_job_run:
+    risk_level: MEDIUM
+    autonomy_mode: HUMAN_APPROVAL_REQUIRED
+
+  aws.glue.stop_job_run:
+    risk_level: MEDIUM
+    autonomy_mode: HUMAN_APPROVAL_REQUIRED
