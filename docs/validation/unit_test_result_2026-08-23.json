@@ -1,0 +1,6 @@
+{
+  "run_at": "2026-08-23T16:42:39.069458+00:00",
+  "passed": 141,
+  "total": 141,
+  "command": "pytest tests/unit -q"
+}

@@ -10,6 +10,7 @@ import { IntelligencePage } from '../pages/IntelligencePage/IntelligencePage';
 import { WhatsNewPage } from '../pages/WhatsNewPage/WhatsNewPage';
 import { SettingsPage } from '../pages/SettingsPage/SettingsPage';
 import { ScenarioCockpitPage } from '../pages/ScenarioCockpitPage/ScenarioCockpitPage';
+import { AdoptionReadinessPage } from '../pages/AdoptionReadinessPage/AdoptionReadinessPage';
 
 export function AppRoutes() {
     return (
@@ -29,6 +30,7 @@ export function AppRoutes() {
                 <Route path="agent-operations" element={<AgentOperationsPage />} />
                 <Route path="intelligence" element={<IntelligencePage />} />
                 <Route path="scenario-cockpit" element={<ScenarioCockpitPage />} />
+                <Route path="adoption-readiness" element={<AdoptionReadinessPage />} />
                 <Route path="whats-new" element={<WhatsNewPage />} />
                 <Route path="settings" element={<SettingsPage />} />
             </Route>

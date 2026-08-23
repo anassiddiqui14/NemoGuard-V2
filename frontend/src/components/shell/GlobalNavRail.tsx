@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { LayoutGrid, ListChecks, Cpu, Sparkles, Settings, BrainCircuit, Rocket } from 'lucide-react';
+import { LayoutGrid, ListChecks, Cpu, Sparkles, Settings, BrainCircuit, Rocket, ShieldCheck } from 'lucide-react';
 import { LATEST_CHANGELOG_VERSION } from '../../data/changelog';
 
 interface NavItem {
@@ -31,6 +31,7 @@ export function GlobalNavRail({ hasUnseenChangelog, collapsed }: Props) {
         { to: '/app/agent-operations', label: 'Agent Operations', icon: <Cpu className="w-4.5 h-4.5" /> },
         { to: '/app/intelligence', label: 'Intelligence', icon: <BrainCircuit className="w-4.5 h-4.5" /> },
         { to: '/app/scenario-cockpit', label: 'Scenario Cockpit', icon: <Rocket className="w-4.5 h-4.5" /> },
+        { to: '/app/adoption-readiness', label: 'Adoption Readiness', icon: <ShieldCheck className="w-4.5 h-4.5" /> },
         { to: '/app/whats-new', label: "What's New", icon: <Sparkles className="w-4.5 h-4.5" />, badge: hasUnseenChangelog },
         { to: '/app/settings', label: 'Settings', icon: <Settings className="w-4.5 h-4.5" /> },
     ];
