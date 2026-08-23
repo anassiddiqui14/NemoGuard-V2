@@ -416,3 +416,99 @@ register(
     _quarantine_execute,
     _quarantine_verify,
 )
+
+
+# --- ops.check_duplicate_order_ids (READ) -----------------------------------
+# General-purpose pre-flight capability: given a batch of order_ids about
+# to be (re)written, checks the REAL order_events table for which ones
+# already committed. Not tied to any one scenario -- any recovery plan
+# proposing to rerun/retry a write job against order_events should call
+# this BEFORE resubmitting, exactly the check a real retry mechanism
+# should perform to avoid a UniqueViolation.
+
+def _check_duplicates_execute(args: Dict[str, Any]) -> Dict[str, Any]:
+    from src.domain.tools.aws_observability_tools import find_duplicate_order_ids
+    return json.loads(find_duplicate_order_ids(args["order_ids"]))
+
+
+def _check_duplicates_verify(args: Dict[str, Any], execute_result: Dict[str, Any]) -> VerificationOutcome:
+    ok = "error" not in execute_result
+    return VerificationOutcome(
+        action_id=args.get("_action_id", ""),
+        capability_id="ops.check_duplicate_order_ids",
+        status=VerificationStatus.PASSED if ok else VerificationStatus.FAILED,
+        checked_at=datetime.now(timezone.utc),
+        details=execute_result,
+    )
+
+
+register(
+    CapabilityDefinition(
+        capability_id="ops.check_duplicate_order_ids",
+        version="1.0.0",
+        kind=CapabilityKind.READ,
+        description="Checks which order_ids in a batch already exist in order_events, so a retry can exclude already-committed rows before resubmitting.",
+        risk_level=RiskLevel.READ_ONLY,
+        autonomy_mode=AutonomyMode.AUTOMATIC,
+        supports_dry_run=False,
+        required_args=["order_ids"],
+    ),
+    _always_ok,
+    _check_duplicates_execute,
+    _check_duplicates_verify,
+)
+
+
+# --- ops.acknowledge_and_reset_alarm (ACTION) -------------------------------
+# General-purpose closing action for ANY incident whose root cause has
+# been independently verified as fixed: forces the underlying CloudWatch
+# alarm back to OK with an audit-worthy reason, mirroring the real
+# "acknowledge and clear" step an on-call engineer performs in the AWS
+# console. Deliberately NOT scenario-specific -- any capability's verify
+# step (schema-drift rerun, partial-write cleanup, poison-pill quarantine,
+# duplicate-write dedup, etc.) can be followed by this same closing action.
+
+def _ack_alarm_precondition(args: Dict[str, Any]) -> Tuple[bool, str]:
+    from localstack_lab.remediate import check_alarm_state
+    state = check_alarm_state(args["alarm_name"])
+    if state.get("state") == "OK":
+        return False, "Alarm is already OK; acknowledging it again would be a no-op and is refused."
+    return True, f"Confirmed alarm is currently in state={state.get('state')}."
+
+
+def _ack_alarm_execute(args: Dict[str, Any]) -> Dict[str, Any]:
+    from src.domain.tools.aws_observability_tools import acknowledge_and_reset_alarm
+    return json.loads(acknowledge_and_reset_alarm(args["alarm_name"], args["reason"]))
+
+
+def _ack_alarm_verify(args: Dict[str, Any], execute_result: Dict[str, Any]) -> VerificationOutcome:
+    # Independent re-check: never trust the execute step's own claim --
+    # re-query the alarm's real state directly.
+    from localstack_lab.remediate import check_alarm_state
+    recheck = check_alarm_state(args["alarm_name"])
+    ok = recheck.get("state") == "OK"
+    return VerificationOutcome(
+        action_id=args.get("_action_id", ""),
+        capability_id="ops.acknowledge_and_reset_alarm",
+        status=VerificationStatus.PASSED if ok else VerificationStatus.FAILED,
+        checked_at=datetime.now(timezone.utc),
+        details={"recheck": recheck},
+        recommended_next_state="RESOLVED" if ok else "ESCALATED",
+    )
+
+
+register(
+    CapabilityDefinition(
+        capability_id="ops.acknowledge_and_reset_alarm",
+        version="1.0.0",
+        kind=CapabilityKind.ACTION,
+        description="Forces a CloudWatch alarm back to OK with an audit-worthy reason, after the underlying condition has been independently verified as fixed.",
+        risk_level=RiskLevel.MEDIUM,
+        autonomy_mode=AutonomyMode.HUMAN_APPROVAL_REQUIRED,
+        supports_dry_run=False,
+        required_args=["alarm_name", "reason"],
+    ),
+    _ack_alarm_precondition,
+    _ack_alarm_execute,
+    _ack_alarm_verify,
+)

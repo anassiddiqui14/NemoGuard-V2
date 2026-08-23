@@ -617,3 +617,78 @@ def quarantine_poison_messages(queue_url: str, required_field: str, max_messages
         }, indent=2)
     except Exception as e:
         return json.dumps({"error": f"Failed to quarantine poison messages on {queue_url}: {e}"})
+
+
+def find_duplicate_order_ids(order_ids: list) -> str:
+    """Real pre-flight check for the duplicate_write failure mode (see
+    migrations/010_order_events_unique_constraint.sql): given a batch's
+    list of order_ids, queries the REAL order_events table to find which
+    of them ALREADY exist (i.e. were already successfully committed by an
+    earlier run) -- the exact check a real retry mechanism should perform
+    BEFORE resubmitting a batch, to avoid hitting the same UniqueViolation
+    again. Read-only; never modifies anything."""
+    if not order_ids:
+        return json.dumps({"order_ids_checked": [], "already_committed": [], "safe_to_retry_ids": []})
+    try:
+        conn = psycopg2.connect(POSTGRES_URL)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT order_id FROM order_events WHERE order_id = ANY(%s)",
+                (list(order_ids),),
+            )
+            already_committed = [row[0] for row in cur.fetchall()]
+        safe_to_retry_ids = [oid for oid in order_ids if oid not in already_committed]
+        return json.dumps({
+            "order_ids_checked": list(order_ids),
+            "already_committed": already_committed,
+            "safe_to_retry_ids": safe_to_retry_ids,
+            "conclusion": (
+                f"{len(already_committed)} of {len(order_ids)} order_id(s) already committed -- "
+                f"exclude these before retrying the batch."
+                if already_committed else
+                "None of the checked order_ids are already committed; the full batch is safe to (re)submit."
+            ),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": f"Failed to check duplicate order_ids: {e}"})
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def acknowledge_and_reset_alarm(alarm_name: str, reason: str) -> str:
+    """Real remediation for a CloudWatch alarm that is stuck in ALARM state
+    after the underlying issue has genuinely been fixed (e.g. after a
+    successful rerun/cleanup): forces the alarm back to OK with a
+    human-readable, audit-worthy StateReason, mirroring what an on-call
+    engineer does in the real AWS console after confirming a fix. This
+    does NOT fix anything by itself -- it is a distinct final step after
+    remediation, and the caller is expected to have already independently
+    verified the underlying condition (e.g. via
+    verify_row_count_matches_expected or check_job_succeeded) before
+    calling this. Unlike run_validation_suite.py's reset-before-retrigger
+    use of set_alarm_state (a test-harness convenience), this is a real,
+    governed, human-approved production remediation action."""
+    try:
+        cw = _aws_client("cloudwatch")
+        before = cw.describe_alarms(AlarmNames=[alarm_name])
+        alarms_before = before.get("MetricAlarms", [])
+        state_before = alarms_before[0]["StateValue"] if alarms_before else "UNKNOWN"
+
+        cw.set_alarm_state(AlarmName=alarm_name, StateValue="OK", StateReason=reason)
+
+        after = cw.describe_alarms(AlarmNames=[alarm_name])
+        alarms_after = after.get("MetricAlarms", [])
+        state_after = alarms_after[0]["StateValue"] if alarms_after else "UNKNOWN"
+
+        return json.dumps({
+            "alarm_name": alarm_name,
+            "state_before": state_before,
+            "state_after": state_after,
+            "reason": reason,
+            "acknowledged": state_after == "OK",
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": f"Failed to acknowledge/reset alarm {alarm_name}: {e}"})

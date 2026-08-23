@@ -46,6 +46,8 @@ INTENT_TO_CAPABILITY: Dict[str, str] = {
     "RERUN_INGEST_JOB": "compute.rerun_ingest_job",
     "VERIFY_ROW_COUNT": "ops.verify_row_count_matches_expected",
     "QUARANTINE_POISON_MESSAGE": "queue.quarantine_poison_message",
+    "CHECK_DUPLICATE_ORDER_IDS": "ops.check_duplicate_order_ids",
+    "ACKNOWLEDGE_ALARM": "ops.acknowledge_and_reset_alarm",
 }
 
 

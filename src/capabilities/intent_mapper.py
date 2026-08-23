@@ -36,6 +36,8 @@ _EXACT_TOOL_NAME_MAP = {
     "rerun_ingest_job": "RERUN_INGEST_JOB",
     "verify_row_count_matches_expected": "VERIFY_ROW_COUNT",
     "quarantine_poison_messages": "QUARANTINE_POISON_MESSAGE",
+    "find_duplicate_order_ids": "CHECK_DUPLICATE_ORDER_IDS",
+    "acknowledge_and_reset_alarm": "ACKNOWLEDGE_ALARM",
 }
 
 
@@ -57,6 +59,10 @@ def _keyword_intent_type(tool_name: str, action_type: str) -> str:
         return "RERUN_INGEST_JOB"
     if "poison" in text or "quarantine" in text:
         return "QUARANTINE_POISON_MESSAGE"
+    if "duplicate" in text or "dedup" in text:
+        return "CHECK_DUPLICATE_ORDER_IDS"
+    if "acknowledge" in text or ("alarm" in text and ("reset" in text or "clear" in text)):
+        return "ACKNOWLEDGE_ALARM"
     return "MANUAL"  # deliberately unmapped -> ops.manual_step fallback
 
 
@@ -89,6 +95,8 @@ def action_step_to_intent(action_step: Dict[str, Any], incident_run_id: str = ""
         # precondition_check still refuses to run if the queue is genuinely
         # empty, so an incorrect guess here is safe, never destructive.
         parameters.setdefault("required_field", "user_id")
+    if intent_type == "ACKNOWLEDGE_ALARM":
+        parameters.setdefault("reason", action_type or "Acknowledged after independently verified remediation.")
 
     return ActionIntent(
         intent_type=intent_type,

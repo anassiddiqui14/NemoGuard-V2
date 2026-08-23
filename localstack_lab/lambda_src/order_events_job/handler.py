@@ -136,7 +136,28 @@ def handler(event, context):
                 raise RuntimeError(
                     f"Simulated mid-batch crash: wrote {written}/{len(orders)} rows before failure."
                 )
-            _write_row_committed(conn, run_id, order)
+            try:
+                _write_row_committed(conn, run_id, order)
+            except psycopg2.errors.UniqueViolation as e:
+                # Genuine duplicate-key failure (see migrations/
+                # 010_order_events_unique_constraint.sql): a real
+                # production symptom of rerunning a job WITHOUT first
+                # checking what already committed from a previous
+                # attempt -- distinct from the mid-batch partial-write
+                # crash above. The failed INSERT leaves this connection's
+                # transaction aborted, so roll back before logging, using
+                # this same connection (a fresh transaction on the same
+                # connection, not a new connection) since the log/
+                # execution rows below must still be visible even though
+                # this batch's write failed.
+                conn.rollback()
+                _log_execution(
+                    conn, run_id, "failed",
+                    f"Job failed after writing {written}/{len(orders)} rows: duplicate order_id "
+                    f"'{order.get('order_id')}' already exists (real UniqueViolation -- this run "
+                    f"was likely retried without deduplicating against a prior successful attempt).",
+                )
+                raise
             written += 1
 
         _log_execution(conn, run_id, "succeeded", f"Wrote {written}/{len(orders)} rows successfully.")

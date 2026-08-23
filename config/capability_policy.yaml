@@ -49,3 +49,11 @@ capabilities:
   queue.quarantine_poison_message:
     risk_level: MEDIUM
     autonomy_mode: HUMAN_APPROVAL_REQUIRED
+
+  ops.check_duplicate_order_ids:
+    risk_level: READ_ONLY
+    autonomy_mode: AUTOMATIC
+
+  ops.acknowledge_and_reset_alarm:
+    risk_level: MEDIUM
+    autonomy_mode: HUMAN_APPROVAL_REQUIRED
