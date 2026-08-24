@@ -94,14 +94,18 @@ def handler(event, context):
             user_id = body["user_id"]  # noqa: F841 -- intentionally raises if absent
             raise RuntimeError("unreachable")  # pragma: no cover
         user_id = body["user_id"]
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO log_event (log_id, run_id, timestamp, level, component, error_code, message) "
-                "VALUES (%s, %s, now()::text, 'INFO', 'localstack_notification_job', NULL, %s)",
-                (f"LOG-{run_id}-delivered-{os.urandom(3).hex()}", run_id, f"Notification delivered to {user_id}."),
-            )
-        conn.commit()
-        _log_execution(conn, run_id, "succeeded", f"Delivered notification to {user_id}.")
+        # Genuine pre-existing bug fixed here: log_event.run_id has a real
+        # FOREIGN KEY into execution(run_id) (see src/store/schema.sql),
+        # but this success path previously inserted a log_event row
+        # BEFORE the execution row existed (execution was only created
+        # afterward, inside _log_execution) -- causing every single
+        # genuinely "healthy" invocation to raise a real
+        # ForeignKeyViolation instead of succeeding. Discovered live via
+        # scripts/run_scenario_catalog_30.py's NOTIF-HEALTHY-BASELINE
+        # scenario. _log_execution already writes both the execution row
+        # AND a log_event row for this message in one call -- no separate
+        # log_event INSERT needed here.
+        _log_execution(conn, run_id, "succeeded", f"Notification delivered to {user_id}.")
         return {"status": "ok", "run_id": run_id, "user_id": user_id}
     except KeyError as e:
         _log_execution(

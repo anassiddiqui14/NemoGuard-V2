@@ -207,12 +207,36 @@ def ensure_state_machine(sfn, lam, iam):
             "IngestCustomerProfile": {
                 "Type": "Task",
                 "Resource": ingest_fn,
+                # IngestCustomerProfile's own success/failure output shape
+                # ({"status": "ok", "run_id": ..., "user_id": ...} or a
+                # Lambda error payload) is NOT what ProcessOrderEvents'
+                # handler expects ({"bucket": ..., "key": ..., "run_id": ...}
+                # -- see lambda_src/order_events_job/handler.py). Discard
+                # this step's own output entirely (ResultPath: null) and
+                # let ProcessOrderEvents' Parameters block below build its
+                # real input from the ORIGINAL execution input instead --
+                # this is a real Step Functions data-flow bug that was
+                # previously silently masked because it only surfaces on
+                # a real successful step 1 (a failing step 1 short-circuits
+                # to PipelineFailed before this data-flow issue is ever
+                # reached). Discovered live via
+                # scripts/run_scenario_catalog_30.py's
+                # PIPELINE-HEALTHY-BASELINE scenario.
+                "ResultPath": None,
                 "Next": "ProcessOrderEvents",
                 "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "PipelineFailed"}],
             },
             "ProcessOrderEvents": {
                 "Type": "Task",
                 "Resource": order_events_fn,
+                # Build this step's REAL input from the original execution
+                # input's order_events_bucket/order_events_key fields
+                # (via the $$.Execution.Input context object) rather than
+                # from IngestCustomerProfile's incompatible output shape.
+                "Parameters": {
+                    "bucket.$": "$$.Execution.Input.order_events_bucket",
+                    "key.$": "$$.Execution.Input.order_events_key",
+                },
                 "End": True,
                 "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "PipelineFailed"}],
             },

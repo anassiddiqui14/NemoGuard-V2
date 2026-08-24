@@ -1,0 +1,187 @@
+{
+  "run_at": "2026-08-24T06:07:29.138023+00:00",
+  "results": [
+    {
+      "scenario_id": "INGEST-SCHEMA-DRIFT",
+      "passed": true,
+      "detail": "real KeyError observed",
+      "duration_seconds": 0.6
+    },
+    {
+      "scenario_id": "INGEST-OOM-CRASH",
+      "passed": true,
+      "detail": "real OOM failure observed",
+      "duration_seconds": 10.7
+    },
+    {
+      "scenario_id": "INGEST-DB-OUTAGE",
+      "passed": true,
+      "detail": "real OperationalError observed",
+      "duration_seconds": 1.4
+    },
+    {
+      "scenario_id": "INGEST-MISSING-INPUT-FILE",
+      "passed": true,
+      "detail": "real NoSuchKey observed",
+      "duration_seconds": 0.3
+    },
+    {
+      "scenario_id": "INGEST-MALFORMED-JSON",
+      "passed": true,
+      "detail": "real JSONDecodeError observed",
+      "duration_seconds": 0.3
+    },
+    {
+      "scenario_id": "INGEST-HEALTHY-BASELINE",
+      "passed": true,
+      "detail": "healthy run succeeded as expected",
+      "duration_seconds": 0.3
+    },
+    {
+      "scenario_id": "ORDER-PARTIAL-WRITE-SMALL",
+      "passed": true,
+      "detail": "5/10 rows partial write confirmed",
+      "duration_seconds": 0.6
+    },
+    {
+      "scenario_id": "ORDER-PARTIAL-WRITE-EARLY",
+      "passed": true,
+      "detail": "run_id=RUN-CATALOG30-order-events-partial-2b803b 1/10 rows before crash",
+      "duration_seconds": 0.2
+    },
+    {
+      "scenario_id": "ORDER-PARTIAL-WRITE-LATE",
+      "passed": true,
+      "detail": "run_id=RUN-CATALOG30-order-events-partial-80bc89 9/10 rows before crash",
+      "duration_seconds": 0.0
+    },
+    {
+      "scenario_id": "ORDER-DUPLICATE-WRITE",
+      "passed": true,
+      "detail": "real UniqueViolation confirmed",
+      "duration_seconds": 0.4
+    },
+    {
+      "scenario_id": "ORDER-HEALTHY-BASELINE",
+      "passed": true,
+      "detail": "healthy batch succeeded",
+      "duration_seconds": 0.9
+    },
+    {
+      "scenario_id": "ORDER-STALENESS-CHECK-ONLY",
+      "passed": true,
+      "detail": "{\"table\": \"order_events\", \"run_id\": \"RUN-CATALOG30-order-events-partial-788524\", \"actual_row_count\": 3, \"expected_row_count\": 10, \"last_write\": \"2026-08-24 05:59:24.686024+00:00\", \"is_stale_or_partial\": true, \"recommendation\": \"Partial/stale write detected. Call cleanup_partial_write before rerunning the job.\"}",
+      "duration_seconds": 0.1
+    },
+    {
+      "scenario_id": "ORDER-VERIFY-ROW-COUNT-MISMATCH",
+      "passed": true,
+      "detail": "{\"table\": \"order_events\", \"run_id\": \"RUN-CATALOG30-order-events-partial-4adc5f\", \"actual_row_count\": 4, \"expected_row_count\": 10, \"verified\": false, \"conclusion\": \"Mismatch: expected 10 rows but found 4. Recovery NOT verified; do not mark incident resolved.\"}",
+      "duration_seconds": 0.1
+    },
+    {
+      "scenario_id": "NOTIF-POISON-PILL-FIRST",
+      "passed": true,
+      "detail": "real KeyError observed",
+      "duration_seconds": 1.8
+    },
+    {
+      "scenario_id": "NOTIF-POISON-PILL-REDELIVERY",
+      "passed": true,
+      "detail": "second poison_pill invocation also genuinely failed",
+      "duration_seconds": 1.3
+    },
+    {
+      "scenario_id": "NOTIF-QUEUE-BACKUP-MULTI",
+      "passed": true,
+      "detail": "queue backlog after 3x poison_pill: 6 message(s) approx",
+      "duration_seconds": 0.9
+    },
+    {
+      "scenario_id": "NOTIF-HEALTHY-BASELINE",
+      "passed": true,
+      "detail": "healthy notification succeeded",
+      "duration_seconds": 0.2
+    },
+    {
+      "scenario_id": "NOTIF-QUEUE-INSPECT-ONLY",
+      "passed": true,
+      "detail": "{\"queue_url\": \"http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/nemoguard-notifications-queue\", \"messages\": [{\"message_id\": \"537c15e7-56ed-468e-97e0-185c57fa5a40\", \"body\": \"{\\\"simulate_poison_pill\\\": true}\"}, {\"message_id\": \"c6e7b998-ffb8-44df-a21a-5e210a4ae47f\", \"body\": \"{\\\"simulat",
+      "duration_seconds": 0.0
+    },
+    {
+      "scenario_id": "NOTIF-QUARANTINE-DRY-RUN",
+      "passed": true,
+      "detail": "{\"queue_url\": \"http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/nemoguard-notifications-queue\", \"required_field\": \"user_id\", \"dry_run\": true, \"messages_inspected\": 1, \"quarantined_count\": 1, \"quarantined_message_ids\": [\"9d22aa8f-ff44-4dd6-a628-1a5d62fcd461\"], \"left_in_queue_message_",
+      "duration_seconds": 0.3
+    },
+    {
+      "scenario_id": "PIPELINE-INGEST-STEP-FAILS",
+      "passed": true,
+      "detail": "ta/order_events/PIPELINE-ingest_step_fails-9fa8f4.json\n  Starting execution exec-ingest_step_fails-9fa8f4 on nemoguard-daily-pipeline ...\n  Execution status: FAILED\n  Output: None\n\nexecution_arn = arn:aws:states:us-east-1:000000000000:execution:nemoguard-daily-pipeline:exec-ingest_step_fails-9fa8f4\n",
+      "duration_seconds": 1.7
+    },
+    {
+      "scenario_id": "PIPELINE-ORDER-EVENTS-STEP-FAILS",
+      "passed": true,
+      "detail": "PELINE-order_events_step_fails-dd25fe.json\n  Starting execution exec-order_events_step_fails-dd25fe on nemoguard-daily-pipeline ...\n  Execution status: FAILED\n  Output: None\n\nexecution_arn = arn:aws:states:us-east-1:000000000000:execution:nemoguard-daily-pipeline:exec-order_events_step_fails-dd25fe\n",
+      "duration_seconds": 3.6
+    },
+    {
+      "scenario_id": "PIPELINE-HEALTHY-BASELINE",
+      "passed": true,
+      "detail": "481 on nemoguard-daily-pipeline ...\n  Execution status: SUCCEEDED\n  Output: {\"status\":\"ok\",\"run_id\":\"RUN-LOCALSTACK-order_events-PIPELINE-healthy-99b481.json\",\"rows_written\":1,\"expected\":1}\n\nexecution_arn = arn:aws:states:us-east-1:000000000000:execution:nemoguard-daily-pipeline:exec-healthy-99b481\n",
+      "duration_seconds": 1.3
+    },
+    {
+      "scenario_id": "PIPELINE-EXECUTION-INSPECT",
+      "passed": true,
+      "detail": "{\"execution_arn\": \"arn:aws:states:us-east-1:000000000000:execution:nemoguard-daily-pipeline:exec-ingest_step_fails-b4222d\", \"status\": \"FAILED\", \"start_date\": \"2026-08-24 11:29:36.055409+05:30\", \"stop_date\": \"2026-08-24 11:29:36.116504+05:30\", \"recent_failure_events\": [{\"type\": \"ExecutionFailed\", \"de",
+      "duration_seconds": 1.3
+    },
+    {
+      "scenario_id": "ALARM-TRIP-ON-FIRST-ERROR",
+      "passed": true,
+      "detail": "alarm nemoguard-ingest-job-errors state after real failure: ALARM",
+      "duration_seconds": 44.6
+    },
+    {
+      "scenario_id": "ALARM-NO-RENOTIFY-ON-REPEAT",
+      "passed": true,
+      "detail": "state1=ALARM state2=ALARM (both ALARM, no reset in between, as expected)",
+      "duration_seconds": 65.3
+    },
+    {
+      "scenario_id": "ALARM-ACKNOWLEDGE-AFTER-FIX",
+      "passed": true,
+      "detail": "{\"alarm_name\": \"nemoguard-order-events-job-errors\", \"state_before\": \"ALARM\", \"state_after\": \"OK\", \"reason\": \"Scenario catalog: acknowledging after verified test remediation.\", \"acknowledged\": true}",
+      "duration_seconds": 3.7
+    },
+    {
+      "scenario_id": "ALARM-STATE-INSPECT-ONLY",
+      "passed": true,
+      "detail": "{\"state\": \"ALARM\", \"resolved\": false, \"reason\": \"CloudWatch alarm state = ALARM\"}",
+      "duration_seconds": 0.0
+    },
+    {
+      "scenario_id": "CORRELATION-SAME-ALARM-NEW-INCIDENT",
+      "passed": true,
+      "detail": "incident=INC-E477F777 alert_count before=8 after=grew",
+      "duration_seconds": 117.5
+    },
+    {
+      "scenario_id": "CORRELATION-DIFFERENT-ALARM-NEW-INCIDENT",
+      "passed": true,
+      "detail": "ingest_incident=INC-E477F777 order_events_incident=INC-B0DF0216 (must differ)",
+      "duration_seconds": 132.9
+    },
+    {
+      "scenario_id": "CORRELATION-ALERT-COUNT-GROWTH",
+      "passed": true,
+      "detail": "alert_count 11->grew=True; status AWAITING_APPROVAL->AWAITING_APPROVAL (status staying same on correlation is expected, real behavior)",
+      "duration_seconds": 108.0
+    }
+  ],
+  "passed": 30,
+  "total": 30
+}

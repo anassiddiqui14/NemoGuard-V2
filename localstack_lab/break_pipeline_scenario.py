@@ -114,7 +114,16 @@ def main():
         print(f"ERROR: state machine {STATE_MACHINE_NAME} not found -- run provision.py first.")
         sys.exit(1)
 
-    execution_input = {"bucket": BUCKET_NAME, "key": ingest_key}
+    # bucket/key: IngestCustomerProfile's real input.
+    # order_events_bucket/order_events_key: read directly by
+    # ProcessOrderEvents' Parameters block (via $$.Execution.Input --
+    # see provision.py's ensure_state_machine) since IngestCustomerProfile's
+    # own success/failure output shape is genuinely incompatible with what
+    # ProcessOrderEvents' handler expects.
+    execution_input = {
+        "bucket": BUCKET_NAME, "key": ingest_key,
+        "order_events_bucket": BUCKET_NAME, "order_events_key": order_events_key,
+    }
     exec_name = f"exec-{scenario}-{uid}"
     print(f"  Starting execution {exec_name} on {STATE_MACHINE_NAME} ...")
     start_resp = sfn.start_execution(
