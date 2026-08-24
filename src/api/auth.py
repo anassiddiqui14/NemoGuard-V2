@@ -130,14 +130,17 @@ def require_any_role(*acceptable_roles: str):
 # Mock Endpoint to generate a test token — only reachable when ENV is
 # development/dev/local (enforced in main.py). Never usable in production.
 def get_mock_token(role: str = "admin"):
-    # Admin's mock-login display name reads as "Anas" (frontend derives
-    # displayName from the email local-part, see
-    # frontend/src/hooks/useCurrentUser.ts's displayNameFromEmail()).
+    # Admin's mock-login display name is explicitly "Anas" (embedded
+    # directly, same as the real-login path now does via
+    # issue_token_for_user) -- not left to email-derivation, which is
+    # more fragile.
     mock_email = "anas@nemoguard.com" if role == "admin" else "test@nemoguard.com"
+    mock_display_name = "Anas" if role == "admin" else None
     access_token = create_access_token(
         data={
             "sub": "mock-user-123",
             "email": mock_email,
+            "display_name": mock_display_name,
             "roles": [role],
             # Previously hardcoded to "tenant_A"/"ws_alpha", which never
             # matches the "default_tenant" every demo/seed incident row
@@ -192,7 +195,18 @@ def verify_password(plain_password: str, stored_hash: str) -> bool:
 
 
 def issue_token_for_user(user_row: dict) -> str:
-    """Builds a real, short-lived JWT for an authenticated platform_user row."""
+    """Builds a real, short-lived JWT for an authenticated platform_user row.
+
+    Includes the account's real display_name (from platform_user's own
+    column) so the frontend shows the account's actual configured name
+    instead of deriving one from the email's local-part (see
+    frontend/src/hooks/useCurrentUser.ts) -- previously display_name was
+    never threaded into the token at all, so any admin renamed via the DB
+    (or scripts/create_user.py --name) had that rename silently ignored by
+    the UI, which always fell back to capitalizing the email prefix
+    instead (e.g. admin@nemoguard.com rendered as "Admin" regardless of
+    the real display_name column's value).
+    """
     return create_access_token(
         data={
             "sub": user_row["user_id"],
@@ -200,6 +214,7 @@ def issue_token_for_user(user_row: dict) -> str:
             "roles": list(user_row.get("roles") or ["viewer"]),
             "tenant_id": user_row.get("tenant_id", "default_tenant"),
             "workspace_id": user_row.get("workspace_id", "default_workspace"),
+            "display_name": user_row.get("display_name"),
         },
         expires_delta=timedelta(hours=8),
     )

@@ -38,7 +38,12 @@ function buildUser(payload: any): CurrentUser {
     const roles: string[] = payload?.roles || ['viewer'];
     const tenantId: string = payload?.tenant_id || 'default_tenant';
     const workspaceId: string = payload?.workspace_id || 'default_workspace';
-    const displayName = displayNameFromEmail(email);
+    // Prefer the account's real, configured display_name (now embedded in
+    // the JWT by src/api/auth.py's issue_token_for_user) over deriving one
+    // from the email's local-part -- previously the JWT never carried
+    // display_name at all, so any admin renamed via the DB or
+    // scripts/create_user.py --name had that rename silently ignored here.
+    const displayName: string = payload?.display_name || displayNameFromEmail(email);
     const initials =
         displayName
             .split(/\s+/)

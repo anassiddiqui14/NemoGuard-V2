@@ -80,7 +80,7 @@ def login(req: LoginRequest):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
         cursor = conn.execute(
-            "SELECT user_id, email, password_hash, roles, tenant_id, workspace_id, is_active FROM platform_user WHERE email = %s",
+            "SELECT user_id, email, password_hash, roles, tenant_id, workspace_id, is_active, display_name FROM platform_user WHERE email = %s",
             (req.email.strip().lower(),),
         )
         row = cursor.fetchone()
@@ -89,7 +89,7 @@ def login(req: LoginRequest):
     if not row:
         raise invalid_credentials
 
-    user_id, email, password_hash, roles, tenant_id, workspace_id, is_active = row
+    user_id, email, password_hash, roles, tenant_id, workspace_id, is_active, display_name = row
     if not is_active or not verify_password(req.password, password_hash):
         raise invalid_credentials
 
@@ -99,6 +99,7 @@ def login(req: LoginRequest):
         "roles": roles,
         "tenant_id": tenant_id,
         "workspace_id": workspace_id,
+        "display_name": display_name,
     })
 
     with db.get_connection() as conn:
