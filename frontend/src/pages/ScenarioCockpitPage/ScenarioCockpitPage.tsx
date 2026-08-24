@@ -94,6 +94,7 @@ export function ScenarioCockpitPage() {
     const [alarms, setAlarms] = useState<AlarmState[] | null>(null);
     const [correlationLog, setCorrelationLog] = useState<string[] | null>(null);
     const [correlationRunning, setCorrelationRunning] = useState<string | null>(null);
+    const [correlationJobId, setCorrelationJobId] = useState<string | null>(null);
 
     const refreshLabStatus = () => {
         fetch(`${SIM_BASE}/lab/status`)
@@ -113,8 +114,43 @@ export function ScenarioCockpitPage() {
         refreshLabStatus();
         refreshAlarms();
         const t = setInterval(() => { refreshLabStatus(); refreshAlarms(); }, 15000);
+        const storedJobId = sessionStorage.getItem('nemoguard.correlationJobId');
+        if (storedJobId) setCorrelationJobId(storedJobId);
         return () => clearInterval(t);
     }, []);
+
+    useEffect(() => {
+        if (!correlationJobId) return;
+
+        let active = true;
+        const refreshCorrelationJob = async () => {
+            try {
+                const res = await fetch(`${SIM_BASE}/lab/correlation-check/${correlationJobId}`);
+                if (!res.ok) {
+                    if (res.status === 404) sessionStorage.removeItem('nemoguard.correlationJobId');
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                const job = await res.json();
+                if (!active) return;
+                setCorrelationLog(job.logs ?? []);
+                setCorrelationRunning(job.state === 'running' ? job.check : null);
+                if (job.state !== 'running') {
+                    sessionStorage.removeItem('nemoguard.correlationJobId');
+                    setCorrelationJobId(null);
+                }
+            } catch {
+                // Keep the durable job ID while temporarily offline; revisit
+                // or the next poll will reconnect without cancelling the job.
+            }
+        };
+
+        void refreshCorrelationJob();
+        const timer = setInterval(() => void refreshCorrelationJob(), 3000);
+        return () => {
+            active = false;
+            clearInterval(timer);
+        };
+    }, [correlationJobId]);
 
     const run = async (key: string, path: string, body: any, successLabel: string) => {
         setLoadingKey(key);
@@ -137,35 +173,14 @@ export function ScenarioCockpitPage() {
     const runReset = () => run('reset', '/reset', undefined, 'Cleared all incidents and alerts.');
 
     const runCorrelationCheck = async (check: 'same_alarm' | 'different_alarm') => {
-        setCorrelationRunning(check);
-        setCorrelationLog([]);
         try {
-            const res = await fetch(`${SIM_BASE}/lab/correlation-check`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ check }),
-            });
-            if (res.ok && res.body) {
-                const reader = res.body.getReader();
-                const decoder = new TextDecoder('utf-8');
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    const text = decoder.decode(value);
-                    for (const line of text.split('\n')) {
-                        if (line.startsWith('status: ')) {
-                            const msg = line.replace('status: ', '');
-                            setCorrelationLog((prev) => [...(prev ?? []), msg]);
-                        }
-                    }
-                }
-            } else {
-                toast.error('Correlation check failed to start.');
-            }
-        } catch {
-            toast.error('Network error reaching the simulator.');
-        } finally {
-            setCorrelationRunning(null);
+            const job = await postJson('/lab/correlation-check', { check });
+            setCorrelationJobId(job.job_id);
+            sessionStorage.setItem('nemoguard.correlationJobId', job.job_id);
+            setCorrelationRunning(job.check);
+            setCorrelationLog(job.logs ?? []);
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : 'Correlation check failed to start.');
         }
     };
 

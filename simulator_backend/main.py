@@ -438,6 +438,13 @@ class CorrelationCheckRequest(BaseModel):
     check: str  # "same_alarm" | "different_alarm"
 
 
+# Correlation verification is a durable simulator operation, not a request-
+# scoped browser stream. Keeping its state server-side means it continues
+# through route changes and a returning cockpit can resume progress display.
+_correlation_jobs: dict[str, dict[str, Any]] = {}
+_correlation_jobs_lock = threading.Lock()
+
+
 def _correlation_get_admin_token() -> str:
     r = httpx.get(f"{NEMOGUARD_API_BASE}/api/v2/auth/mock-login?role=commander", timeout=10.0)
     r.raise_for_status()
@@ -459,7 +466,7 @@ def _correlation_reset_alarm(alarm_name: str) -> None:
         pass
 
 
-async def _run_correlation_check(check: str):
+def _run_correlation_check(check: str):
     """Real, live correlation verification -- mirrors
     scripts/run_scenario_catalog_30.py's scenario_28/29 exactly (same
     deterministic-or-LLM correlation path, same real alert-count-growth
@@ -601,11 +608,64 @@ async def _run_correlation_check(check: str):
         yield "status: RESULT: INCONCLUSIVE -- no second incident observed within 180s.\n"
 
 
+def _run_correlation_job(job_id: str, check: str) -> None:
+    """Runs a correlation verification independently of the browser request."""
+    try:
+        for event in _run_correlation_check(check):
+            if not event.startswith("status: "):
+                continue
+            message = event[len("status: "):].rstrip("\n")
+            with _correlation_jobs_lock:
+                job = _correlation_jobs[job_id]
+                job["logs"].append(message)
+                job["updated_at"] = datetime.now(timezone.utc).isoformat()
+                if message.startswith(("RESULT:", "ERROR")):
+                    job["state"] = "completed"
+        with _correlation_jobs_lock:
+            job = _correlation_jobs[job_id]
+            if job["state"] == "running":
+                job["state"] = "completed"
+            job["updated_at"] = datetime.now(timezone.utc).isoformat()
+    except Exception as exc:
+        with _correlation_jobs_lock:
+            job = _correlation_jobs[job_id]
+            job["logs"].append(f"ERROR - correlation check failed: {exc}")
+            job["state"] = "failed"
+            job["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+
 @app.post("/lab/correlation-check")
-async def lab_correlation_check(req: CorrelationCheckRequest):
+def lab_correlation_check(req: CorrelationCheckRequest):
     if req.check not in ("same_alarm", "different_alarm"):
         raise HTTPException(status_code=400, detail="check must be 'same_alarm' or 'different_alarm'")
-    return StreamingResponse(_run_correlation_check(req.check), media_type="text/event-stream")
+
+    with _correlation_jobs_lock:
+        if any(job["state"] == "running" for job in _correlation_jobs.values()):
+            raise HTTPException(status_code=409, detail="A correlation verification is already running.")
+
+        job_id = f"corr-{uuid.uuid4().hex[:12]}"
+        _correlation_jobs[job_id] = {
+            "job_id": job_id,
+            "check": req.check,
+            "state": "running",
+            "logs": ["Correlation verification started in the simulator."],
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    threading.Thread(target=_run_correlation_job, args=(job_id, req.check), daemon=True).start()
+    return _correlation_jobs[job_id]
+
+
+@app.get("/lab/correlation-check/{job_id}")
+def lab_correlation_check_status(job_id: str):
+    with _correlation_jobs_lock:
+        job = _correlation_jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Correlation verification was not found.")
+        # Return a detached snapshot so the worker cannot mutate the response
+        # while FastAPI serializes it.
+        return {**job, "logs": list(job["logs"])}
 
 
 @app.post("/lab/trigger/pipeline")
