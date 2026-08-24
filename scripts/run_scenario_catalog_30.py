@@ -82,9 +82,22 @@ def _aws_client(service_name: str):
 # Group 1: Ingest Job (scenarios 1-6)
 # ---------------------------------------------------------------------------
 
+# BOTH "FunctionError=Handled" and "FunctionError=Unhandled" are genuine,
+# valid boto3 Lambda invoke() responses for the SAME real unhandled
+# exception in the deployed handler code -- this is an emulator-specific
+# implementation detail of how each one reports whether ITS OWN runtime
+# wrapper caught the exception before returning, not something the
+# handler code itself controls or that changes what actually happened.
+# Confirmed live migrating from LocalStack (reports "Unhandled") to Floci
+# (reports "Handled") for the exact same intentional KeyError -- accept
+# either.
+def _real_function_error(out: str) -> bool:
+    return "FunctionError=Unhandled" in out or "FunctionError=Handled" in out
+
+
 def scenario_1_schema_drift() -> ScenarioResult:
     rc, out = _run_break_script("break_scenario.py", "schema_drift")
-    ok = "KeyError" in out and "FunctionError=Unhandled" in out
+    ok = "KeyError" in out and _real_function_error(out)
     return ScenarioResult("INGEST-SCHEMA-DRIFT", ok, "real KeyError observed" if ok else out[-300:])
 
 
@@ -97,25 +110,25 @@ def scenario_2_oom_crash() -> ScenarioResult:
     # ITSELF being OOM-killed first ("Runtime.ExitError" / "signal: killed")
     # before Python ever gets a chance to raise MemoryError. Both are
     # equally genuine, unscripted OOM failures -- accept either signature.
-    ok = ("MemoryError" in out or "Runtime.ExitError" in out or "signal: killed" in out) and "FunctionError=Unhandled" in out
+    ok = ("MemoryError" in out or "Runtime.ExitError" in out or "signal: killed" in out) and _real_function_error(out)
     return ScenarioResult("INGEST-OOM-CRASH", ok, "real OOM failure observed" if ok else out[-300:])
 
 
 def scenario_3_db_outage() -> ScenarioResult:
     rc, out = _run_break_script("break_scenario.py", "db_outage", timeout=30)
-    ok = ("OperationalError" in out or "could not translate host name" in out or "timeout expired" in out) and "FunctionError=Unhandled" in out
+    ok = ("OperationalError" in out or "could not translate host name" in out or "timeout expired" in out) and _real_function_error(out)
     return ScenarioResult("INGEST-DB-OUTAGE", ok, "real OperationalError observed" if ok else out[-300:])
 
 
 def scenario_4_missing_input_file() -> ScenarioResult:
     rc, out = _run_break_script("break_scenario.py", "missing_input_file")
-    ok = "NoSuchKey" in out and "FunctionError=Unhandled" in out
+    ok = "NoSuchKey" in out and _real_function_error(out)
     return ScenarioResult("INGEST-MISSING-INPUT-FILE", ok, "real NoSuchKey observed" if ok else out[-300:])
 
 
 def scenario_5_malformed_json() -> ScenarioResult:
     rc, out = _run_break_script("break_scenario.py", "malformed_json")
-    ok = "JSONDecodeError" in out and "FunctionError=Unhandled" in out
+    ok = "JSONDecodeError" in out and _real_function_error(out)
     return ScenarioResult("INGEST-MALFORMED-JSON", ok, "real JSONDecodeError observed" if ok else out[-300:])
 
 
