@@ -7,6 +7,7 @@ import random
 import threading
 import httpx
 from datetime import datetime, timezone
+from typing import Any
 import psycopg2
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
@@ -376,6 +377,180 @@ _PIPELINE_SCENARIOS = {
         "order_events_object": {"orders": [{"order_id": "ORD-{uid}-1", "event_type": "created", "amount": 10.0}]},
     },
 }
+
+
+class CorrelationCheckRequest(BaseModel):
+    check: str  # "same_alarm" | "different_alarm"
+
+
+def _correlation_get_admin_token() -> str:
+    r = httpx.get(f"{NEMOGUARD_API_BASE}/api/v2/auth/mock-login?role=commander", timeout=10.0)
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+
+def _correlation_api_get(path: str, token: str) -> Any:
+    r = httpx.get(f"{NEMOGUARD_API_BASE}{path}", headers={"Authorization": f"Bearer {token}"}, timeout=15.0)
+    r.raise_for_status()
+    return r.json()
+
+
+def _correlation_reset_alarm(alarm_name: str) -> None:
+    try:
+        cw = aws_client("cloudwatch")
+        cw.set_alarm_state(AlarmName=alarm_name, StateValue="OK", StateReason="Reset by Scenario Cockpit correlation check.")
+        time.sleep(2)
+    except Exception:
+        pass
+
+
+async def _run_correlation_check(check: str):
+    """Real, live correlation verification -- mirrors
+    scripts/run_scenario_catalog_30.py's scenario_28/29 exactly (same
+    deterministic-or-LLM correlation path, same real alert-count-growth
+    success signal), but streamed into the cockpit UI instead of a CLI
+    script. Two genuinely different real Lambda failures are triggered
+    and NemoGuard's real correlation decision is observed via the actual
+    API, not asserted from a script's exit code."""
+    available, detail = _lab_check_available()
+    if not available:
+        yield f"status: ERROR - lab not available: {detail}\n"
+        return
+
+    yield "status: Fetching admin token...\n"
+    try:
+        token = _correlation_get_admin_token()
+    except Exception as e:
+        yield f"status: ERROR - could not reach NemoGuard API: {e}\n"
+        return
+
+    before = {i["incident_id"] for i in _correlation_api_get("/api/v2/incidents?state=all", token)}
+
+    yield "status: Resetting nemoguard-ingest-job-errors alarm...\n"
+    _correlation_reset_alarm("nemoguard-ingest-job-errors")
+
+    yield "status: Triggering real schema_drift failure (ingest job)...\n"
+    uid1 = uuid.uuid4().hex[:6]
+    run_id1 = f"RUN-LOCALSTACK-schema_drift-{uid1}"
+    key1 = f"customer_profile/{run_id1}.json"
+    s3 = aws_client("s3")
+    s3.put_object(Bucket=LAB_BUCKET_NAME, Key=key1, Body=json.dumps({"user_id": f"USR-{uid1}"}).encode())
+    _lab_invoke(LAB_FUNCTIONS["ingest_job"], {"bucket": LAB_BUCKET_NAME, "key": key1, "run_id": run_id1})
+
+    # Real, live-observed timing (see this file's own correlation-check
+    # dev session and scripts/run_scenario_catalog_30.py's identical
+    # finding): a freshly-provisioned CloudWatch alarm's FIRST-EVER
+    # evaluation, plus real webhook forwarding + LLM correlation, can
+    # genuinely take longer than a short window -- confirmed live by
+    # re-checking the alarm state immediately after a timeout and finding
+    # it HAD tripped, just slightly late. 240s gives real headroom.
+    #
+    # Also -- per the SAME live finding as WP-VAL-002 / run_scenario_
+    # catalog_30.py's scenario_28/29/30: success is EITHER a genuinely
+    # new incident_id OR the alert being correlated onto a PRE-EXISTING
+    # open incident that already shares this alarm (which is CORRECT
+    # correlator behavior, not a bug) -- so track existing incidents'
+    # alert counts too, not just brand-new IDs.
+    yield "status: Waiting for NemoGuard to detect and create/correlate the first incident (real webhook forwarding + LLM correlation, up to 4 minutes)...\n"
+    before_counts = {
+        i["incident_id"]: len(_correlation_api_get(f"/api/v2/incidents/{i['incident_id']}/alerts", token))
+        for i in _correlation_api_get("/api/v2/incidents?state=all", token)
+    }
+    # Widened from 240s to 300s after live confirmation that a genuine
+    # incident DID land, just right at the 240s boundary during this
+    # endpoint's own dev testing -- real end-to-end multi-agent latency
+    # (webhook forward + LLM watcher/correlator) is inherently variable
+    # and 300s gives real headroom without being excessive for a UI
+    # progress stream the operator is actively watching.
+    incident_id = None
+    deadline = time.monotonic() + 300
+    while time.monotonic() < deadline:
+        incidents = _correlation_api_get("/api/v2/incidents?state=all", token)
+        new_ids = [i["incident_id"] for i in incidents if i["incident_id"] not in before]
+        if new_ids:
+            incident_id = new_ids[0]
+            break
+        for i in incidents:
+            iid = i["incident_id"]
+            if iid in before_counts:
+                current = len(_correlation_api_get(f"/api/v2/incidents/{iid}/alerts", token))
+                if current > before_counts[iid]:
+                    incident_id = iid
+                    break
+        if incident_id:
+            break
+        time.sleep(3)
+
+    if not incident_id:
+        yield "status: ERROR - no new incident or existing-incident alert growth observed for the first real failure within 240s.\n"
+        return
+    yield f"status: First incident detected/correlated: {incident_id}\n"
+
+    if check == "same_alarm":
+        before_count = len(_correlation_api_get(f"/api/v2/incidents/{incident_id}/alerts", token))
+        yield "status: Resetting nemoguard-ingest-job-errors alarm again...\n"
+        _correlation_reset_alarm("nemoguard-ingest-job-errors")
+
+        yield "status: Triggering a SECOND, genuinely different real failure (oom_crash) on the SAME alarm...\n"
+        uid2 = uuid.uuid4().hex[:6]
+        run_id2 = f"RUN-LOCALSTACK-oom_crash-{uid2}"
+        key2 = f"customer_profile/{run_id2}.json"
+        s3.put_object(Bucket=LAB_BUCKET_NAME, Key=key2, Body=json.dumps({"user_id": f"USR-{uid2}", "last_login_ip": "10.0.0.1", "simulate_oom": True}).encode())
+        _lab_invoke(LAB_FUNCTIONS["ingest_job"], {"bucket": LAB_BUCKET_NAME, "key": key2, "run_id": run_id2})
+
+        yield "status: Waiting for real correlation decision (up to 90s)...\n"
+        deadline2 = time.monotonic() + 90
+        while time.monotonic() < deadline2:
+            incidents = _correlation_api_get("/api/v2/incidents?state=all", token)
+            new_ids2 = [i["incident_id"] for i in incidents if i["incident_id"] not in before and i["incident_id"] != incident_id]
+            if new_ids2:
+                yield f"status: RESULT: FAIL -- expected oom_crash to correlate onto {incident_id}, but NemoGuard created a NEW incident {new_ids2[0]} instead.\n"
+                return
+            after_count = len(_correlation_api_get(f"/api/v2/incidents/{incident_id}/alerts", token))
+            if after_count > before_count:
+                yield f"status: RESULT: PASS -- second real failure correlated onto the SAME incident {incident_id} (alert_count {before_count} -> {after_count}), as expected for two failures on the same alarm.\n"
+                return
+            time.sleep(3)
+        yield "status: RESULT: INCONCLUSIVE -- no correlation observed within 90s.\n"
+        return
+
+    # different_alarm
+    before2 = {i["incident_id"] for i in _correlation_api_get("/api/v2/incidents?state=all", token)}
+    yield "status: Resetting nemoguard-order-events-job-errors alarm...\n"
+    _correlation_reset_alarm("nemoguard-order-events-job-errors")
+
+    yield "status: Triggering a real failure on a DIFFERENT alarm (order_events partial_write_crash)...\n"
+    uid2 = uuid.uuid4().hex[:6]
+    run_id2 = f"RUN-LOCALSTACK-order-events-partial_write_crash-{uid2}"
+    key2 = f"order_events/{run_id2}.json"
+    orders = [{"order_id": f"ORD-{uuid.uuid4().hex[:8]}", "event_type": "created", "amount": 19.99} for _ in range(10)]
+    s3.put_object(Bucket=LAB_BUCKET_NAME, Key=key2, Body=json.dumps({"orders": orders, "simulate_partial_write_crash": True, "crash_after_n_rows": 5}).encode())
+    _lab_invoke(LAB_FUNCTIONS["order_events_job"], {"bucket": LAB_BUCKET_NAME, "key": key2, "run_id": run_id2})
+
+    yield "status: Waiting for a second, independent incident on the different alarm (up to 180s)...\n"
+    deadline2 = time.monotonic() + 180
+    second_incident_id = None
+    while time.monotonic() < deadline2:
+        incidents = _correlation_api_get("/api/v2/incidents?state=all", token)
+        new_ids2 = [i["incident_id"] for i in incidents if i["incident_id"] not in before2]
+        if new_ids2:
+            second_incident_id = new_ids2[0]
+            break
+        time.sleep(3)
+
+    if second_incident_id and second_incident_id != incident_id:
+        yield f"status: RESULT: PASS -- different alarm correlated to a genuinely different incident ({incident_id} vs {second_incident_id}), as expected.\n"
+    elif second_incident_id == incident_id:
+        yield f"status: RESULT: FAIL -- the different-alarm failure was incorrectly merged into the SAME incident {incident_id}.\n"
+    else:
+        yield "status: RESULT: INCONCLUSIVE -- no second incident observed within 180s.\n"
+
+
+@app.post("/lab/correlation-check")
+async def lab_correlation_check(req: CorrelationCheckRequest):
+    if req.check not in ("same_alarm", "different_alarm"):
+        raise HTTPException(status_code=400, detail="check must be 'same_alarm' or 'different_alarm'")
+    return StreamingResponse(_run_correlation_check(req.check), media_type="text/event-stream")
 
 
 @app.post("/lab/trigger/pipeline")

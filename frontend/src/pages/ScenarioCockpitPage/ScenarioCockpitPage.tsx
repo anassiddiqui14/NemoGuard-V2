@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
     Rocket, Cloud, Sparkles, RotateCcw, Database, Mail, GitBranch,
-    AlertTriangle, CheckCircle2, XCircle, Loader2, PlayCircle, BellRing,
+    AlertTriangle, CheckCircle2, XCircle, Loader2, PlayCircle, BellRing, Network,
 } from 'lucide-react';
 
 /**
@@ -92,6 +92,8 @@ export function ScenarioCockpitPage() {
     const [aiStreamStatus, setAiStreamStatus] = useState<string | null>(null);
     const [aiRunning, setAiRunning] = useState(false);
     const [alarms, setAlarms] = useState<AlarmState[] | null>(null);
+    const [correlationLog, setCorrelationLog] = useState<string[] | null>(null);
+    const [correlationRunning, setCorrelationRunning] = useState<string | null>(null);
 
     const refreshLabStatus = () => {
         fetch(`${SIM_BASE}/lab/status`)
@@ -133,6 +135,39 @@ export function ScenarioCockpitPage() {
         run(key, `/lab/trigger/${endpoint}`, { scenario }, `${label} — real AWS lab invocation completed. Alarm forwarding may take up to ~15s.`);
 
     const runReset = () => run('reset', '/reset', undefined, 'Cleared all incidents and alerts.');
+
+    const runCorrelationCheck = async (check: 'same_alarm' | 'different_alarm') => {
+        setCorrelationRunning(check);
+        setCorrelationLog([]);
+        try {
+            const res = await fetch(`${SIM_BASE}/lab/correlation-check`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ check }),
+            });
+            if (res.ok && res.body) {
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const text = decoder.decode(value);
+                    for (const line of text.split('\n')) {
+                        if (line.startsWith('status: ')) {
+                            const msg = line.replace('status: ', '');
+                            setCorrelationLog((prev) => [...(prev ?? []), msg]);
+                        }
+                    }
+                }
+            } else {
+                toast.error('Correlation check failed to start.');
+            }
+        } catch {
+            toast.error('Network error reaching the simulator.');
+        } finally {
+            setCorrelationRunning(null);
+        }
+    };
 
     const runAi = async () => {
         if (!prompt.trim()) return;
@@ -416,6 +451,48 @@ export function ScenarioCockpitPage() {
                                 </div>
                             );
                         })}
+                    </div>
+                )}
+            </Section>
+
+            {/* Real cross-cutting alert-correlation verification -- mirrors
+                scripts/run_scenario_catalog_30.py's scenario_28/29 exactly,
+                previously exercised only via that CLI script with zero
+                cockpit UI/API path. */}
+            <Section
+                icon={<Network className="w-4.5 h-4.5" />}
+                title="Alert Correlation Verification"
+                subtitle="Triggers two REAL, sequential Lambda failures and observes NemoGuard's actual correlation decision -- not a scripted assertion. Each check takes up to ~5 minutes (real webhook forwarding + LLM correlation + polling)."
+            >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <ScenarioButton
+                        label="Same Alarm -> Same Incident"
+                        description="schema_drift then oom_crash (same alarm) -- expects BOTH to land on ONE incident"
+                        tone="default"
+                        disabled={!labStatus?.available || !!correlationRunning}
+                        loading={correlationRunning === 'same_alarm'}
+                        onClick={() => runCorrelationCheck('same_alarm')}
+                    />
+                    <ScenarioButton
+                        label="Different Alarm -> Different Incident"
+                        description="schema_drift then order_events partial_write_crash -- expects TWO separate incidents"
+                        tone="default"
+                        disabled={!labStatus?.available || !!correlationRunning}
+                        loading={correlationRunning === 'different_alarm'}
+                        onClick={() => runCorrelationCheck('different_alarm')}
+                    />
+                </div>
+                {correlationLog && (
+                    <div className="rounded-xl ring-1 ring-white/[0.06] bg-black/20 p-3 max-h-64 overflow-y-auto space-y-1">
+                        {correlationLog.map((line, i) => (
+                            <div
+                                key={i}
+                                className={`text-[11.5px] font-mono ${line.startsWith('RESULT: PASS') ? 'text-healthy font-semibold' : line.startsWith('RESULT: FAIL') ? 'text-critical font-semibold' : line.startsWith('ERROR') ? 'text-warning' : 'text-text-secondary'}`}
+                            >
+                                {line}
+                            </div>
+                        ))}
+                        {correlationRunning && <div className="text-[11.5px] text-text-muted flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Running...</div>}
                     </div>
                 )}
             </Section>
