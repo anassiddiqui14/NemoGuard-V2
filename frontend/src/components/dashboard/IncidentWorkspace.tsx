@@ -244,6 +244,7 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
                         evidence={evidence}
                         plan={plan}
                         dataLoading={dataLoading}
+                        incidentStatus={selectedIncident?.status}
                         isNeedsReview={isNeedsReview}
                         safetyAcknowledged={safetyAcknowledged}
                         setSafetyAcknowledged={setSafetyAcknowledged}

@@ -8,6 +8,7 @@ interface Props {
     evidence: any[];
     plan: any;
     dataLoading: boolean;
+    incidentStatus?: string;
     isNeedsReview: boolean;
     safetyAcknowledged: boolean;
     setSafetyAcknowledged: (v: boolean) => void;
@@ -15,20 +16,25 @@ interface Props {
     isIncidentResolved?: boolean;
     onViewPlan: () => void;
     onExecute: () => void;
-    // When true, renders as a full-width tab-content panel (spacious layout,
-    // used inside WorkspaceTabs' "Recovery plan" tab) instead of the narrow
-    // permanently-visible right-hand rail. This directly addresses feedback
-    // that the always-visible narrow column made the main dashboard feel
-    // cramped -- the recovery status/action UI is unchanged, just given full
-    // width and only shown when the operator is actually looking at it.
     embedded?: boolean;
 }
 
-function StatusBadge({ isIncidentResolved, isNeedsReview, plan }: { isIncidentResolved?: boolean; isNeedsReview: boolean; plan: any }) {
+function StatusBadge({ isIncidentResolved, isNeedsReview, plan, incidentStatus }: { isIncidentResolved?: boolean; isNeedsReview: boolean; plan: any; incidentStatus?: string }) {
+    const s = (incidentStatus || '').toUpperCase();
+    const isExecuting = s === 'EXECUTING';
+    const isVerifying = s === 'VERIFYING';
+    const isFailed = s === 'FAILED';
+
     return (
         <AnimatePresence mode="wait">
             {isIncidentResolved ? (
                 <motion.span key="resolved" {...fadeInUp} className="text-[10px] font-bold px-2 py-1 rounded-full bg-healthy/15 text-healthy ring-1 ring-healthy/30 inline-block">RESOLVED</motion.span>
+            ) : isFailed ? (
+                <motion.span key="failed" {...fadeInUp} className="text-[10px] font-bold px-2 py-1 rounded-full bg-critical/15 text-critical ring-1 ring-critical/30 inline-block">VERIFICATION FAILED</motion.span>
+            ) : isVerifying ? (
+                <motion.span key="verifying" {...fadeInUp} className="text-[10px] font-bold px-2 py-1 rounded-full bg-info/15 text-info ring-1 ring-info/30 inline-block">VERIFYING</motion.span>
+            ) : isExecuting ? (
+                <motion.span key="executing" {...fadeInUp} className="text-[10px] font-bold px-2 py-1 rounded-full bg-info/15 text-info ring-1 ring-info/30 inline-block">EXECUTING</motion.span>
             ) : isNeedsReview ? (
                 <motion.span key="review" {...fadeInUp} className="text-[10px] font-bold px-2 py-1 rounded-full bg-critical/15 text-critical ring-1 ring-critical/30 inline-block">NEEDS REVIEW</motion.span>
             ) : (
@@ -37,6 +43,23 @@ function StatusBadge({ isIncidentResolved, isNeedsReview, plan }: { isIncidentRe
                 </motion.span>
             )}
         </AnimatePresence>
+    );
+}
+
+function StatusRow({ done, active, label }: { done: boolean; active: boolean; label: string }) {
+    return (
+        <div className="flex items-start gap-2.5">
+            <motion.div
+                layout
+                animate={{ scale: done ? [1, 1.15, 1] : 1 }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+                className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-[8px] ${done ? 'bg-healthy text-app-bg' : active ? 'bg-agent-active/80 text-white animate-pulse' : 'ring-1 ring-white/[0.08] text-text-muted'
+                    }`}
+            >
+                {done ? '\u2713' : active ? '\u25CF' : ''}
+            </motion.div>
+            <div className={`text-[12px] transition-colors duration-300 ${done || active ? 'text-text-secondary' : 'text-text-muted'}`}>{label}</div>
+        </div>
     );
 }
 
@@ -78,9 +101,11 @@ function SafetyBlock({ isIncidentResolved, isNeedsReview, plan, safetyAcknowledg
     );
 }
 
-function ActionButtons({ plan, canApprove, isIncidentResolved, isNeedsReview, safetyAcknowledged, onViewPlan, onExecute }: {
-    plan: any; canApprove: boolean; isIncidentResolved?: boolean; isNeedsReview: boolean; safetyAcknowledged: boolean; onViewPlan: () => void; onExecute: () => void;
+function ActionButtons({ plan, canApprove, isIncidentResolved, isNeedsReview, safetyAcknowledged, onViewPlan, onExecute, incidentStatus }: {
+    plan: any; canApprove: boolean; isIncidentResolved?: boolean; isNeedsReview: boolean; safetyAcknowledged: boolean; onViewPlan: () => void; onExecute: () => void; incidentStatus?: string;
 }) {
+    const s = (incidentStatus || '').toUpperCase();
+    const isExecutingOrLater = s === 'EXECUTING' || s === 'VERIFYING' || s === 'FAILED';
     return (
         <>
             <motion.button
@@ -100,19 +125,25 @@ function ActionButtons({ plan, canApprove, isIncidentResolved, isNeedsReview, sa
                 {!isIncidentResolved && isNeedsReview && !safetyAcknowledged && <ShieldAlert className="w-3.5 h-3.5" />}
                 {isIncidentResolved
                     ? 'Plan Executed'
-                    : plan?.status === 'PENDING_APPROVAL' || plan?.status === 'NEEDS_REVIEW'
-                        ? 'Approve & Execute'
-                        : plan
-                            ? 'Execute Plan'
-                            : 'Plan not ready'}
+                    : isExecutingOrLater
+                        ? 'Executing...'
+                        : plan?.status === 'PENDING_APPROVAL' || plan?.status === 'NEEDS_REVIEW'
+                            ? 'Approve & Execute'
+                            : plan
+                                ? 'Execute Plan'
+                                : 'Plan not ready'}
             </motion.button>
         </>
     );
 }
 
-export function RecoveryRail({
-    hypothesis, evidence, plan, dataLoading, isNeedsReview, safetyAcknowledged, setSafetyAcknowledged, canApprove, isIncidentResolved, onViewPlan, onExecute, embedded = false,
-}: Props) {
+export function RecoveryRail(props: Props) {
+    const {
+        hypothesis, evidence, plan, dataLoading, incidentStatus, isNeedsReview,
+        safetyAcknowledged, setSafetyAcknowledged, canApprove, isIncidentResolved,
+        onViewPlan, onExecute, embedded = false,
+    } = props;
+
     const executed = plan?.status === 'EXECUTED' || plan?.status === 'APPROVED' || !!isIncidentResolved;
 
     if (embedded) {
@@ -127,18 +158,12 @@ export function RecoveryRail({
                             <div className="font-semibold text-[14px] text-text-primary">Decision & Recovery</div>
                         </div>
                         <div className="text-[11.5px] text-text-muted ml-9">
-                            {isIncidentResolved ? 'Incident resolved — recovery complete' : plan ? 'Recovery plan ready for review' : 'Plan formulation in progress'}
+                            {isIncidentResolved ? 'Incident resolved - recovery complete' : plan ? 'Recovery plan ready for review' : 'Plan formulation in progress'}
                         </div>
                     </div>
-                    <StatusBadge isIncidentResolved={isIncidentResolved} isNeedsReview={isNeedsReview} plan={plan} />
+                    <StatusBadge isIncidentResolved={isIncidentResolved} isNeedsReview={isNeedsReview} plan={plan} incidentStatus={incidentStatus} />
                 </div>
 
-                {/* Safety banner + acknowledgment now spans the FULL width above
-                    the two-column grid instead of being squeezed into a narrow
-                    left column, with the rationale text shown only ONCE (it was
-                    previously duplicated -- both inside SafetyReviewBanner AND
-                    again as a separate card in the right column below), which
-                    was the main source of the cramped/redundant feel. */}
                 {!isIncidentResolved && isNeedsReview && plan && (
                     <div className="px-5 pt-4">
                         <SafetyBlock
@@ -168,6 +193,7 @@ export function RecoveryRail({
                             safetyAcknowledged={safetyAcknowledged}
                             onViewPlan={onViewPlan}
                             onExecute={onExecute}
+                            incidentStatus={incidentStatus}
                         />
                     </div>
                 </div>
@@ -190,10 +216,10 @@ export function RecoveryRail({
                     <div className="font-semibold text-[13px] text-text-primary">Decision & Recovery</div>
                 </div>
                 <div className="text-[11px] text-text-muted mb-3 ml-9">
-                    {isIncidentResolved ? 'Incident resolved — recovery complete' : plan ? 'Recovery plan ready for review' : 'Plan formulation in progress'}
+                    {isIncidentResolved ? 'Incident resolved - recovery complete' : plan ? 'Recovery plan ready for review' : 'Plan formulation in progress'}
                 </div>
                 <div className="ml-9">
-                    <StatusBadge isIncidentResolved={isIncidentResolved} isNeedsReview={isNeedsReview} plan={plan} />
+                    <StatusBadge isIncidentResolved={isIncidentResolved} isNeedsReview={isNeedsReview} plan={plan} incidentStatus={incidentStatus} />
                 </div>
             </div>
 
@@ -217,25 +243,9 @@ export function RecoveryRail({
                     safetyAcknowledged={safetyAcknowledged}
                     onViewPlan={onViewPlan}
                     onExecute={onExecute}
+                    incidentStatus={incidentStatus}
                 />
             </div>
         </motion.aside>
-    );
-}
-
-function StatusRow({ done, active, label }: { done: boolean; active: boolean; label: string }) {
-    return (
-        <div className="flex items-start gap-2.5">
-            <motion.div
-                layout
-                animate={{ scale: done ? [1, 1.15, 1] : 1 }}
-                transition={{ duration: 0.35, ease: 'easeOut' }}
-                className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-[8px] ${done ? 'bg-healthy text-app-bg' : active ? 'bg-agent-active/80 text-white animate-pulse' : 'ring-1 ring-white/[0.08] text-text-muted'
-                    }`}
-            >
-                {done ? '✓' : active ? '●' : ''}
-            </motion.div>
-            <div className={`text-[12px] transition-colors duration-300 ${done || active ? 'text-text-secondary' : 'text-text-muted'}`}>{label}</div>
-        </div>
     );
 }
