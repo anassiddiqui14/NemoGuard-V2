@@ -130,10 +130,14 @@ def require_any_role(*acceptable_roles: str):
 # Mock Endpoint to generate a test token — only reachable when ENV is
 # development/dev/local (enforced in main.py). Never usable in production.
 def get_mock_token(role: str = "admin"):
+    # Admin's mock-login display name reads as "Anas" (frontend derives
+    # displayName from the email local-part, see
+    # frontend/src/hooks/useCurrentUser.ts's displayNameFromEmail()).
+    mock_email = "anas@nemoguard.com" if role == "admin" else "test@nemoguard.com"
     access_token = create_access_token(
         data={
-            "sub": "mock-user-123", 
-            "email": "test@nemoguard.com", 
+            "sub": "mock-user-123",
+            "email": mock_email,
             "roles": [role],
             # Previously hardcoded to "tenant_A"/"ws_alpha", which never
             # matches the "default_tenant" every demo/seed incident row
