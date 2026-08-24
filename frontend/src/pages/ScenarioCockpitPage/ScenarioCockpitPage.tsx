@@ -86,7 +86,12 @@ async function postJson(path: string, body?: any) {
 type AlarmState = { alarm_name: string; state: string; state_reason: string; state_updated_at: string };
 
 export function ScenarioCockpitPage() {
-    const [labStatus, setLabStatus] = useState<{ available: boolean; detail: string } | null>(null);
+    const [labStatus, setLabStatus] = useState<{
+        available: boolean;
+        detail: string;
+        forwarder_ready?: boolean;
+        delivery_detail?: string;
+    } | null>(null);
     const [loadingKey, setLoadingKey] = useState<string | null>(null);
     const [prompt, setPrompt] = useState('');
     const [aiStreamStatus, setAiStreamStatus] = useState<string | null>(null);
@@ -278,16 +283,16 @@ export function ScenarioCockpitPage() {
                 subtitle="Genuinely breaks real Lambda/S3/Step Functions jobs -- not scripted payloads -- and NemoGuard is notified via a real CloudWatch Alarm -> SNS -> SQS chain."
                 right={
                     labStatus ? (
-                        <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-full ring-1 flex items-center gap-1.5 ${labStatus.available ? 'bg-healthy/10 text-healthy ring-healthy/25' : 'bg-warning/10 text-warning ring-warning/25'}`}>
-                            {labStatus.available ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                            {labStatus.available ? 'Lab Ready' : 'Lab Unavailable'}
+                        <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-full ring-1 flex items-center gap-1.5 ${labStatus.available && labStatus.forwarder_ready ? 'bg-healthy/10 text-healthy ring-healthy/25' : 'bg-warning/10 text-warning ring-warning/25'}`}>
+                            {labStatus.available && labStatus.forwarder_ready ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                            {labStatus.available && labStatus.forwarder_ready ? 'Lab Ready' : 'Delivery Reconnecting'}
                         </span>
                     ) : undefined
                 }
             >
-                {labStatus && !labStatus.available && (
+                {labStatus && (!labStatus.available || !labStatus.forwarder_ready) && (
                     <div className="mb-4 text-[11.5px] text-warning bg-warning/5 ring-1 ring-warning/20 rounded-lg px-3 py-2">
-                        {labStatus.detail}
+                        {labStatus.available ? labStatus.delivery_detail : labStatus.detail}
                     </div>
                 )}
                 <div className="space-y-4">
@@ -300,7 +305,7 @@ export function ScenarioCockpitPage() {
                                 label="Schema Drift"
                                 description="Real object missing last_login_ip -> real KeyError"
                                 tone="critical"
-                                disabled={!labStatus?.available}
+                                disabled={!labStatus?.available || !labStatus?.forwarder_ready}
                                 loading={loadingKey === 'lab_ingest_schema_drift'}
                                 onClick={() => runLab('lab_ingest_schema_drift', 'ingest', 'schema_drift', 'Schema Drift')}
                             />
@@ -308,7 +313,7 @@ export function ScenarioCockpitPage() {
                                 label="OOM Crash"
                                 description="Real MemoryError raised inside the Lambda"
                                 tone="warning"
-                                disabled={!labStatus?.available}
+                                disabled={!labStatus?.available || !labStatus?.forwarder_ready}
                                 loading={loadingKey === 'lab_ingest_oom'}
                                 onClick={() => runLab('lab_ingest_oom', 'ingest', 'oom_crash', 'OOM Crash')}
                             />
@@ -316,14 +321,14 @@ export function ScenarioCockpitPage() {
                                 label="DB Outage"
                                 description="Real connection failure to Postgres from the job"
                                 tone="warning"
-                                disabled={!labStatus?.available}
+                                disabled={!labStatus?.available || !labStatus?.forwarder_ready}
                                 loading={loadingKey === 'lab_ingest_db_outage'}
                                 onClick={() => runLab('lab_ingest_db_outage', 'ingest', 'db_outage', 'DB Outage')}
                             />
                             <ScenarioButton
                                 label="Healthy (sanity check)"
                                 description="Confirms the job succeeds normally"
-                                disabled={!labStatus?.available}
+                                disabled={!labStatus?.available || !labStatus?.forwarder_ready}
                                 loading={loadingKey === 'lab_ingest_healthy'}
                                 onClick={() => runLab('lab_ingest_healthy', 'ingest', 'healthy', 'Healthy ingest run')}
                             />
@@ -339,7 +344,7 @@ export function ScenarioCockpitPage() {
                                 label="Partial Write Crash"
                                 description="Genuinely commits half a batch, then crashes mid-write"
                                 tone="critical"
-                                disabled={!labStatus?.available}
+                                disabled={!labStatus?.available || !labStatus?.forwarder_ready}
                                 loading={loadingKey === 'lab_order_events_crash'}
                                 onClick={() => runLab('lab_order_events_crash', 'order_events', 'partial_write_crash', 'Partial Write Crash')}
                             />
@@ -347,14 +352,14 @@ export function ScenarioCockpitPage() {
                                 label="Duplicate Write"
                                 description="Real UniqueViolation from a retry re-sending a committed order_id"
                                 tone="critical"
-                                disabled={!labStatus?.available}
+                                disabled={!labStatus?.available || !labStatus?.forwarder_ready}
                                 loading={loadingKey === 'lab_order_events_duplicate'}
                                 onClick={() => runLab('lab_order_events_duplicate', 'order_events', 'duplicate_write', 'Duplicate Write')}
                             />
                             <ScenarioButton
                                 label="Healthy (sanity check)"
                                 description="Confirms the full batch commits successfully"
-                                disabled={!labStatus?.available}
+                                disabled={!labStatus?.available || !labStatus?.forwarder_ready}
                                 loading={loadingKey === 'lab_order_events_healthy'}
                                 onClick={() => runLab('lab_order_events_healthy', 'order_events', 'healthy', 'Healthy order events run')}
                             />
@@ -370,14 +375,14 @@ export function ScenarioCockpitPage() {
                                 label="Poison Pill"
                                 description="Malformed SQS message the consumer can't process"
                                 tone="critical"
-                                disabled={!labStatus?.available}
+                                disabled={!labStatus?.available || !labStatus?.forwarder_ready}
                                 loading={loadingKey === 'lab_notification_poison'}
                                 onClick={() => runLab('lab_notification_poison', 'notification', 'poison_pill', 'Poison Pill')}
                             />
                             <ScenarioButton
                                 label="Healthy (sanity check)"
                                 description="Confirms a valid message succeeds"
-                                disabled={!labStatus?.available}
+                                disabled={!labStatus?.available || !labStatus?.forwarder_ready}
                                 loading={loadingKey === 'lab_notification_healthy'}
                                 onClick={() => runLab('lab_notification_healthy', 'notification', 'healthy', 'Healthy notification run')}
                             />
@@ -393,7 +398,7 @@ export function ScenarioCockpitPage() {
                                 label="Ingest Step Fails"
                                 description="First state fails; second state never runs"
                                 tone="critical"
-                                disabled={!labStatus?.available}
+                                disabled={!labStatus?.available || !labStatus?.forwarder_ready}
                                 loading={loadingKey === 'lab_pipeline_ingest_fails'}
                                 onClick={() => runLab('lab_pipeline_ingest_fails', 'pipeline', 'ingest_step_fails', 'Ingest Step Fails')}
                             />
@@ -401,14 +406,14 @@ export function ScenarioCockpitPage() {
                                 label="Order Events Step Fails"
                                 description="Ingest succeeds; second state crashes mid-batch"
                                 tone="critical"
-                                disabled={!labStatus?.available}
+                                disabled={!labStatus?.available || !labStatus?.forwarder_ready}
                                 loading={loadingKey === 'lab_pipeline_order_events_fails'}
                                 onClick={() => runLab('lab_pipeline_order_events_fails', 'pipeline', 'order_events_step_fails', 'Order Events Step Fails')}
                             />
                             <ScenarioButton
                                 label="Healthy (sanity check)"
                                 description="Both steps succeed end-to-end"
-                                disabled={!labStatus?.available}
+                                disabled={!labStatus?.available || !labStatus?.forwarder_ready}
                                 loading={loadingKey === 'lab_pipeline_healthy'}
                                 onClick={() => runLab('lab_pipeline_healthy', 'pipeline', 'healthy', 'Healthy pipeline execution')}
                             />
@@ -484,7 +489,7 @@ export function ScenarioCockpitPage() {
                         label="Same Alarm -> Same Incident"
                         description="schema_drift then oom_crash (same alarm) -- expects BOTH to land on ONE incident"
                         tone="default"
-                        disabled={!labStatus?.available || !!correlationRunning}
+                        disabled={!labStatus?.available || !labStatus?.forwarder_ready || !!correlationRunning}
                         loading={correlationRunning === 'same_alarm'}
                         onClick={() => runCorrelationCheck('same_alarm')}
                     />
@@ -492,7 +497,7 @@ export function ScenarioCockpitPage() {
                         label="Different Alarm -> Different Incident"
                         description="schema_drift then order_events partial_write_crash -- expects TWO separate incidents"
                         tone="default"
-                        disabled={!labStatus?.available || !!correlationRunning}
+                        disabled={!labStatus?.available || !labStatus?.forwarder_ready || !!correlationRunning}
                         loading={correlationRunning === 'different_alarm'}
                         onClick={() => runCorrelationCheck('different_alarm')}
                     />

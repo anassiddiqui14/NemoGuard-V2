@@ -63,43 +63,60 @@ FUNCTION_NAME_TO_JOB_ID = {
 }
 
 
+# This event describes successful *queue acquisition*, not merely whether
+# startup attempted to launch a thread. LocalStack resources are ephemeral:
+# auto-provisioning can create the queue after this process has started.
+_lab_forwarder_ready = threading.Event()
+
+
 def _lab_forwarder_loop():
-    """Background thread (started once, at process startup) that continually
-    polls the REAL SQS queue subscribed to the lab's CloudWatch->SNS alarm
-    pipeline and forwards each notification into NemoGuard's existing
-    webhook endpoint -- functionally identical to localstack_lab/forwarder.py,
-    just running in-process inside this container so the cockpit doesn't
-    require a human to separately remember to start (and keep running) a
-    second terminal process for the forwarder every time the lab is used.
+    """Continuously reconnect to the lab alarm queue and deliver alarms.
+
+    A startup race with LocalStack must not permanently disable delivery:
+    queue acquisition and polling are retried forever, including after a
+    LocalStack restart. Messages are deleted only after NemoGuard accepts
+    them, preventing a transient API failure from silently losing an alarm.
     """
     if not LOCALSTACK_LAB_IMPORTABLE:
         print("[lab-forwarder] localstack_lab not importable; forwarder thread not starting.")
         return
-    try:
-        sqs = aws_client("sqs")
-        queue_url = sqs.get_queue_url(QueueName=LAB_ALERTS_QUEUE_NAME)["QueueUrl"]
-    except Exception as e:
-        print(f"[lab-forwarder] queue not available yet ({e}); forwarder thread not starting. "
-              f"Provision the lab (localstack_lab/provision.py) and restart the simulator to enable it.")
-        return
 
-    print(f"[lab-forwarder] started. Polling {LAB_ALERTS_QUEUE_NAME} -> {NEMOGUARD_API_BASE}/api/v2/ingest/webhook")
+    sqs = None
+    queue_url = None
     while True:
         try:
+            if queue_url is None:
+                sqs = aws_client("sqs")
+                queue_url = sqs.get_queue_url(QueueName=LAB_ALERTS_QUEUE_NAME)["QueueUrl"]
+                _lab_forwarder_ready.set()
+                print(
+                    f"[lab-forwarder] connected. Polling {LAB_ALERTS_QUEUE_NAME} "
+                    f"-> {NEMOGUARD_API_BASE}/api/v2/ingest/webhook"
+                )
+
             resp = sqs.receive_message(QueueUrl=queue_url, MaxNumberOfMessages=10, WaitTimeSeconds=10)
             for msg in resp.get("Messages", []):
                 try:
                     sns_envelope = json.loads(msg["Body"])
                     alarm_body = json.loads(sns_envelope.get("Message", "{}"))
                     payload = _cloudwatch_alarm_to_webhook_payload(alarm_body)
-                    r = httpx.post(f"{NEMOGUARD_API_BASE}/api/v2/ingest/webhook", json=payload, timeout=30.0)
-                    print(f"[lab-forwarder] forwarded alarm '{payload.get('alarm_name')}': HTTP {r.status_code}")
-                except Exception as e:
-                    print(f"[lab-forwarder] failed to process message: {e}")
-                finally:
+                    response = httpx.post(
+                        f"{NEMOGUARD_API_BASE}/api/v2/ingest/webhook",
+                        json=payload,
+                        timeout=30.0,
+                    )
+                    response.raise_for_status()
                     sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=msg["ReceiptHandle"])
+                    print(f"[lab-forwarder] forwarded alarm '{payload.get('alarm_name')}': HTTP {response.status_code}")
+                except Exception as e:
+                    # Leave the message in SQS for retry after its visibility
+                    # timeout. This is at-least-once delivery; NemoGuard's
+                    # correlator handles a retried alert safely.
+                    print(f"[lab-forwarder] failed to forward message; leaving it queued for retry: {e}")
         except Exception as e:
-            print(f"[lab-forwarder] poll error: {e}")
+            _lab_forwarder_ready.clear()
+            queue_url = None
+            print(f"[lab-forwarder] queue unavailable ({e}); retrying in 5s.")
             time.sleep(5)
 
 
@@ -233,6 +250,12 @@ def lab_status():
         "detail": detail,
         "functions": LAB_FUNCTIONS,
         "forwarder_running": _lab_forwarder_thread_started,
+        "forwarder_ready": _lab_forwarder_ready.is_set(),
+        "delivery_detail": (
+            "CloudWatch alarm forwarding is connected."
+            if _lab_forwarder_ready.is_set()
+            else "CloudWatch alarm forwarding is reconnecting; incidents cannot be created from real lab alarms yet."
+        ),
     }
 
 
