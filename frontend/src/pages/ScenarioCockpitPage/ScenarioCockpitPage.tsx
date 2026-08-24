@@ -273,7 +273,7 @@ export function ScenarioCockpitPage() {
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-text-muted mb-2 flex items-center gap-1.5">
                             <GitBranch className="w-3.5 h-3.5" /> Order Events Job (Glue-style partial write)
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <ScenarioButton
                                 label="Partial Write Crash"
                                 description="Genuinely commits half a batch, then crashes mid-write"
@@ -281,6 +281,14 @@ export function ScenarioCockpitPage() {
                                 disabled={!labStatus?.available}
                                 loading={loadingKey === 'lab_order_events_crash'}
                                 onClick={() => runLab('lab_order_events_crash', 'order_events', 'partial_write_crash', 'Partial Write Crash')}
+                            />
+                            <ScenarioButton
+                                label="Duplicate Write"
+                                description="Real UniqueViolation from a retry re-sending a committed order_id"
+                                tone="critical"
+                                disabled={!labStatus?.available}
+                                loading={loadingKey === 'lab_order_events_duplicate'}
+                                onClick={() => runLab('lab_order_events_duplicate', 'order_events', 'duplicate_write', 'Duplicate Write')}
                             />
                             <ScenarioButton
                                 label="Healthy (sanity check)"

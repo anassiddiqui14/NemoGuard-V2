@@ -228,13 +228,35 @@ def lab_trigger_ingest(req: LabTriggerRequest):
 
 @app.post("/lab/trigger/order_events")
 def lab_trigger_order_events(req: LabTriggerRequest):
-    """Real Glue-style partial-write crash against nemoguard-order-events-job
-    -- see localstack_lab/break_order_events_scenario.py."""
+    """Real Glue-style partial-write / duplicate-key crash against
+    nemoguard-order-events-job -- see
+    localstack_lab/break_order_events_scenario.py."""
     available, detail = _lab_check_available()
     if not available:
         raise HTTPException(status_code=503, detail=detail)
-    if req.scenario not in ("partial_write_crash", "healthy"):
-        raise HTTPException(status_code=400, detail="Choose from: partial_write_crash, healthy")
+    if req.scenario not in ("partial_write_crash", "duplicate_write", "healthy"):
+        raise HTTPException(status_code=400, detail="Choose from: partial_write_crash, duplicate_write, healthy")
+
+    if req.scenario == "duplicate_write":
+        # Two real, sequential Lambda invocations, matching
+        # break_order_events_scenario.py exactly: the first genuinely
+        # commits one order successfully; the second batch re-sends the
+        # SAME order_id (simulating a retry that forgot to check what
+        # already landed), which the real UNIQUE constraint rejects.
+        uid = uuid.uuid4().hex[:6]
+        order = {"order_id": f"ORD-DUP-{uid}", "event_type": "created", "amount": 42.0}
+        first_run_id = f"RUN-LOCALSTACK-order-events-duplicate_write-first-{uid}"
+        second_run_id = f"RUN-LOCALSTACK-order-events-duplicate_write-{uid}"
+
+        s3 = aws_client("s3")
+        first_key = f"order_events/{first_run_id}.json"
+        s3.put_object(Bucket=LAB_BUCKET_NAME, Key=first_key, Body=json.dumps({"orders": [order]}).encode())
+        _lab_invoke(LAB_FUNCTIONS["order_events_job"], {"bucket": LAB_BUCKET_NAME, "key": first_key, "run_id": first_run_id})
+
+        second_key = f"order_events/{second_run_id}.json"
+        s3.put_object(Bucket=LAB_BUCKET_NAME, Key=second_key, Body=json.dumps({"orders": [order]}).encode())
+        result = _lab_invoke(LAB_FUNCTIONS["order_events_job"], {"bucket": LAB_BUCKET_NAME, "key": second_key, "run_id": second_run_id})
+        return {"run_id": second_run_id, "s3_key": second_key, "duplicate_order_id": order["order_id"], **result}
 
     uid = uuid.uuid4().hex[:6]
     run_id = f"RUN-LOCALSTACK-order-events-{req.scenario}-{uid}"
