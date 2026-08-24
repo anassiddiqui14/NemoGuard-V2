@@ -946,6 +946,143 @@ class IncidentOrchestrator:
             )
         return result
 
+    async def _maybe_reinvestigate_on_new_evidence(self, incident_id: str, new_run_id: str, new_alert_id: str) -> None:
+        """
+        BUG FIX (found live during 30-scenario validation, 2026-08-24): see
+        the detailed comment at this method's call site in process_webhook.
+
+        Re-runs the full multi-agent investigation (RCA -> Impact ->
+        Runbook -> Commander, via the same LangGraphInvestigator used by
+        triage_incident/triage_feedback) when a NEW alert -- one whose
+        run_id was never previously attached to this incident -- correlates
+        onto an incident whose investigation has already produced a plan.
+        This is deliberately conservative about WHEN it re-investigates:
+
+          1. Skip if the incident hasn't produced a plan yet (still
+             INVESTIGATING/TRIAGING/DETECTED/CORRELATING) -- the original
+             triage_incident() call (kicked off by the Temporal workflow for
+             the incident's FIRST alert) is either already running or about
+             to run, and will naturally pick up this alert too since it
+             queries ALL alerts for the incident, not just the first one.
+             Re-investigating here as well would race that first run.
+          2. Skip if this run_id was already seen on this incident (e.g. a
+             genuine retry/duplicate delivery of the SAME underlying failure)
+             -- only a run_id we have never seen before constitutes real new
+             evidence that could change the root-cause hypothesis.
+          3. Skip terminal incidents (RESOLVED/FAILED/CLOSED/CANCELLED) --
+             process_webhook already excludes these from correlation
+             candidates, but guard here too since state can change between
+             the correlation decision and this call.
+
+        Runs synchronously but is called from process_webhook AFTER the
+        alert/correlation DB writes are committed, so a failure here never
+        blocks or corrupts the alert's own ingestion -- it's best-effort
+        re-triage, not a required step for the webhook to succeed.
+        """
+        try:
+            current_state = self.state_service.get_current_state(incident_id)
+        except Exception:
+            return
+        if current_state in (
+            IncidentState.DETECTED, IncidentState.CORRELATING, IncidentState.TRIAGING,
+            IncidentState.INVESTIGATING, IncidentState.RESOLVED, IncidentState.FAILED,
+            IncidentState.CANCELLED,
+        ):
+            return
+
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM alert a JOIN incident_alert ia ON a.alert_id = ia.alert_id "
+                "WHERE ia.incident_id = %s AND a.run_id = %s AND a.alert_id != %s",
+                (incident_id, new_run_id, new_alert_id),
+            )
+            row = cursor.fetchone()
+            is_genuinely_new_run = (row[0] if row else 0) == 0
+
+            cursor = conn.execute(
+                "SELECT action_plan_id, plan_version FROM action_plan WHERE incident_id = %s ORDER BY created_at DESC LIMIT 1",
+                (incident_id,),
+            )
+            plan_row = cursor.fetchone()
+
+        if not is_genuinely_new_run or not plan_row or not new_run_id:
+            return
+
+        rejected_plan_id, prev_version = plan_row[0], plan_row[1] or 1
+
+        alerts_data = []
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT alert.alert_id, alert.severity, alert.alert_type, alert.source_system, alert.message FROM alert "
+                "JOIN incident_alert ON alert.alert_id = incident_alert.alert_id "
+                "WHERE incident_alert.incident_id = %s",
+                (incident_id,),
+            )
+            for row in cursor.fetchall():
+                alerts_data.append({
+                    "alert_id": row[0], "severity": row[1], "alert_type": row[2],
+                    "source_system": row[3], "message": row[4],
+                })
+
+        self._log_audit(
+            incident_id, "Correlator Engine", "REINVESTIGATION_TRIGGERED",
+            f"Alert {new_alert_id} (run_id={new_run_id}) is a genuinely new run correlated onto an "
+            f"already-investigated incident (existing plan {rejected_plan_id}). Re-running full "
+            f"investigation with all {len(alerts_data)} correlated alerts as evidence, since the new "
+            f"alert may indicate a different or additional root cause than what was originally found.",
+        )
+
+        from src.domain.agents.langgraph_investigator import LangGraphInvestigator
+        investigator = LangGraphInvestigator()
+        feedback_context = (
+            f"NEW EVIDENCE: alert {new_alert_id} (run_id={new_run_id}) was just correlated onto this "
+            f"incident. This run_id was never previously part of this incident's evidence. Re-evaluate "
+            f"whether the root cause and recovery plan still apply given ALL correlated alerts, or "
+            f"whether this represents an additional/different failure that the plan must also address."
+        )
+        try:
+            final_state = await investigator.investigate(
+                incident_id, alerts_data, audit_callback=self._log_audit,
+                feedback_context=feedback_context,
+            )
+        except Exception as e:
+            self._log_audit(incident_id, "SYSTEM", "REINVESTIGATION_FAILED", f"Re-investigation after new correlated evidence failed: {e}")
+            return
+
+        rca_res = final_state.get("rca_result", {})
+        impact_res = final_state.get("impact_result", {})
+        plan_res = final_state.get("final_plan", {})
+        rca_hypotheses = rca_res.get("hypotheses") or [{
+            "statement": rca_res.get("finding", "Unknown root cause"),
+            "cause_type": rca_res.get("cause_type", "OTHER"),
+            "confidence": rca_res.get("confidence", 0.9),
+        }]
+        llm_response = {
+            "evidence": rca_res.get("evidence", []),
+            "hypotheses": rca_hypotheses,
+            "impacts": impact_res.get("impacts", []),
+            "action_plan": {
+                "rationale": plan_res.get("rationale", ""),
+                "expected_outcome": plan_res.get("expected_outcome", ""),
+                "risk": plan_res.get("risk", "MEDIUM"),
+                "steps": plan_res.get("steps", []),
+            },
+        }
+        result = self.save_agent_findings(
+            incident_id, llm_response,
+            critic_passed=final_state.get("critic_passed", True),
+            critic_feedback=final_state.get("critic_feedback", ""),
+            parent_plan_id=rejected_plan_id,
+            feedback_reference=None,
+            plan_version=prev_version + 1,
+        )
+        if "error" not in result:
+            self._log_audit(
+                incident_id, "Commander", "PLAN_REVISED",
+                f"Plan revised to v{prev_version + 1} ({result.get('plan_id')}) after re-investigation "
+                f"triggered by new correlated evidence (alert {new_alert_id}, run_id={new_run_id}).",
+            )
+
     async def process_webhook(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         Processes incoming webhooks. The Watcher Agent (LLM) is still used for
@@ -1142,6 +1279,33 @@ class IncidentOrchestrator:
                     "ALERT_CORRELATED",
                     f"Alert {alert_id} correlated to this incident. {correlation_reasoning}",
                 )
+
+                # BUG FIX (found live during 30-scenario validation, 2026-08-24):
+                # correlation above only checks alarm-name/service/time proximity
+                # -- it does NOT check whether the underlying failure is
+                # actually the SAME root cause as what RCA/Impact/Runbook/
+                # Commander already investigated for this incident. Once an
+                # incident's first investigation completes (PLAN_READY or
+                # later), NOTHING previously re-ran that investigation, so a
+                # genuinely new/different failure occurring on the same alarm
+                # (e.g. a real db_outage arriving while an incident opened for
+                # a schema_drift was still AWAITING_APPROVAL) got silently
+                # absorbed into the stale, now-incorrect plan -- confirmed
+                # live: INC-E477F777 accumulated 12 alerts spanning at least
+                # two genuinely different real failures (schema_drift AND
+                # db_outage run_ids) while RCA/Commander only ever ran once,
+                # at 05:53, for the schema_drift alert alone.
+                #
+                # Fix: if this alert's run_id is genuinely new (not a
+                # duplicate/retry of a run_id already attached to this
+                # incident) AND the incident has already produced a plan
+                # (i.e. is past active investigation), re-run the full
+                # investigation with this alert included so the hypothesis/
+                # plan reflects ALL evidence, not just the first alert seen.
+                # Runs in the background (does not block the webhook
+                # response) using the same re-investigation machinery
+                # triage_feedback already uses for human-rejected plans.
+                await self._maybe_reinvestigate_on_new_evidence(correlated_incident_id, run_id, alert_id)
 
                 return {
                     "status": "ingested_and_correlated",
