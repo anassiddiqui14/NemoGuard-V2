@@ -37,6 +37,13 @@ sys.path.insert(0, os.path.dirname(__file__))
 from aws_clients import client  # noqa: E402
 
 LAB_DIR = Path(__file__).parent
+# When provision.py runs inside a container but delegates `docker run` to the
+# host daemon through docker.sock, bind-mount sources must be host-visible
+# paths. Compose supplies this value only for the simulator's self-healing
+# provision loop; direct host execution retains the normal LAB_DIR paths.
+HOST_LAB_DIR = Path(os.environ["NEMOGUARD_LAB_HOST_DIR"]).resolve() if os.environ.get(
+    "NEMOGUARD_LAB_HOST_DIR"
+) else LAB_DIR
 
 BUCKET_NAME = "nemoguard-lab-data"
 TOPIC_NAME = "nemoguard-lab-alerts"
@@ -69,16 +76,22 @@ def _build_lambda_zip(source_dir_name: str) -> bytes:
     temporary Linux container so the compiled extension matches the
     Lambda runtime's platform regardless of what OS this script runs on
     (e.g. building on macOS for a linux/amd64 Lambda runtime)."""
+    # Local paths are used to package the resulting zip. Docker bind mounts
+    # must instead use host paths when this provisioner is run through the
+    # simulator container's mounted Docker socket.
     src_dir = LAB_DIR / "lambda_src" / source_dir_name
     build_dir = LAB_DIR / "_build" / source_dir_name
+    host_src_dir = HOST_LAB_DIR / "lambda_src" / source_dir_name
+    host_build_dir = HOST_LAB_DIR / "_build" / source_dir_name
     build_dir.mkdir(parents=True, exist_ok=True)
+    host_build_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"  Installing Lambda dependencies for {source_dir_name} (via a throwaway linux container)...")
     subprocess.run(
         [
             "docker", "run", "--rm",
-            "-v", f"{src_dir.resolve()}:/src:ro",
-            "-v", f"{build_dir.resolve()}:/build",
+            "-v", f"{host_src_dir.resolve()}:/src:ro",
+            "-v", f"{host_build_dir.resolve()}:/build",
             "--platform", "linux/amd64",
             "public.ecr.aws/sam/build-python3.10",
             "pip", "install", "-r", "/src/requirements.txt", "-t", "/build",

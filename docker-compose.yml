@@ -99,6 +99,24 @@ services:
       # main.py's /lab/status) rather than failing the whole service.
       - LOCALSTACK_ENDPOINT=http://localstack:4566
       - NEMOGUARD_API_BASE=http://api:8000
+      # Docker Desktop resolves socket-delegated bind mounts on the host, not
+      # in this container. The provisioner uses this absolute host path for
+      # the throwaway Lambda dependency-build container.
+      - NEMOGUARD_LAB_HOST_DIR=${PWD}/localstack_lab
+    volumes:
+      # Keeps the provisioner's local zip-packaging paths and its host-backed
+      # Docker bind-mount paths on the same lab source/build tree.
+      - ./localstack_lab:/app/localstack_lab
+      # Grants access to the HOST's real Docker daemon so this container's
+      # in-process lab auto-provisioning (main.py's
+      # _lab_auto_provision_loop) can actually run `docker run --rm ...`
+      # (localstack_lab/provision.py's Lambda dependency-build step) --
+      # without this, that self-healing attempt fails every time with
+      # "[Errno 2] No such file or directory: 'docker'" even after
+      # installing the Docker CLI in the image (confirmed live). Matches
+      # the exact same socket-mount pattern the `localstack` service
+      # below already uses for its own real Lambda execution.
+      - "/var/run/docker.sock:/var/run/docker.sock"
 
   # --- LocalStack lab (real-AWS-API simulation for effectiveness testing) ---
   # See localstack_lab/README.md. Provides real S3/Lambda/CloudWatch/SNS/SQS

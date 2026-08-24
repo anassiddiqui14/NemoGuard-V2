@@ -6,6 +6,14 @@ import time
 import random
 import threading
 import httpx
+
+# Ensures print() output (including this file's [lab-forwarder] /
+# [lab-auto-provision] diagnostic lines) is actually flushed to `docker
+# logs` promptly -- uvicorn/gunicorn workers commonly run with buffered
+# stdout, which was silently swallowing these lines even though the
+# underlying logic worked correctly (confirmed live: /lab/status reported
+# available:true with zero matching log lines visible via `docker logs`).
+sys.stdout.reconfigure(line_buffering=True)
 from datetime import datetime, timezone
 from typing import Any
 import psycopg2
@@ -142,14 +150,61 @@ def _cloudwatch_alarm_to_webhook_payload(alarm_body: dict) -> dict:
 _lab_forwarder_thread_started = False
 
 
+def _lab_auto_provision_loop():
+    """Background thread (started once, at process startup) that CONTINUALLY
+    monitors lab availability and re-runs `localstack_lab/provision.py`'s
+    idempotent main() any time it detects the lab has become unavailable --
+    fixing the exact real, recurring failure mode where the Scenario
+    Cockpit's "Real AWS Lab" section shows "unavailable" after ANY restart
+    of the localstack container (Docker container recreation/restart does
+    NOT preserve LocalStack's in-memory-provisioned S3 bucket, Lambdas,
+    SNS/SQS, Step Functions state machine, or CloudWatch alarms -- they
+    must be recreated every single time). Previously this required a
+    human to notice the cockpit was unavailable and manually exec in to
+    re-run provision.py.
+
+    IMPORTANT: this loop never permanently exits after a successful
+    provision -- an earlier version of this fix returned once available,
+    which meant a SECOND localstack restart later in the same simulator
+    process's lifetime went right back to being silently unavailable
+    forever (confirmed live: this exact regression happened once during
+    this fix's own development). It now polls indefinitely for the whole
+    lifetime of the simulator process, re-provisioning every time it
+    detects the lab has dropped back to unavailable.
+    """
+    if not LOCALSTACK_LAB_IMPORTABLE:
+        print("[lab-auto-provision] localstack_lab not importable; auto-provision thread not starting.")
+        return
+    while True:
+        available, detail = _lab_check_available()
+        if not available:
+            try:
+                from localstack_lab import provision as _provision  # type: ignore
+                print(f"[lab-auto-provision] lab not available ({detail}); running provision.py...")
+                _provision.main()
+                print("[lab-auto-provision] provisioning succeeded.")
+            except Exception as e:
+                print(f"[lab-auto-provision] provisioning attempt failed ({e}); will re-check in 15s.")
+        # Poll every 15s regardless of outcome above -- catches the lab
+        # becoming unavailable again later (e.g. a subsequent localstack
+        # restart), not just the very first startup race.
+        time.sleep(15)
+
+
+_lab_auto_provision_thread_started = False
+
+
 @app.on_event("startup")
 def _start_lab_forwarder_once():
-    global _lab_forwarder_thread_started
-    if _lab_forwarder_thread_started:
-        return
-    _lab_forwarder_thread_started = True
-    t = threading.Thread(target=_lab_forwarder_loop, daemon=True)
-    t.start()
+    global _lab_forwarder_thread_started, _lab_auto_provision_thread_started
+    if not _lab_forwarder_thread_started:
+        _lab_forwarder_thread_started = True
+        t = threading.Thread(target=_lab_forwarder_loop, daemon=True)
+        t.start()
+    if not _lab_auto_provision_thread_started:
+        _lab_auto_provision_thread_started = True
+        t2 = threading.Thread(target=_lab_auto_provision_loop, daemon=True)
+        t2.start()
 
 
 class LabTriggerRequest(BaseModel):
