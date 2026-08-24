@@ -180,6 +180,63 @@ def lab_status():
     }
 
 
+LAB_ALARM_NAMES = [
+    "nemoguard-ingest-job-errors",
+    "nemoguard-order-events-job-errors",
+    "nemoguard-notification-job-errors",
+]
+
+
+@app.get("/lab/alarms")
+def lab_alarm_states():
+    """Real, live CloudWatch alarm state for every lab alarm -- surfaces
+    the alarm-lifecycle scenarios (trip-on-first-error, no-renotify-on-
+    repeat, acknowledge-after-fix, state-inspect-only) in the cockpit,
+    which previously had no UI/API path at all (only exercised via
+    scripts/run_scenario_catalog_30.py). A real boto3 describe_alarms
+    call, not a cached/mocked value."""
+    available, detail = _lab_check_available()
+    if not available:
+        raise HTTPException(status_code=503, detail=detail)
+    cw = aws_client("cloudwatch")
+    resp = cw.describe_alarms(AlarmNames=LAB_ALARM_NAMES)
+    by_name = {a["AlarmName"]: a for a in resp.get("MetricAlarms", [])}
+    return {
+        "alarms": [
+            {
+                "alarm_name": name,
+                "state": by_name.get(name, {}).get("StateValue", "UNKNOWN"),
+                "state_reason": by_name.get(name, {}).get("StateReason", ""),
+                "state_updated_at": str(by_name.get(name, {}).get("StateUpdatedTimestamp", "")),
+            }
+            for name in LAB_ALARM_NAMES
+        ]
+    }
+
+
+class AlarmResetRequest(BaseModel):
+    alarm_name: str
+    reason: str = "Acknowledged and reset from the Scenario Cockpit."
+
+
+@app.post("/lab/alarms/reset")
+def lab_alarm_reset(req: AlarmResetRequest):
+    """Real remediation action (delegates to the same
+    acknowledge_and_reset_alarm governed capability RCA plans use) --
+    forces a real CloudWatch alarm back to OK with an audit-worthy
+    StateReason, for the acknowledge-after-fix cockpit scenario."""
+    if req.alarm_name not in LAB_ALARM_NAMES:
+        raise HTTPException(status_code=400, detail=f"Unknown alarm. Choose from: {LAB_ALARM_NAMES}")
+    available, detail = _lab_check_available()
+    if not available:
+        raise HTTPException(status_code=503, detail=detail)
+    cw = aws_client("cloudwatch")
+    before = cw.describe_alarms(AlarmNames=[req.alarm_name])
+    state_before = (before.get("MetricAlarms") or [{}])[0].get("StateValue", "UNKNOWN")
+    cw.set_alarm_state(AlarmName=req.alarm_name, StateValue="OK", StateReason=req.reason)
+    return {"alarm_name": req.alarm_name, "state_before": state_before, "state_after": "OK", "reason": req.reason}
+
+
 def _lab_invoke(function_name: str, payload: dict) -> dict:
     lam = aws_client("lambda")
     resp = lam.invoke(

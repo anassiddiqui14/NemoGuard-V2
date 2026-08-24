@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
     Rocket, Cloud, Sparkles, RotateCcw, Database, Mail, GitBranch,
-    AlertTriangle, CheckCircle2, XCircle, Loader2, PlayCircle,
+    AlertTriangle, CheckCircle2, XCircle, Loader2, PlayCircle, BellRing,
 } from 'lucide-react';
 
 /**
@@ -83,12 +83,15 @@ async function postJson(path: string, body?: any) {
     return data;
 }
 
+type AlarmState = { alarm_name: string; state: string; state_reason: string; state_updated_at: string };
+
 export function ScenarioCockpitPage() {
     const [labStatus, setLabStatus] = useState<{ available: boolean; detail: string } | null>(null);
     const [loadingKey, setLoadingKey] = useState<string | null>(null);
     const [prompt, setPrompt] = useState('');
     const [aiStreamStatus, setAiStreamStatus] = useState<string | null>(null);
     const [aiRunning, setAiRunning] = useState(false);
+    const [alarms, setAlarms] = useState<AlarmState[] | null>(null);
 
     const refreshLabStatus = () => {
         fetch(`${SIM_BASE}/lab/status`)
@@ -97,9 +100,17 @@ export function ScenarioCockpitPage() {
             .catch(() => setLabStatus({ available: false, detail: 'Simulator unreachable.' }));
     };
 
+    const refreshAlarms = () => {
+        fetch(`${SIM_BASE}/lab/alarms`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => setAlarms(d?.alarms ?? null))
+            .catch(() => setAlarms(null));
+    };
+
     useEffect(() => {
         refreshLabStatus();
-        const t = setInterval(refreshLabStatus, 15000);
+        refreshAlarms();
+        const t = setInterval(() => { refreshLabStatus(); refreshAlarms(); }, 15000);
         return () => clearInterval(t);
     }, []);
 
@@ -354,6 +365,59 @@ export function ScenarioCockpitPage() {
                         </div>
                     </div>
                 </div>
+            </Section>
+
+            {/* Real CloudWatch alarm lifecycle -- live state + acknowledge/reset,
+                previously only exercised via scripts/run_scenario_catalog_30.py
+                with no cockpit UI/API path at all. */}
+            <Section
+                icon={<BellRing className="w-4.5 h-4.5" />}
+                title="Alarm Lifecycle (real CloudWatch state)"
+                subtitle="Live state of every lab CloudWatch alarm -- trips on real errors, stays ALARM on repeat failures (no re-notify), and can be acknowledged/reset here after a verified fix."
+                right={
+                    <motion.button
+                        whileTap={{ scale: 0.96 }}
+                        onClick={refreshAlarms}
+                        className="text-[11px] font-semibold px-3 py-1.5 rounded-lg ring-1 ring-white/[0.08] text-text-secondary hover:bg-white/[0.05] transition"
+                    >
+                        Refresh
+                    </motion.button>
+                }
+            >
+                {!alarms ? (
+                    <div className="text-[12px] text-text-muted">Alarm states unavailable -- provision the lab first.</div>
+                ) : (
+                    <div className="space-y-2">
+                        {alarms.map((a) => {
+                            const isAlarm = a.state === 'ALARM';
+                            return (
+                                <div
+                                    key={a.alarm_name}
+                                    className="flex items-center justify-between gap-3 rounded-xl p-3.5 ring-1 ring-white/[0.06] bg-white/[0.02]"
+                                >
+                                    <div className="min-w-0">
+                                        <div className="text-[12.5px] font-semibold text-text-primary truncate">{a.alarm_name}</div>
+                                        <div className="text-[11px] text-text-muted mt-0.5 truncate">{a.state_reason || 'No state reason yet.'}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                        <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-full ring-1 flex items-center gap-1.5 ${isAlarm ? 'bg-critical/10 text-critical ring-critical/25' : 'bg-healthy/10 text-healthy ring-healthy/25'}`}>
+                                            {isAlarm ? <XCircle className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+                                            {a.state}
+                                        </span>
+                                        <motion.button
+                                            whileTap={{ scale: 0.96 }}
+                                            disabled={!isAlarm || loadingKey === `alarm_reset_${a.alarm_name}`}
+                                            onClick={() => run(`alarm_reset_${a.alarm_name}`, '/lab/alarms/reset', { alarm_name: a.alarm_name }, `${a.alarm_name} acknowledged and reset to OK.`).then(refreshAlarms)}
+                                            className="text-[11px] font-semibold px-3 py-1.5 rounded-lg ring-1 ring-healthy/30 text-healthy hover:bg-healthy/10 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                                        >
+                                            {loadingKey === `alarm_reset_${a.alarm_name}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Acknowledge & Reset'}
+                                        </motion.button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </Section>
 
             {/* Generative AI custom scenario */}
