@@ -12,7 +12,7 @@ function Card({ title, subtitle, right, children, className = '' }: { title: str
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, ease: 'easeOut' }}
-            className={`glass-panel rounded-2xl overflow-hidden flex flex-col ${className}`}
+            className={`console-surface rounded-2xl overflow-hidden flex flex-col ${className}`}
         >
             <div className="px-4 py-3.5 flex items-center justify-between border-b border-white/[0.05]">
                 <div>
@@ -21,7 +21,7 @@ function Card({ title, subtitle, right, children, className = '' }: { title: str
                 </div>
                 {right}
             </div>
-            <div className="flex-1 overflow-hidden">{children}</div>
+            <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
         </motion.div>
     );
 }
@@ -32,109 +32,72 @@ export function AlertsPanel({ alerts, expandedAlert, setExpandedAlert }: { alert
         <Card title="Consolidated Alerts" subtitle="Downstream alerts dynamically grouped into this incident" right={
             <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-primary/15 text-primary ring-1 ring-primary/30">{alerts.length} alerts</span>
         }>
-            <div className="p-3 flex flex-col gap-2 max-h-[280px] overflow-y-auto">
-                {alerts.map((alt: any, idx: number) => (
-                    <motion.div
-                        key={alt.alert_id}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.2, delay: idx * 0.03 }}
-                        // "layout" (full layout animation) fights with the
-                        // expanded content's own AnimatePresence height
-                        // animation below -- both try to animate this card's
-                        // size at once, which visibly overlapped/bled into
-                        // the next card whenever one alert was expanded.
-                        // "position" only animates x/y reflow caused by a
-                        // sibling resizing, leaving height entirely to the
-                        // child's own animation, eliminating the fight.
-                        layout="position"
-                        className="rounded-xl overflow-hidden bg-white/[0.02] ring-1 ring-white/[0.04]"
-                    >
-                        <button
-                            onClick={() => setExpandedAlert(expandedAlert === alt.alert_id ? null : alt.alert_id)}
-                            className="w-full px-3.5 py-3 flex items-center justify-between hover:bg-white/[0.02] transition-colors text-left"
+            <div className="p-4 space-y-2.5">
+                {alerts.map((alt: any) => {
+                    const isExpanded = expandedAlert === alt.alert_id;
+                    return (
+                        <div
+                            key={alt.alert_id}
+                            className={`interactive-surface rounded-xl border ${isExpanded
+                                ? 'border-primary/25 bg-primary/[0.04] shadow-lg shadow-primary/5'
+                                : 'border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.04]'
+                                }`}
                         >
-                            <div className="flex items-center gap-3 min-w-0">
-                                <span
-                                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase flex-shrink-0 ${alt.severity === 'critical' ? 'bg-critical/15 text-critical' : alt.severity === 'high' ? 'bg-warning/15 text-warning' : 'bg-healthy/15 text-healthy'
-                                        }`}
-                                >
-                                    {alt.severity}
-                                </span>
-                                <div className="min-w-0">
-                                    <div className="font-medium text-[12.5px] truncate">{alt.source_system} · {alt.alert_type}</div>
-                                    <div className="text-[11px] text-text-muted truncate">{alt.message}</div>
-                                </div>
-                            </div>
-                            <motion.div animate={{ rotate: expandedAlert === alt.alert_id ? 180 : 0 }} transition={{ duration: 0.2 }} className="flex-shrink-0 ml-2">
-                                <ChevronDown className="w-3.5 h-3.5 text-text-muted" />
-                            </motion.div>
-                        </button>
-                        <AnimatePresence initial={false}>
-                            {expandedAlert === alt.alert_id && (
-                                <motion.div
-                                    key="content"
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    transition={{ duration: 0.22, ease: 'easeInOut' }}
-                                    className="overflow-hidden"
-                                >
-                                    <div className="px-3.5 py-3 border-t border-white/[0.05] bg-black/20 text-[12px] font-mono text-text-secondary leading-relaxed whitespace-pre-wrap break-all">
-                                        <div className="p-2.5 bg-white/[0.02] rounded-lg ring-1 ring-white/[0.04]">{alt.message}</div>
+                            <button
+                                type="button"
+                                aria-expanded={isExpanded}
+                                onClick={() => setExpandedAlert(isExpanded ? null : alt.alert_id)}
+                                className="focus-ring w-full px-3.5 py-3 flex items-center justify-between gap-3 text-left rounded-xl"
+                            >
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <span
+                                        className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase flex-shrink-0 ${alt.severity === 'critical' ? 'bg-critical/15 text-critical' : alt.severity === 'high' ? 'bg-warning/15 text-warning' : 'bg-healthy/15 text-healthy'}`}
+                                    >
+                                        {alt.severity}
+                                    </span>
+                                    <div className="min-w-0">
+                                        <div className="font-medium text-[12.5px] leading-5 text-text-primary truncate">{alt.source_system} · {alt.alert_type}</div>
+                                        <div className="text-[11px] leading-4 text-text-muted truncate">{alt.message}</div>
                                     </div>
-                                </motion.div>
+                                </div>
+                                <ChevronDown
+                                    className={`w-4 h-4 text-text-muted flex-shrink-0 transition-transform duration-150 ${isExpanded ? 'rotate-180 text-primary' : ''}`}
+                                />
+                            </button>
+
+                            {isExpanded && (
+                                <div className="border-t border-white/[0.07] px-3.5 py-3 bg-black/[0.12]">
+                                    <div className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-1.5">Alert details</div>
+                                    <p className="text-[12px] font-mono text-text-secondary leading-5 whitespace-pre-wrap break-words">
+                                        {alt.message}
+                                    </p>
+                                </div>
                             )}
-                        </AnimatePresence>
-                    </motion.div>
-                ))}
+                        </div>
+                    );
+                })}
             </div>
         </Card>
     );
 }
 
-/**
- * The hypothesis PANEL only has a real hypothesis once save_agent_findings
- * persists it -- which happens after the ENTIRE investigation graph
- * (RCA -> Impact + Runbook -> Safety Critic) completes, not just RCA. But
- * `dataLoading` (from useIncidentData) is only ever true/false, so while
- * waiting it always showed the hardcoded "RCA Agent is investigating
- * logs…" -- even once RCA has actually finished and Impact/Runbook/Safety
- * are the ones still running (visibly COMPLETED/RUNNING in the adjacent
- * Agent Constellation panel from the very same live event stream). Derive
- * the loading copy from the real audit events instead of a static string
- * so it always names whichever agent is actually still working.
- */
 function describeInvestigationProgress(events: AgentEvent[]): { title: string; subtitle: string } {
     const hasEvent = (types: string[]) => events.some((e) => types.includes(e.event_type));
-
     const rcaDone = hasEvent(['HYPOTHESIS_CREATED']);
     const impactDone = hasEvent(['IMPACT_CALCULATED']);
     const runbookDone = hasEvent(['RUNBOOK_RETRIEVED']);
     const safetyDone = hasEvent(['SAFETY_VALIDATION_PASSED', 'SAFETY_VALIDATION_FAILED']);
 
     if (!rcaDone) {
-        return {
-            title: 'RCA Agent is investigating logs…',
-            subtitle: 'Synthesizing evidence from execution logs and topology.',
-        };
+        return { title: 'RCA Agent is investigating logs…', subtitle: 'Synthesizing evidence from execution logs and topology.' };
     }
     if (!impactDone || !runbookDone) {
-        return {
-            title: 'Impact & Runbook Agents are assessing blast radius…',
-            subtitle: 'Root cause identified — calculating downstream impact and matching recovery procedures.',
-        };
+        return { title: 'Impact & Runbook Agents are assessing blast radius…', subtitle: 'Root cause identified — calculating downstream impact and matching recovery procedures.' };
     }
     if (!safetyDone) {
-        return {
-            title: 'Safety Agent is validating the recovery plan…',
-            subtitle: 'Independently verifying plan grounding before the hypothesis is finalized.',
-        };
+        return { title: 'Safety Agent is validating the recovery plan…', subtitle: 'Independently verifying plan grounding before the hypothesis is finalized.' };
     }
-    return {
-        title: 'Finalizing root-cause hypothesis…',
-        subtitle: 'Persisting findings from the completed investigation.',
-    };
+    return { title: 'Finalizing root-cause hypothesis…', subtitle: 'Persisting findings from the completed investigation.' };
 }
 
 export function AgentAndHypothesisRow({
@@ -165,7 +128,7 @@ export function AgentAndHypothesisRow({
                 title="Root-Cause Hypothesis"
                 subtitle="Ranked and evidence-grounded"
                 right={
-                    <button onClick={onViewEvidence} className="text-[11px] font-medium px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] ring-1 ring-white/[0.06] transition flex items-center gap-1.5 text-text-secondary">
+                    <button onClick={onViewEvidence} className="focus-ring press-scale text-[11px] font-medium px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] ring-1 ring-white/[0.06] transition flex items-center gap-1.5 text-text-secondary">
                         <Search className="w-3 h-3" /> Evidence
                     </button>
                 }
@@ -259,12 +222,6 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                     <div className="h-[190px] w-full">
                         {impact.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
-                                {/*
-                                  Every axis is derived from authoritative
-                                  incident_impact fields. Risk is calculated
-                                  server-side from persisted incident/CMDB
-                                  metadata; it is not a model-provided score.
-                                */}
                                 <RadarChart cx="50%" cy="50%" outerRadius="75%" data={[
                                     { subject: 'Jobs', A: impact.filter((i) => i.impact_type?.includes('Job')).length, fullMark: Math.max(impact.length, 5) },
                                     { subject: 'Products', A: impact.filter((i) => !i.impact_type?.includes('Job')).length, fullMark: Math.max(impact.length, 5) },
@@ -302,7 +259,7 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                                         initial={{ opacity: 0, x: 16 }}
                                         animate={{ opacity: 1, x: 0 }}
                                         transition={{ delay: 0.08 * idx }}
-                                        className="flex items-center justify-between p-2.5 mb-1.5 rounded-lg bg-white/[0.02] ring-1 ring-white/[0.05]"
+                                        className="interactive-surface flex items-center justify-between p-2.5 mb-1.5 rounded-lg bg-white/[0.02] ring-1 ring-white/[0.05]"
                                     >
                                         <div className="min-w-0 pr-2">
                                             <div className="font-medium text-[12px] text-text-secondary truncate">{imp.asset_name || imp.asset_id}</div>

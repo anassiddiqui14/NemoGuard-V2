@@ -97,6 +97,35 @@
     backdrop-filter: blur(20px) saturate(140%);
     -webkit-backdrop-filter: blur(20px) saturate(140%);
     border: 1px solid var(--panel-border);
+    box-shadow: 0 12px 32px -20px rgba(0, 0, 0, 0.65);
+  }
+
+  .console-surface {
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.045), transparent 38%),
+      var(--panel-bg);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid var(--panel-border);
+    box-shadow: 0 16px 40px -26px rgba(0, 0, 0, 0.8);
+  }
+
+  .interactive-surface {
+    transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .interactive-surface:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--color-primary) 30%, var(--panel-border));
+    box-shadow: 0 18px 36px -25px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(99, 102, 241, 0.06);
+  }
+
+  .focus-ring {
+    outline: none;
+  }
+
+  .focus-ring:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 32%, transparent);
   }
 
   .gradient-border {
@@ -175,6 +204,100 @@
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
     background-size: 200% 100%;
     animation: shimmer 1.6s ease-in-out infinite;
+  }
+
+  /*
+   * NemoGuard signal-network primitives
+   * These are deliberately quiet: they visualize coordinated handoffs and
+   * system readiness without turning an operator workflow into decoration.
+   */
+  .signal-grid {
+    background-image:
+      linear-gradient(rgba(129, 140, 248, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(129, 140, 248, 0.08) 1px, transparent 1px);
+    background-size: 36px 36px;
+    mask-image: radial-gradient(ellipse 75% 65% at 50% 50%, black 25%, transparent 78%);
+  }
+
+  .signal-orbit {
+    animation: signalOrbit 18s linear infinite;
+    transform-origin: center;
+  }
+
+  .signal-pulse {
+    animation: signalPulse 2.8s ease-in-out infinite;
+  }
+
+  .signal-scan {
+    background: linear-gradient(90deg, transparent, rgba(165, 180, 252, 0.72), rgba(240, 171, 252, 0.55), transparent);
+    background-size: 45% 100%;
+    background-repeat: no-repeat;
+    animation: signalScan 3.6s ease-in-out infinite;
+  }
+
+  .status-breath {
+    animation: statusBreath 2.4s ease-in-out infinite;
+  }
+
+  @keyframes signalOrbit {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes signalPulse {
+
+    0%,
+    100% {
+      opacity: 0.35;
+      transform: scale(0.9);
+    }
+
+    50% {
+      opacity: 0.95;
+      transform: scale(1.1);
+    }
+  }
+
+  @keyframes signalScan {
+    0% {
+      background-position: -50% 0;
+      opacity: 0;
+    }
+
+    20%,
+    80% {
+      opacity: 1;
+    }
+
+    100% {
+      background-position: 150% 0;
+      opacity: 0;
+    }
+  }
+
+  @keyframes statusBreath {
+
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(34, 211, 160, 0.16);
+    }
+
+    50% {
+      box-shadow: 0 0 0 5px rgba(34, 211, 160, 0);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

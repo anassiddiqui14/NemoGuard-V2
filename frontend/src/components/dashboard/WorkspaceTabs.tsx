@@ -52,21 +52,24 @@ export function WorkspaceTabs({ alertCount, overview, evidence, investigation, a
                 affordance, making the Approve & Execute button completely
                 unreachable. Tabs now shrink to fit (flex-wrap + min-w-0 + truncate)
                 instead of ever requiring horizontal scrolling to reach a tab. */}
-            <div className="w-full rounded-xl bg-white/[0.02] p-1 ring-1 ring-white/[0.05]">
-                <div className="flex flex-wrap gap-1">
+            <div className="console-surface w-full rounded-2xl p-1.5">
+                <div className="flex flex-wrap gap-1" role="tablist" aria-label="Incident workspace sections">
                     {TABS.map((tab) => (
                         <button
                             key={tab.key}
                             onClick={() => setActive(tab.key)}
-                            className={`relative flex-1 min-w-[92px] flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg text-[12px] font-medium transition-colors ${active === tab.key
+                            role="tab"
+                            aria-selected={active === tab.key}
+                            aria-controls={`workspace-panel-${tab.key}`}
+                            className={`focus-ring relative flex-1 min-w-[92px] flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[12px] font-semibold transition-colors ${active === tab.key
                                 ? 'text-text-primary'
-                                : 'text-text-muted hover:text-text-secondary'
+                                : 'text-text-muted hover:text-text-secondary hover:bg-white/[0.03]'
                                 }`}
                         >
                             {active === tab.key && (
                                 <motion.div
                                     layoutId="workspace-tab-pill"
-                                    className="absolute inset-0 rounded-lg bg-white/[0.06] ring-1 ring-white/[0.08]"
+                                    className="absolute inset-0 rounded-xl bg-gradient-to-br from-white/[0.10] to-white/[0.04] ring-1 ring-primary/25 shadow-lg shadow-primary/5"
                                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                                 />
                             )}
@@ -87,6 +90,8 @@ export function WorkspaceTabs({ alertCount, overview, evidence, investigation, a
             <AnimatePresence mode="wait">
                 <motion.div
                     key={active}
+                    id={`workspace-panel-${active}`}
+                    role="tabpanel"
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}

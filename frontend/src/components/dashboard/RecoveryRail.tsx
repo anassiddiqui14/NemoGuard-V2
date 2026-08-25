@@ -116,7 +116,7 @@ function ActionButtons({ plan, canApprove, isIncidentResolved, isNeedsReview, sa
                 whileTap={{ scale: 0.97 }}
                 onClick={onViewPlan}
                 disabled={!plan}
-                className="w-full text-[13px] px-4 py-2.5 rounded-xl ring-1 ring-primary/40 text-primary hover:bg-primary/5 transition font-medium disabled:opacity-40 disabled:ring-white/[0.06] disabled:text-text-muted flex items-center justify-center gap-2"
+                className="focus-ring press-scale w-full text-[13px] px-4 py-2.5 rounded-xl ring-1 ring-primary/40 text-primary hover:bg-primary/5 transition font-medium disabled:opacity-40 disabled:ring-white/[0.06] disabled:text-text-muted flex items-center justify-center gap-2"
             >
                 <FileCheck className="w-3.5 h-3.5" /> View exact plan
             </motion.button>
@@ -124,7 +124,7 @@ function ActionButtons({ plan, canApprove, isIncidentResolved, isNeedsReview, sa
                 whileTap={{ scale: 0.97 }}
                 disabled={!canApprove || isManualActionRequired}
                 onClick={onExecute}
-                className="w-full text-[13px] px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary to-agent-active text-white hover:brightness-110 transition font-semibold disabled:opacity-30 disabled:cursor-not-allowed shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+                className="focus-ring press-scale w-full text-[13px] px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary to-agent-active text-white hover:brightness-110 transition font-semibold disabled:opacity-30 disabled:cursor-not-allowed shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
             >
                 {!isIncidentResolved && isNeedsReview && !safetyAcknowledged && <ShieldAlert className="w-3.5 h-3.5" />}
                 {isIncidentResolved
@@ -154,7 +154,7 @@ export function RecoveryRail(props: Props) {
 
     if (embedded) {
         return (
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }} className="glass-panel rounded-2xl ring-1 ring-white/[0.06] overflow-hidden">
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }} className="console-surface rounded-2xl overflow-hidden">
                 <div className="p-5 pb-4 flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.05]">
                     <div>
                         <div className="flex items-center gap-2 mb-1">

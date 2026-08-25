@@ -18,7 +18,7 @@ export function LifecycleShowcase() {
     }, [inView]);
 
     return (
-        <section ref={ref} className="py-24 px-6 max-w-4xl mx-auto">
+        <section id="lifecycle" ref={ref} className="py-24 px-6 max-w-4xl mx-auto">
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={inView ? { opacity: 1, y: 0 } : {}}

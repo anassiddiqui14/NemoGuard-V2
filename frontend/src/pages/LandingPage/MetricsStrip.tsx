@@ -51,7 +51,7 @@ export function MetricsStrip() {
     const inView = useInView(ref, { once: true, margin: '-10% 0px' });
 
     return (
-        <section ref={ref} className="py-20 px-6">
+        <section id="metrics" ref={ref} className="py-20 px-6">
             <div className="max-w-5xl mx-auto">
                 <motion.div
                     initial={{ opacity: 0 }}

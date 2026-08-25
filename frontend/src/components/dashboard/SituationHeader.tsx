@@ -26,7 +26,7 @@ function Metric({ icon, label, value, sub, accent }: { icon: React.ReactNode; la
         <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative rounded-xl p-3.5 bg-white/[0.02] ring-1 ring-white/[0.05] overflow-hidden group hover:ring-white/[0.09] hover:-translate-y-0.5 transition-all duration-200"
+            className="interactive-surface relative rounded-xl p-3.5 bg-white/[0.02] ring-1 ring-white/[0.05] overflow-hidden group"
         >
             <div className="flex items-center gap-1.5 mb-2">
                 <span className={`${accent || 'text-text-muted'}`}>{icon}</span>
@@ -114,7 +114,7 @@ export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, 
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
-            className="glass-panel rounded-2xl p-5 lg:p-6 relative"
+            className="console-surface rounded-2xl p-5 lg:p-6 relative overflow-hidden"
         >
             <div className="flex flex-col lg:flex-row items-start justify-between gap-4 mb-5">
                 <div className="min-w-0 w-full lg:flex-1">
@@ -156,7 +156,7 @@ export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, 
                             <button
                                 onClick={handleStartTriage}
                                 disabled={triageStarting}
-                                className="press-scale inline-flex items-center gap-2 text-[13px] px-4 py-2 rounded-xl bg-gradient-to-r from-primary to-agent-active text-white hover:brightness-110 transition font-semibold disabled:opacity-60 shadow-lg shadow-primary/20"
+                                className="focus-ring press-scale inline-flex items-center gap-2 text-[13px] px-4 py-2 rounded-xl bg-gradient-to-r from-primary to-agent-active text-white hover:brightness-110 transition font-semibold disabled:opacity-60 shadow-lg shadow-primary/20"
                             >
                                 <PlayCircle className="w-4 h-4" />
                                 {triageStarting ? 'Starting investigation…' : 'Start Triage Now'}
@@ -168,7 +168,7 @@ export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, 
                                 onClick={onCancelIncident}
                                 disabled={cancelling}
                                 title="Stand this incident down without executing a recovery plan."
-                                className="press-scale inline-flex items-center gap-2 text-[13px] px-4 py-2 rounded-xl ring-1 ring-critical/35 text-critical hover:bg-critical/10 transition font-semibold disabled:opacity-60"
+                                className="focus-ring press-scale inline-flex items-center gap-2 text-[13px] px-4 py-2 rounded-xl ring-1 ring-critical/35 text-critical hover:bg-critical/10 transition font-semibold disabled:opacity-60"
                             >
                                 <XCircle className="w-4 h-4" />
                                 {cancelling ? 'Cancelling…' : 'Cancel Incident'}

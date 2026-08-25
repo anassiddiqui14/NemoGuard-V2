@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Sparkles, IdCard, Lock, ShieldCheck, ArrowRight, Cpu, GitBranch, BookOpen, Eye, CheckCircle, AlertCircle } from 'lucide-react';
+import { IdCard, Lock, ShieldCheck, ArrowRight, Cpu, GitBranch, BookOpen, Eye, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuthGate } from '../../contexts/AuthGateContext';
+import { BrandLockup, Logomark } from '../LandingPage/Brand';
 
-const AGENT_ICONS = [
-    { icon: <Eye className="w-4 h-4" />, label: 'Watcher' },
-    { icon: <Cpu className="w-4 h-4" />, label: 'RCA' },
-    { icon: <GitBranch className="w-4 h-4" />, label: 'Impact' },
-    { icon: <BookOpen className="w-4 h-4" />, label: 'Runbook' },
-    { icon: <ShieldCheck className="w-4 h-4" />, label: 'Safety' },
-    { icon: <CheckCircle className="w-4 h-4" />, label: 'Verifier' },
+const AGENT_STATUS = [
+    { icon: <Eye className="w-3.5 h-3.5" />, label: 'Watcher', status: 'Monitoring 214 signals' },
+    { icon: <Cpu className="w-3.5 h-3.5" />, label: 'RCA', status: 'Idle — no active incident' },
+    { icon: <GitBranch className="w-3.5 h-3.5" />, label: 'Impact', status: 'Idle — no active incident' },
+    { icon: <BookOpen className="w-3.5 h-3.5" />, label: 'Runbook', status: 'Idle — no active incident' },
+    { icon: <ShieldCheck className="w-3.5 h-3.5" />, label: 'Safety', status: 'Gating all high-risk actions' },
+    { icon: <CheckCircle className="w-3.5 h-3.5" />, label: 'Verifier', status: 'Idle — no active incident' },
 ];
 
 export function LoginPage() {
@@ -47,24 +48,14 @@ export function LoginPage() {
 
     return (
         <div className="min-h-screen w-full bg-app-bg flex">
-            {/* Left panel — decorative reprise of the agent constellation, no live 3D here */}
-            <div className="hidden lg:flex lg:w-[45%] relative overflow-hidden bg-gradient-to-br from-primary/10 via-app-bg to-agent-active/10 items-center justify-center p-12">
-                <div
-                    className="absolute inset-0 opacity-40"
-                    style={{
-                        backgroundImage:
-                            'radial-gradient(ellipse 60% 50% at 30% 20%, rgba(99,102,241,0.25), transparent), radial-gradient(ellipse 50% 40% at 80% 80%, rgba(192,38,211,0.2), transparent)',
-                    }}
-                />
-                <div className="relative z-10 max-w-sm">
+            {/* Left panel — a live-console reprise of the incident lifecycle, matching the landing identity */}
+            <div className="hidden lg:flex lg:w-[45%] relative overflow-hidden items-center justify-center p-12">
+                <div className="absolute inset-0 signal-grid opacity-50 pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent to-app-bg pointer-events-none" />
+
+                <div className="relative z-10 max-w-sm w-full">
                     <div className="flex items-center gap-2.5 mb-8">
-                        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-primary via-indigo-500 to-agent-active shadow-lg shadow-primary/30">
-                            <Sparkles className="w-5 h-5 text-white" strokeWidth={2.2} />
-                        </div>
-                        <div>
-                            <div className="font-semibold text-text-primary text-[15px] tracking-tight">NemoGuard</div>
-                            <div className="text-[11px] text-text-muted">Command Center</div>
-                        </div>
+                        <BrandLockup iconClassName="w-7 h-7" textClassName="text-[17px]" />
                     </div>
 
                     <h2 className="text-2xl font-semibold text-text-primary leading-tight mb-3">
@@ -75,17 +66,23 @@ export function LoginPage() {
                         at the risk boundary.
                     </p>
 
-                    <div className="grid grid-cols-3 gap-3">
-                        {AGENT_ICONS.map((a, i) => (
+                    <div className="console-surface rounded-2xl p-4 space-y-2.5">
+                        {AGENT_STATUS.map((a, i) => (
                             <motion.div
                                 key={a.label}
-                                initial={{ opacity: 0, y: 8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: i * 0.08 }}
-                                className="glass-panel rounded-xl p-3 flex flex-col items-center gap-1.5 ring-1 ring-white/[0.06]"
+                                initial={{ opacity: 0, x: -6 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: i * 0.06 }}
+                                className="flex items-center gap-3 py-1.5"
                             >
-                                <span className="text-primary">{a.icon}</span>
-                                <span className="text-[10px] font-medium text-text-secondary">{a.label}</span>
+                                <span className="w-7 h-7 rounded-lg bg-primary/15 text-primary flex items-center justify-center flex-shrink-0">
+                                    {a.icon}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-[12px] font-semibold text-text-primary">{a.label}</div>
+                                    <div className="text-[10.5px] text-text-muted truncate">{a.status}</div>
+                                </div>
+                                <span className="w-1.5 h-1.5 rounded-full bg-healthy status-breath flex-shrink-0" />
                             </motion.div>
                         ))}
                     </div>
@@ -100,11 +97,11 @@ export function LoginPage() {
                     transition={{ duration: 0.3 }}
                     className="w-full max-w-sm"
                 >
-                    <div className="lg:hidden flex items-center gap-2.5 mb-8 justify-center">
-                        <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-primary via-indigo-500 to-agent-active shadow-lg shadow-primary/30">
-                            <Sparkles className="w-4.5 h-4.5 text-white" strokeWidth={2.2} />
-                        </div>
-                        <div className="font-semibold text-text-primary text-[15px] tracking-tight">NemoGuard</div>
+                    <div className="lg:hidden flex items-center gap-2.5 mb-8 justify-center text-primary">
+                        <Logomark className="w-7 h-7" />
+                        <span className="font-semibold text-text-primary text-[15px] tracking-tight">
+                            Nemo<span className="text-primary">Guard</span>
+                        </span>
                     </div>
 
                     <h1 className="text-xl font-semibold text-text-primary mb-1.5">Sign in</h1>

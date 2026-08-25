@@ -177,12 +177,12 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
                 {onBack && (
                     <button
                         onClick={onBack}
-                        className="press-scale self-start flex items-center gap-1.5 text-[12.5px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5 rounded-lg hover:bg-white/[0.04] transition-colors"
+                        className="focus-ring press-scale self-start flex items-center gap-1.5 text-[12.5px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5 rounded-lg hover:bg-white/[0.04] transition-colors"
                     >
                         <ArrowLeft className="w-3.5 h-3.5" /> Back to incidents
                     </button>
                 )}
-                <div className="glass-panel rounded-2xl ring-1 ring-white/[0.06] min-h-[300px] flex items-center justify-center">
+                <div className="console-surface rounded-2xl min-h-[300px] flex items-center justify-center">
                     <EmptyState icon={<AlertTriangle className="w-5 h-5" />} title="No incident selected" subtitle="Choose an incident to view its full detail." />
                 </div>
             </div>
@@ -194,7 +194,7 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
             {onBack && (
                 <button
                     onClick={onBack}
-                    className="press-scale self-start flex items-center gap-1.5 text-[12.5px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5 rounded-lg hover:bg-white/[0.04] transition-colors"
+                    className="focus-ring press-scale self-start flex items-center gap-1.5 text-[12.5px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5 rounded-lg hover:bg-white/[0.04] transition-colors"
                 >
                     <ArrowLeft className="w-3.5 h-3.5" /> Back to incidents
                 </button>

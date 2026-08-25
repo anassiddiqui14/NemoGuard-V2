@@ -13,7 +13,7 @@ export function EvidenceShowcase() {
     const inView = useInView(ref, { once: true, margin: '-15% 0px' });
 
     return (
-        <section ref={ref} className="py-24 px-6 max-w-5xl mx-auto">
+        <section id="evidence" ref={ref} className="py-24 px-6 max-w-5xl mx-auto">
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={inView ? { opacity: 1, y: 0 } : {}}
