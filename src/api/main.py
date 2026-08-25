@@ -470,7 +470,33 @@ def get_runbooks_context(current_user: User = Depends(get_current_user)):
 
 # --- 12.4 Workflow endpoints ---
 
-@app.post("/api/v2/ingest/webhook")
+async def _process_ingested_webhook(payload: Dict[str, Any]) -> None:
+    """Run long-lived incident analysis off the API event loop."""
+    try:
+        result = await asyncio.to_thread(
+            lambda: asyncio.run(IncidentOrchestrator().process_webhook(payload))
+        )
+        if result.get("status") == "error":
+            print(f"Webhook orchestration failed: {result.get('message')}")
+            return
+
+        if result.get("status") == "ingested_and_incident_created":
+            incident_id = result.get("incident_id")
+            global temporal_client
+            if temporal_client and incident_id:
+                await temporal_client.start_workflow(
+                    IncidentLifecycleWorkflow.run,
+                    incident_id,
+                    id=f"incident-{incident_id}",
+                    task_queue="incident-task-queue",
+                )
+    except Exception as exc:
+        # The alert was accepted, so leave transport acknowledgements intact
+        # and log any later analysis failure for diagnosis.
+        print(f"Webhook background orchestration failed: {exc}")
+
+
+@app.post("/api/v2/ingest/webhook", status_code=202)
 async def ingest_webhook(request: Request):
     """
     Generic webhook endpoint for Datadog, PagerDuty, or Email-to-Webhook parsing.
@@ -518,25 +544,8 @@ async def ingest_webhook(request: Request):
     verify_webhook_signature(raw_body, source, signature_header)
     enforce_replay_protection(payload)
 
-    orchestrator = IncidentOrchestrator()
-    result = await orchestrator.process_webhook(payload)
-    
-    if result.get("status") == "error":
-        raise HTTPException(status_code=500, detail=result.get("message"))
-        
-    if result.get("status") == "ingested_and_incident_created":
-        incident_id = result.get("incident_id")
-        global temporal_client
-        if temporal_client:
-            from src.domain.workflows.incident_workflow import IncidentLifecycleWorkflow
-            await temporal_client.start_workflow(
-                IncidentLifecycleWorkflow.run,
-                incident_id,
-                id=f"incident-{incident_id}",
-                task_queue="incident-task-queue",
-            )
-        
-    return result
+    asyncio.create_task(_process_ingested_webhook(payload))
+    return {"status": "accepted_for_processing"}
 
 @app.post("/api/v2/incidents/{incident_id}/triage")
 async def triage_incident(incident_id: str, current_user: User = Depends(require_role("operator"))):

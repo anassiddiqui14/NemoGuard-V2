@@ -4,6 +4,7 @@ import uuid
 import json
 import time
 import random
+import re
 import threading
 import httpx
 
@@ -53,6 +54,7 @@ LAB_FUNCTIONS = {
     "notification_job": "nemoguard-notification-job",
 }
 LAB_ALERTS_QUEUE_NAME = "nemoguard-lab-alerts-queue"
+LAB_ALERTS_TOPIC_NAME = "nemoguard-lab-alerts"
 LAB_STATE_MACHINE_NAME = "nemoguard-daily-pipeline"
 NEMOGUARD_API_BASE = os.environ.get("NEMOGUARD_API_BASE", "http://api:8000")
 
@@ -141,16 +143,19 @@ def _cloudwatch_alarm_to_webhook_payload(alarm_body: dict) -> dict:
         if dim.get("name") == "FunctionName":
             function_name = dim.get("value")
     job_id = FUNCTION_NAME_TO_JOB_ID.get(function_name, "LOCALSTACK_INGEST_JOB")
-    real_run_id = _most_recent_failed_run_id(job_id)
+    state_reason = alarm_body.get("NewStateReason", "")
+    # Cockpit-triggered faults explicitly include the unique Lambda run ID
+    # in the alarm reason. Prefer it over the database fallback so back-to-
+    # back alarm messages cannot both be attributed to whichever failed run
+    # happened to be written most recently when the forwarder consumes them.
+    run_match = re.search(r"RUN-LOCALSTACK-[A-Za-z0-9_-]+", state_reason)
+    real_run_id = run_match.group(0) if run_match else _most_recent_failed_run_id(job_id)
     run_id = real_run_id or f"RUN-LOCALSTACK-{int(time.time())}"
     return {
         "source": "CloudWatch (LocalStack)",
         "type": "Alarm",
         "monitor_name": alarm_body.get("AlarmName", "Unknown Alarm"),
-        "message": alarm_body.get(
-            "NewStateReason",
-            f"CloudWatch alarm {alarm_body.get('AlarmName')} entered ALARM state.",
-        ),
+        "message": state_reason or f"CloudWatch alarm {alarm_body.get('AlarmName')} entered ALARM state.",
         "tags": [
             f"service:{function_name or 'nemoguard-ingest-job'}",
             "env:localstack-lab",
@@ -351,6 +356,16 @@ def lab_trigger_ingest(req: LabTriggerRequest):
     if req.scenario not in _INGEST_SCENARIOS:
         raise HTTPException(status_code=400, detail=f"Unknown scenario. Choose from: {list(_INGEST_SCENARIOS.keys())}")
 
+    # CloudWatch/SNS sends a notification when an alarm transitions into
+    # ALARM, not for every additional failure while it remains ALARM. A
+    # cockpit user intentionally triggering the same failure twice expects
+    # two distinct test events, so restore the shared ingest alarm to OK
+    # before every fault-injection run. This mirrors the real correlation
+    # verification flow below and preserves the genuine AWS alarm -> SNS ->
+    # SQS -> Watcher webhook chain rather than posting a synthetic webhook.
+    if req.scenario != "healthy":
+        _correlation_reset_alarm("nemoguard-ingest-job-errors")
+
     uid = uuid.uuid4().hex[:6]
     run_id = f"RUN-LOCALSTACK-{req.scenario}-{uid}"
     key = f"customer_profile/{run_id}.json"
@@ -359,6 +374,8 @@ def lab_trigger_ingest(req: LabTriggerRequest):
     s3 = aws_client("s3")
     s3.put_object(Bucket=LAB_BUCKET_NAME, Key=key, Body=json.dumps(record).encode())
     result = _lab_invoke(LAB_FUNCTIONS["ingest_job"], {"bucket": LAB_BUCKET_NAME, "key": key, "run_id": run_id})
+    if req.scenario != "healthy" and result.get("function_error"):
+        _trigger_cockpit_alarm("nemoguard-ingest-job-errors", run_id)
     return {"run_id": run_id, "s3_key": key, **result}
 
 
@@ -487,6 +504,40 @@ def _correlation_reset_alarm(alarm_name: str) -> None:
         time.sleep(2)
     except Exception:
         pass
+
+
+def _trigger_cockpit_alarm(alarm_name: str, run_id: str) -> None:
+    """Deliver one alarm event after a verified Cockpit fault.
+
+    LocalStack evaluates metric alarms asynchronously and does not reliably
+    execute alarm actions for a programmatic ``set_alarm_state``. Keep that
+    state update for the Cockpit UI, then publish the equivalent CloudWatch
+    ALARM notification through the provisioned SNS -> SQS -> Watcher route.
+    This avoids synthetic direct webhook posts and gives every deliberate
+    fault injection, including rapid repeats, one observable delivery.
+    """
+    reason = f"Scenario Cockpit detected a verified failed run: {run_id}"
+    cw = aws_client("cloudwatch")
+    cw.set_alarm_state(AlarmName=alarm_name, StateValue="ALARM", StateReason=reason)
+
+    sns = aws_client("sns")
+    topics = sns.list_topics().get("Topics", [])
+    topic_arn = next(
+        (topic["TopicArn"] for topic in topics if topic["TopicArn"].endswith(f":{LAB_ALERTS_TOPIC_NAME}")),
+        None,
+    )
+    if not topic_arn:
+        raise RuntimeError(f"Lab SNS topic '{LAB_ALERTS_TOPIC_NAME}' is not provisioned.")
+
+    function_name = LAB_FUNCTIONS["ingest_job"]
+    notification = {
+        "AlarmName": alarm_name,
+        "NewStateValue": "ALARM",
+        "NewStateReason": reason,
+        "Region": "us-east-1",
+        "Trigger": {"Dimensions": [{"name": "FunctionName", "value": function_name}]},
+    }
+    sns.publish(TopicArn=topic_arn, Subject=f"ALARM: {alarm_name}", Message=json.dumps(notification))
 
 
 def _run_correlation_check(check: str):
