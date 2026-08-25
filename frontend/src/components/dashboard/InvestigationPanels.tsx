@@ -39,7 +39,15 @@ export function AlertsPanel({ alerts, expandedAlert, setExpandedAlert }: { alert
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.2, delay: idx * 0.03 }}
-                        layout
+                        // "layout" (full layout animation) fights with the
+                        // expanded content's own AnimatePresence height
+                        // animation below -- both try to animate this card's
+                        // size at once, which visibly overlapped/bled into
+                        // the next card whenever one alert was expanded.
+                        // "position" only animates x/y reflow caused by a
+                        // sibling resizing, leaving height entirely to the
+                        // child's own animation, eliminating the fight.
+                        layout="position"
                         className="rounded-xl overflow-hidden bg-white/[0.02] ring-1 ring-white/[0.04]"
                     >
                         <button
@@ -85,6 +93,50 @@ export function AlertsPanel({ alerts, expandedAlert, setExpandedAlert }: { alert
     );
 }
 
+/**
+ * The hypothesis PANEL only has a real hypothesis once save_agent_findings
+ * persists it -- which happens after the ENTIRE investigation graph
+ * (RCA -> Impact + Runbook -> Safety Critic) completes, not just RCA. But
+ * `dataLoading` (from useIncidentData) is only ever true/false, so while
+ * waiting it always showed the hardcoded "RCA Agent is investigating
+ * logs…" -- even once RCA has actually finished and Impact/Runbook/Safety
+ * are the ones still running (visibly COMPLETED/RUNNING in the adjacent
+ * Agent Constellation panel from the very same live event stream). Derive
+ * the loading copy from the real audit events instead of a static string
+ * so it always names whichever agent is actually still working.
+ */
+function describeInvestigationProgress(events: AgentEvent[]): { title: string; subtitle: string } {
+    const hasEvent = (types: string[]) => events.some((e) => types.includes(e.event_type));
+
+    const rcaDone = hasEvent(['HYPOTHESIS_CREATED']);
+    const impactDone = hasEvent(['IMPACT_CALCULATED']);
+    const runbookDone = hasEvent(['RUNBOOK_RETRIEVED']);
+    const safetyDone = hasEvent(['SAFETY_VALIDATION_PASSED', 'SAFETY_VALIDATION_FAILED']);
+
+    if (!rcaDone) {
+        return {
+            title: 'RCA Agent is investigating logs…',
+            subtitle: 'Synthesizing evidence from execution logs and topology.',
+        };
+    }
+    if (!impactDone || !runbookDone) {
+        return {
+            title: 'Impact & Runbook Agents are assessing blast radius…',
+            subtitle: 'Root cause identified — calculating downstream impact and matching recovery procedures.',
+        };
+    }
+    if (!safetyDone) {
+        return {
+            title: 'Safety Agent is validating the recovery plan…',
+            subtitle: 'Independently verifying plan grounding before the hypothesis is finalized.',
+        };
+    }
+    return {
+        title: 'Finalizing root-cause hypothesis…',
+        subtitle: 'Persisting findings from the completed investigation.',
+    };
+}
+
 export function AgentAndHypothesisRow({
     activeIncidentId, incidentStatus, liveEvents, hypothesis, evidence, dataLoading, onViewEvidence,
 }: {
@@ -96,6 +148,7 @@ export function AgentAndHypothesisRow({
     dataLoading: boolean;
     onViewEvidence: () => void;
 }) {
+    const progress = dataLoading ? describeInvestigationProgress(liveEvents) : null;
     return (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4 items-start">
             <Card title="Agent Constellation" subtitle="Coordinated multi-agent investigation" className="h-[400px]">
@@ -122,8 +175,8 @@ export function AgentAndHypothesisRow({
                     {!hypothesis ? (
                         <EmptyState
                             icon={<TrendingUp className="w-5 h-5" />}
-                            title={dataLoading ? 'RCA Agent is investigating logs…' : 'No hypothesis formulated yet'}
-                            subtitle={dataLoading ? 'Synthesizing evidence from execution logs and topology.' : 'Start triage to begin root-cause analysis.'}
+                            title={progress ? progress.title : 'No hypothesis formulated yet'}
+                            subtitle={progress ? progress.subtitle : 'Start triage to begin root-cause analysis.'}
                         />
                     ) : (
                         <div className="space-y-4">
@@ -259,10 +312,10 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                                         </div>
                                         <span
                                             className={`text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${String(imp.sla_status || '').toUpperCase() === 'BREACHED'
-                                                    ? 'bg-critical/15 text-critical'
-                                                    : String(imp.sla_status || '').toUpperCase() === 'AT_RISK'
-                                                        ? 'bg-warning/15 text-warning'
-                                                        : 'bg-healthy/15 text-healthy'
+                                                ? 'bg-critical/15 text-critical'
+                                                : String(imp.sla_status || '').toUpperCase() === 'AT_RISK'
+                                                    ? 'bg-warning/15 text-warning'
+                                                    : 'bg-healthy/15 text-healthy'
                                                 }`}
                                         >
                                             {imp.sla_status === 'UNKNOWN' ? 'SLA UNKNOWN' : (imp.sla_status || imp.impact_status || imp.status || 'AT RISK')}
