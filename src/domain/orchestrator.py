@@ -5,6 +5,7 @@ import urllib.parse
 import urllib.error
 import ssl
 import asyncio
+import threading
 import uuid
 import re
 from datetime import datetime, timezone, timedelta
@@ -26,6 +27,14 @@ from src.domain.models import (
 )
 
 class IncidentOrchestrator:
+    # Webhook deliveries can arrive simultaneously (SNS/SQS commonly
+    # fan-outs several alerts for one failed run). Correlation takes a
+    # read-then-create path, so without a shared lock two workers can both
+    # observe no matching incident and create duplicates. A threading lock is
+    # used rather than asyncio.Lock because API ingestion runs orchestrators
+    # in worker threads with separate event loops.
+    _webhook_correlation_lock = threading.Lock()
+
     def __init__(self, db_path: str = os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db")):
         self.db_path = db_path
         self.db = PostgresDatabase(db_path)
@@ -1104,6 +1113,25 @@ class IncidentOrchestrator:
             )
 
     async def process_webhook(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Serialize correlation decisions to prevent duplicate incidents.
+
+        The lock covers the full normalization -> active-incident snapshot ->
+        correlate/create transaction.  In particular, it ensures a second
+        alarm for the same run observes the incident persisted by the first
+        alarm and attaches to it rather than creating another incident.
+
+        This uses ``asyncio.to_thread`` for acquisition so waiting deliveries
+        never block the API event loop. The orchestrator itself is run from
+        worker threads by the webhook endpoint, therefore the class-level
+        ``threading.Lock`` is safe across the separate event loops.
+        """
+        await asyncio.to_thread(self._webhook_correlation_lock.acquire)
+        try:
+            return await self._process_webhook_unlocked(payload)
+        finally:
+            self._webhook_correlation_lock.release()
+
+    async def _process_webhook_unlocked(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         Processes incoming webhooks. The Watcher Agent (LLM) is still used for
         the parts an LLM genuinely does better than deterministic code --
