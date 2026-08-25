@@ -30,7 +30,7 @@ function Section({ icon, title, subtitle, children, right }: {
         >
             <div className="px-5 py-4 flex items-center justify-between border-b border-white/[0.05]">
                 <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary/20 to-agent-active/20 flex items-center justify-center text-primary flex-shrink-0">
+                    <div className="w-9 h-9 rounded-xl bg-primary/12 ring-1 ring-primary/25 flex items-center justify-center text-primary flex-shrink-0">
                         {icon}
                     </div>
                     <div>

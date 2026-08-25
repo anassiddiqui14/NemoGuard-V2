@@ -35,7 +35,7 @@ export function GreetingBar({ activeCount, approvalCount }: Props) {
             >
                 <div>
                     <h2 className="text-[15px] font-semibold text-text-primary tracking-tight">
-                        {greeting}, <span className="text-gradient">{user.displayName}</span>
+                        {greeting}, <span className="text-primary">{user.displayName}</span>
                     </h2>
                     <AnimatePresence>
                         {!collapsed && (

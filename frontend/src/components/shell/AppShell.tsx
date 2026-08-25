@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { Search, Bell, Sparkles, Sun, Moon, Clock, FileCheck2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Search, Bell, Sun, Moon, Clock, FileCheck2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import { GlobalNavRail } from './GlobalNavRail';
 import { UserMenu } from './UserMenu';
 import { LATEST_CHANGELOG_VERSION } from '../../data/changelog';
+import { Logomark } from '../../pages/LandingPage/Brand';
 
 function ThemeToggle() {
     const { theme, toggleTheme } = useTheme();
@@ -118,15 +119,15 @@ function TopBar({ onSelectIncident, onToggleNav, navCollapsed }: { onSelectIncid
                     {navCollapsed ? <PanelLeftOpen className="w-4.5 h-4.5" /> : <PanelLeftClose className="w-4.5 h-4.5" />}
                 </button>
                 <motion.div
-                    whileHover={{ rotate: 8, scale: 1.05 }}
+                    whileHover={{ scale: 1.06 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 15 }}
-                    className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-primary via-indigo-500 to-agent-active shadow-lg shadow-primary/30"
+                    className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-primary/10 ring-1 ring-primary/25 text-primary"
                 >
-                    <Sparkles className="w-4.5 h-4.5 text-white" strokeWidth={2.2} />
+                    <Logomark className="w-5 h-5" />
                 </motion.div>
                 <div className="min-w-0 flex flex-col justify-center">
                     <h1 className="font-semibold text-text-primary text-[15px] leading-tight tracking-tight">
-                        NemoGuard <span className="text-gradient font-semibold">Command Center</span>
+                        Nemo<span className="text-primary">Guard</span> <span className="text-text-secondary font-medium">Command Center</span>
                     </h1>
                     <p className="text-[11px] text-text-muted leading-tight">Agentic incident response</p>
                 </div>

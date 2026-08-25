@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { CheckSquare, FileText, AlertTriangle, ShieldCheck, Send, X, CheckCircle, Sparkles } from 'lucide-react';
+import { CheckSquare, FileText, AlertTriangle, ShieldCheck, Send, X, CheckCircle, ListOrdered } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { modalBackdrop, modalPanel } from './dashboard/shared';
 import { authFetch } from '../contexts/AuthGateContext';
@@ -90,7 +90,7 @@ export function PlanApprovalModal({ incidentId, plan, onClose, onRefreshPlan }: 
       <motion.div {...modalPanel} className="glass-panel rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden ring-1 ring-white/[0.08]">
         <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-agent-active/20 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-primary/12 ring-1 ring-primary/25 flex items-center justify-center">
               <CheckSquare className="w-4 h-4 text-primary" />
             </div>
             <h2 className="text-[15px] font-semibold text-text-primary">Approve Recovery Plan</h2>
@@ -130,7 +130,7 @@ export function PlanApprovalModal({ incidentId, plan, onClose, onRefreshPlan }: 
 
           <div>
             <h4 className="font-semibold text-text-primary mb-3 text-[14px] flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-agent-active" /> Execution Steps
+              <ListOrdered className="w-3.5 h-3.5 text-agent-active" /> Execution Steps
             </h4>
             <div className="space-y-2.5">
               {plan?.steps?.map((step: any, idx: number) => (

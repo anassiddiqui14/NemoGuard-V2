@@ -3,7 +3,7 @@ import { ResponsiveContainer, Radar, RadarChart, PolarGrid, PolarAngleAxis, Tool
 import { AgentConstellation } from '../AgentConstellation';
 import { LiveOperationsConsole } from '../LiveOperationsConsole';
 import { EmptyState, severityPill } from './shared';
-import { Search, Activity, TrendingUp, ChevronDown, Sparkles } from 'lucide-react';
+import { Search, Activity, TrendingUp, ChevronDown, Lightbulb } from 'lucide-react';
 import type { AgentEvent } from '../../hooks/useIncidentEvents';
 
 function Card({ title, subtitle, right, children, className = '' }: { title: string; subtitle?: string; right?: React.ReactNode; children: React.ReactNode; className?: string }) {
@@ -146,7 +146,7 @@ export function AgentAndHypothesisRow({
                             <div className="relative rounded-xl p-4 bg-gradient-to-br from-agent-active/10 to-transparent ring-1 ring-agent-active/20">
                                 <div className="flex items-start gap-3">
                                     <div className="w-8 h-8 rounded-lg bg-agent-active/15 flex items-center justify-center flex-shrink-0">
-                                        <Sparkles className="w-4 h-4 text-agent-active" />
+                                        <Lightbulb className="w-4 h-4 text-agent-active" />
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="font-medium text-[13px] leading-relaxed text-text-primary break-words">{hypothesis.title}</div>

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { motion } from 'framer-motion';
-import { X, Sparkles, ShieldCheck, ShieldAlert, ShieldQuestion, Shield } from 'lucide-react';
+import { X, Search, ShieldCheck, ShieldAlert, ShieldQuestion, Shield } from 'lucide-react';
 import { modalBackdrop, modalPanel } from './shared';
 
 // Evidence authority (spec §9.2): AUTHORITATIVE/HIGH/MEDIUM/LOW is now
@@ -85,8 +85,8 @@ export function EvidenceModal({ hypothesis, hypotheses, evidence, onClose }: { h
             <motion.div {...modalPanel} className="glass-panel rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden ring-1 ring-white/[0.08]">
                 <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-agent-active/20 flex items-center justify-center">
-                            <Sparkles className="w-4 h-4 text-primary" />
+                        <div className="w-8 h-8 rounded-lg bg-primary/12 ring-1 ring-primary/25 flex items-center justify-center">
+                            <Search className="w-4 h-4 text-primary" />
                         </div>
                         <h2 className="text-[15px] font-semibold text-text-primary">Evidence & Grounding</h2>
                     </div>

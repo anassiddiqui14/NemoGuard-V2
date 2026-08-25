@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { ShieldAlert, FileCheck, Sparkles } from 'lucide-react';
+import { ShieldAlert, FileCheck, Workflow } from 'lucide-react';
 import { SafetyReviewBanner } from './SituationHeader';
 import { fadeInUp } from './shared';
 
@@ -158,8 +158,8 @@ export function RecoveryRail(props: Props) {
                 <div className="p-5 pb-4 flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.05]">
                     <div>
                         <div className="flex items-center gap-2 mb-1">
-                            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary/20 to-agent-active/20 flex items-center justify-center">
-                                <Sparkles className="w-3.5 h-3.5 text-primary" />
+                            <div className="w-7 h-7 rounded-lg bg-primary/12 ring-1 ring-primary/25 flex items-center justify-center">
+                                <Workflow className="w-3.5 h-3.5 text-primary" />
                             </div>
                             <div className="font-semibold text-[14px] text-text-primary">Decision & Recovery</div>
                         </div>
@@ -216,8 +216,8 @@ export function RecoveryRail(props: Props) {
         >
             <div className="p-5 pb-4">
                 <div className="flex items-center gap-2 mb-1">
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary/20 to-agent-active/20 flex items-center justify-center">
-                        <Sparkles className="w-3.5 h-3.5 text-primary" />
+                    <div className="w-7 h-7 rounded-lg bg-primary/12 ring-1 ring-primary/25 flex items-center justify-center">
+                        <Workflow className="w-3.5 h-3.5 text-primary" />
                     </div>
                     <div className="font-semibold text-[13px] text-text-primary">Decision & Recovery</div>
                 </div>
