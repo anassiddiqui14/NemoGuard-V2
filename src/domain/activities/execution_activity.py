@@ -14,8 +14,12 @@ async def execute_plan_activity(args: dict) -> dict:
     
     orchestrator = IncidentOrchestrator()
     loop = asyncio.get_running_loop()
-    # execute_plan is a sync method
-    await loop.run_in_executor(None, orchestrator.execute_plan, incident_id, plan_id)
-    
-    activity.logger.info(f"Completed execution activity for incident {incident_id}")
-    return {"status": "executed"}
+    # execute_plan is synchronous. Preserve its governed outcome for the
+    # workflow: MANUAL_ACTION_REQUIRED must not be reported as successful
+    # execution simply because the activity itself completed normally.
+    result = await loop.run_in_executor(None, orchestrator.execute_plan, incident_id, plan_id)
+
+    activity.logger.info(
+        f"Completed execution activity for incident {incident_id} with status={result.get('status')}"
+    )
+    return result

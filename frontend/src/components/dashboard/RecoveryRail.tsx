@@ -23,12 +23,15 @@ function StatusBadge({ isIncidentResolved, isNeedsReview, plan, incidentStatus }
     const s = (incidentStatus || '').toUpperCase();
     const isExecuting = s === 'EXECUTING';
     const isVerifying = s === 'VERIFYING';
+    const isManualActionRequired = s === 'MANUAL_ACTION_REQUIRED';
     const isFailed = s === 'FAILED';
 
     return (
         <AnimatePresence mode="wait">
             {isIncidentResolved ? (
                 <motion.span key="resolved" {...fadeInUp} className="text-[10px] font-bold px-2 py-1 rounded-full bg-healthy/15 text-healthy ring-1 ring-healthy/30 inline-block">RESOLVED</motion.span>
+            ) : isManualActionRequired ? (
+                <motion.span key="manual-action-required" {...fadeInUp} className="text-[10px] font-bold px-2 py-1 rounded-full bg-warning/15 text-warning ring-1 ring-warning/30 inline-block">MANUAL ACTION REQUIRED</motion.span>
             ) : isFailed ? (
                 <motion.span key="failed" {...fadeInUp} className="text-[10px] font-bold px-2 py-1 rounded-full bg-critical/15 text-critical ring-1 ring-critical/30 inline-block">VERIFICATION FAILED</motion.span>
             ) : isVerifying ? (
@@ -105,6 +108,7 @@ function ActionButtons({ plan, canApprove, isIncidentResolved, isNeedsReview, sa
     plan: any; canApprove: boolean; isIncidentResolved?: boolean; isNeedsReview: boolean; safetyAcknowledged: boolean; onViewPlan: () => void; onExecute: () => void; incidentStatus?: string;
 }) {
     const s = (incidentStatus || '').toUpperCase();
+    const isManualActionRequired = s === 'MANUAL_ACTION_REQUIRED';
     const isExecutingOrLater = s === 'EXECUTING' || s === 'VERIFYING' || s === 'FAILED';
     return (
         <>
@@ -118,20 +122,22 @@ function ActionButtons({ plan, canApprove, isIncidentResolved, isNeedsReview, sa
             </motion.button>
             <motion.button
                 whileTap={{ scale: 0.97 }}
-                disabled={!canApprove}
+                disabled={!canApprove || isManualActionRequired}
                 onClick={onExecute}
                 className="w-full text-[13px] px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary to-agent-active text-white hover:brightness-110 transition font-semibold disabled:opacity-30 disabled:cursor-not-allowed shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
             >
                 {!isIncidentResolved && isNeedsReview && !safetyAcknowledged && <ShieldAlert className="w-3.5 h-3.5" />}
                 {isIncidentResolved
                     ? 'Plan Executed'
-                    : isExecutingOrLater
-                        ? 'Executing...'
-                        : plan?.status === 'PENDING_APPROVAL' || plan?.status === 'NEEDS_REVIEW'
-                            ? 'Approve & Execute'
-                            : plan
-                                ? 'Execute Plan'
-                                : 'Plan not ready'}
+                    : isManualActionRequired
+                        ? 'Manual action required'
+                        : isExecutingOrLater
+                            ? 'Executing...'
+                            : plan?.status === 'PENDING_APPROVAL' || plan?.status === 'NEEDS_REVIEW'
+                                ? 'Approve & Execute'
+                                : plan
+                                    ? 'Execute Plan'
+                                    : 'Plan not ready'}
             </motion.button>
         </>
     );
@@ -158,7 +164,7 @@ export function RecoveryRail(props: Props) {
                             <div className="font-semibold text-[14px] text-text-primary">Decision & Recovery</div>
                         </div>
                         <div className="text-[11.5px] text-text-muted ml-9">
-                            {isIncidentResolved ? 'Incident resolved - recovery complete' : plan ? 'Recovery plan ready for review' : 'Plan formulation in progress'}
+                            {isIncidentResolved ? 'Incident resolved - recovery complete' : incidentStatus?.toUpperCase() === 'MANUAL_ACTION_REQUIRED' ? 'Automation was blocked; follow the plan manually or revise it' : plan ? 'Recovery plan ready for review' : 'Plan formulation in progress'}
                         </div>
                     </div>
                     <StatusBadge isIncidentResolved={isIncidentResolved} isNeedsReview={isNeedsReview} plan={plan} incidentStatus={incidentStatus} />
@@ -216,7 +222,7 @@ export function RecoveryRail(props: Props) {
                     <div className="font-semibold text-[13px] text-text-primary">Decision & Recovery</div>
                 </div>
                 <div className="text-[11px] text-text-muted mb-3 ml-9">
-                    {isIncidentResolved ? 'Incident resolved - recovery complete' : plan ? 'Recovery plan ready for review' : 'Plan formulation in progress'}
+                    {isIncidentResolved ? 'Incident resolved - recovery complete' : incidentStatus?.toUpperCase() === 'MANUAL_ACTION_REQUIRED' ? 'Automation was blocked; follow the plan manually or revise it' : plan ? 'Recovery plan ready for review' : 'Plan formulation in progress'}
                 </div>
                 <div className="ml-9">
                     <StatusBadge isIncidentResolved={isIncidentResolved} isNeedsReview={isNeedsReview} plan={plan} incidentStatus={incidentStatus} />

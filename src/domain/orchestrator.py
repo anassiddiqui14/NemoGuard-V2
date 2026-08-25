@@ -506,7 +506,7 @@ class IncidentOrchestrator:
         # assuming a fresh INVESTIGATING -> PLAN_READY transition always
         # applies.
         current_state = self.state_service.get_current_state(incident_id)
-        if current_state == IncidentState.AWAITING_APPROVAL:
+        if current_state in (IncidentState.AWAITING_APPROVAL, IncidentState.MANUAL_ACTION_REQUIRED):
             self.state_service.transition(
                 incident_id=incident_id, to=IncidentState.INVESTIGATING,
                 actor="Commander", reason="Returning to investigation to produce a revised plan.",
@@ -707,25 +707,45 @@ class IncidentOrchestrator:
             compiled = plan_compiler.compile_plan(incident_id, plan_id, plan_version, intents)
         except UnsupportedCapabilityError as exc:
             # Fail closed: no unrecognized/free-text operation may enter the
-            # execution engine. Preserve the plan for a human to translate
-            # into an explicitly registered governed capability and make the
-            # blocked automation outcome visible in the audit trail.
+            # execution engine. The plan is retained intact for a human to
+            # carry out or translate into a registered capability; it is
+            # never misrepresented as an execution failure or left stuck in
+            # EXECUTING when this is discovered by the Temporal path.
+            manual_instruction = (
+                f"Manual action required for {exc.intent.intent_type}: "
+                f"{exc.intent.reason or 'translate the requested operation into a registered governed capability.'}"
+            )
             with self.db.get_connection() as conn:
                 conn.execute(
                     "UPDATE action_plan SET status = %s WHERE action_plan_id = %s",
                     (exc.code, plan_id),
                 )
+                conn.execute(
+                    "UPDATE action_step SET status = 'MANUAL_ACTION_REQUIRED' "
+                    "WHERE action_plan_id = %s AND status IN ('PENDING', 'EXECUTING')",
+                    (plan_id,),
+                )
+
+            current_state = self.state_service.get_current_state(incident_id)
+            if current_state != IncidentState.MANUAL_ACTION_REQUIRED:
+                self.state_service.transition(
+                    incident_id=incident_id,
+                    to=IncidentState.MANUAL_ACTION_REQUIRED,
+                    actor="Capability Gateway",
+                    reason=manual_instruction,
+                )
             self._log_audit(
                 incident_id,
                 "Capability Gateway",
                 exc.code,
-                f"Plan {plan_id} was not executed because {exc}. Human action is required.",
+                f"Plan {plan_id} was not executed. {manual_instruction}",
             )
             return {
                 "status": exc.code,
                 "plan_id": plan_id,
                 "intent_type": exc.intent.intent_type,
                 "reason": exc.intent.reason,
+                "manual_instruction": manual_instruction,
             }
 
         # Walk the incident forward through whatever intermediate lifecycle

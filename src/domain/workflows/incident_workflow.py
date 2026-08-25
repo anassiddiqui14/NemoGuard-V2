@@ -156,12 +156,23 @@ class IncidentLifecycleWorkflow:
         if self.approval_decision == "approve":
             workflow.logger.info(f"Plan approved for {incident_id}. Executing.")
             await self._transition(incident_id, "EXECUTING", "Plan approved; beginning execution.")
-            await workflow.execute_activity(
+            execution_result = await workflow.execute_activity(
                 execute_plan_activity,
                 {"incident_id": incident_id, "plan_id": self.plan_id},
                 start_to_close_timeout=timedelta(minutes=5),
             )
-            return {"status": "completed", "action": "executed"}
+            if execution_result.get("status") == "MANUAL_ACTION_REQUIRED":
+                workflow.logger.warning(
+                    f"Plan for {incident_id} requires manual action: "
+                    f"{execution_result.get('manual_instruction', execution_result.get('reason', ''))}"
+                )
+                return {
+                    "status": "manual_action_required",
+                    "action": "blocked",
+                    "plan_id": self.plan_id,
+                    "manual_instruction": execution_result.get("manual_instruction"),
+                }
+            return {"status": "completed", "action": "executed", "plan_id": self.plan_id}
         else:
             workflow.logger.info(f"Plan rejected/cancelled for {incident_id}")
             await self._transition(incident_id, "INVESTIGATING", "Plan rejected; returning to investigation.")
