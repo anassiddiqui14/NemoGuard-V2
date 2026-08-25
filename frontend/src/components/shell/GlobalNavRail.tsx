@@ -1,18 +1,23 @@
 import { NavLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { LayoutGrid, ListChecks, Cpu, Sparkles, Settings, BrainCircuit, Rocket, ShieldCheck } from 'lucide-react';
-import { LATEST_CHANGELOG_VERSION } from '../../data/changelog';
+import { Settings } from 'lucide-react';
+import {
+    CommandCenterIcon,
+    IncidentsIcon,
+    AgentOpsIcon,
+    IntelligenceIcon,
+    ScenarioIcon,
+    AdoptionIcon,
+} from '../../pages/LandingPage/NemoIcons';
 
 interface NavItem {
     to: string;
     label: string;
     icon: React.ReactNode;
     end?: boolean;
-    badge?: boolean;
 }
 
 interface Props {
-    hasUnseenChangelog: boolean;
     collapsed: boolean;
 }
 
@@ -23,16 +28,19 @@ interface Props {
  * shrinks it down to an icon-only rail instead of hiding it completely, so
  * the current section is always visible at a glance and switching sections
  * never costs more than a single click.
+ *
+ * Icons are the bespoke NemoGuard glyph set (NemoIcons.tsx) that shares the
+ * perimeter-watch frame from the primary brand mark, rather than generic
+ * icon-library glyphs.
  */
-export function GlobalNavRail({ hasUnseenChangelog, collapsed }: Props) {
+export function GlobalNavRail({ collapsed }: Props) {
     const items: NavItem[] = [
-        { to: '/app', label: 'Command Center', icon: <LayoutGrid className="w-4.5 h-4.5" />, end: true },
-        { to: '/app/incidents', label: 'Incidents', icon: <ListChecks className="w-4.5 h-4.5" /> },
-        { to: '/app/agent-operations', label: 'Agent Operations', icon: <Cpu className="w-4.5 h-4.5" /> },
-        { to: '/app/intelligence', label: 'Intelligence', icon: <BrainCircuit className="w-4.5 h-4.5" /> },
-        { to: '/app/scenario-cockpit', label: 'Scenario Cockpit', icon: <Rocket className="w-4.5 h-4.5" /> },
-        { to: '/app/adoption-readiness', label: 'Adoption Readiness', icon: <ShieldCheck className="w-4.5 h-4.5" /> },
-        { to: '/app/whats-new', label: "What's New", icon: <Sparkles className="w-4.5 h-4.5" />, badge: hasUnseenChangelog },
+        { to: '/app', label: 'Command Center', icon: <CommandCenterIcon className="w-4.5 h-4.5" />, end: true },
+        { to: '/app/incidents', label: 'Incidents', icon: <IncidentsIcon className="w-4.5 h-4.5" /> },
+        { to: '/app/agent-operations', label: 'Agent Operations', icon: <AgentOpsIcon className="w-4.5 h-4.5" /> },
+        { to: '/app/intelligence', label: 'Intelligence', icon: <IntelligenceIcon className="w-4.5 h-4.5" /> },
+        { to: '/app/scenario-cockpit', label: 'Scenario Cockpit', icon: <ScenarioIcon className="w-4.5 h-4.5" /> },
+        { to: '/app/adoption-readiness', label: 'Adoption Readiness', icon: <AdoptionIcon className="w-4.5 h-4.5" /> },
         { to: '/app/settings', label: 'Settings', icon: <Settings className="w-4.5 h-4.5" /> },
     ];
 
@@ -65,12 +73,7 @@ export function GlobalNavRail({ hasUnseenChangelog, collapsed }: Props) {
                                         className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-gradient-to-b from-primary to-agent-active"
                                     />
                                 )}
-                                <span className="flex-shrink-0 relative">
-                                    {item.icon}
-                                    {item.badge && (
-                                        <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-critical ring-2 ring-surface" />
-                                    )}
-                                </span>
+                                <span className="flex-shrink-0">{item.icon}</span>
                                 {!collapsed && <span className="text-[13px] font-medium whitespace-nowrap">{item.label}</span>}
                             </>
                         )}
@@ -79,8 +82,4 @@ export function GlobalNavRail({ hasUnseenChangelog, collapsed }: Props) {
             </nav>
         </motion.aside>
     );
-}
-
-export function useLatestChangelogVersion() {
-    return LATEST_CHANGELOG_VERSION;
 }

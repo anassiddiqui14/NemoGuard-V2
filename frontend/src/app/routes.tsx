@@ -7,7 +7,6 @@ import { Dashboard } from '../components/Dashboard';
 import { IncidentsPage } from '../pages/IncidentsPage/IncidentsPage';
 import { AgentOperationsPage } from '../pages/AgentOperationsPage/AgentOperationsPage';
 import { IntelligencePage } from '../pages/IntelligencePage/IntelligencePage';
-import { WhatsNewPage } from '../pages/WhatsNewPage/WhatsNewPage';
 import { SettingsPage } from '../pages/SettingsPage/SettingsPage';
 import { ScenarioCockpitPage } from '../pages/ScenarioCockpitPage/ScenarioCockpitPage';
 import { AdoptionReadinessPage } from '../pages/AdoptionReadinessPage/AdoptionReadinessPage';
@@ -31,7 +30,6 @@ export function AppRoutes() {
                 <Route path="intelligence" element={<IntelligencePage />} />
                 <Route path="scenario-cockpit" element={<ScenarioCockpitPage />} />
                 <Route path="adoption-readiness" element={<AdoptionReadinessPage />} />
-                <Route path="whats-new" element={<WhatsNewPage />} />
                 <Route path="settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

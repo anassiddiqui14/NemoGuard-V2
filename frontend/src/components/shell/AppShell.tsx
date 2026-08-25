@@ -6,7 +6,6 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import { GlobalNavRail } from './GlobalNavRail';
 import { UserMenu } from './UserMenu';
-import { LATEST_CHANGELOG_VERSION } from '../../data/changelog';
 import { Logomark } from '../../pages/LandingPage/Brand';
 
 function ThemeToggle() {
@@ -153,17 +152,11 @@ function TopBar({ onSelectIncident, onToggleNav, navCollapsed }: { onSelectIncid
 
 export function AppShell() {
     const navigate = useNavigate();
-    const [hasUnseenChangelog, setHasUnseenChangelog] = useState(false);
     // The nav rail is now a persistent, collapsible sidebar (instead of a
     // hidden overlay drawer that required an extra click before every
     // navigation) -- collapsed state persists across sessions via
     // localStorage so a user's preference sticks.
     const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem('nemoguard_nav_collapsed') === '1');
-
-    useEffect(() => {
-        const lastSeen = localStorage.getItem('nemoguard_last_seen_changelog');
-        setHasUnseenChangelog(lastSeen !== LATEST_CHANGELOG_VERSION);
-    }, []);
 
     const handleSelectIncident = (incidentId: string) => {
         navigate(`/app?incident=${encodeURIComponent(incidentId)}`);
@@ -181,7 +174,7 @@ export function AppShell() {
         <div className="flex flex-col h-screen w-full bg-app-bg overflow-hidden font-sans">
             <TopBar onSelectIncident={handleSelectIncident} onToggleNav={toggleNav} navCollapsed={navCollapsed} />
             <div className="flex flex-1 min-h-0 overflow-hidden">
-                <GlobalNavRail hasUnseenChangelog={hasUnseenChangelog} collapsed={navCollapsed} />
+                <GlobalNavRail collapsed={navCollapsed} />
                 <main className="flex-1 overflow-hidden">
                     <Outlet />
                 </main>
