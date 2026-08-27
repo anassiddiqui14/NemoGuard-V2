@@ -1113,11 +1113,11 @@ class CommanderAskRequest(BaseModel):
 
 
 @app.post("/api/v2/incidents/{incident_id}/commander/ask")
-def commander_ask(incident_id: str, req: CommanderAskRequest, current_user: User = Depends(get_current_user)):
+async def commander_ask(incident_id: str, req: CommanderAskRequest, current_user: User = Depends(get_current_user)):
     from src.domain.commander.conversation import CommanderConversation, IncidentNotFoundError
     conv = CommanderConversation()
     try:
-        return conv.ask(incident_id, current_user.tenant_id, req.question, current_user.user_id)
+        return await conv.ask(incident_id, current_user.tenant_id, req.question, current_user.user_id)
     except IncidentNotFoundError:
         raise HTTPException(status_code=404, detail="Incident not found")
 
@@ -1128,11 +1128,11 @@ class CommanderGuidanceRequest(BaseModel):
 
 
 @app.post("/api/v2/incidents/{incident_id}/commander/guidance")
-def commander_guidance(incident_id: str, req: CommanderGuidanceRequest, current_user: User = Depends(require_role("operator"))):
+async def commander_guidance(incident_id: str, req: CommanderGuidanceRequest, current_user: User = Depends(require_role("operator"))):
     from src.domain.commander.conversation import CommanderConversation, IncidentNotFoundError
     conv = CommanderConversation()
     try:
-        return conv.guide(
+        return await conv.guide(
             incident_id, current_user.tenant_id, req.text, current_user.user_id,
             guidance_type=req.guidance_type or "INVESTIGATION_DIRECTION", is_fact=False,
         )
@@ -1145,11 +1145,11 @@ class CommanderFactRequest(BaseModel):
 
 
 @app.post("/api/v2/incidents/{incident_id}/commander/facts")
-def commander_add_fact(incident_id: str, req: CommanderFactRequest, current_user: User = Depends(require_role("operator"))):
+async def commander_add_fact(incident_id: str, req: CommanderFactRequest, current_user: User = Depends(require_role("operator"))):
     from src.domain.commander.conversation import CommanderConversation, IncidentNotFoundError
     conv = CommanderConversation()
     try:
-        return conv.guide(
+        return await conv.guide(
             incident_id, current_user.tenant_id, req.text, current_user.user_id,
             guidance_type="MANUAL_EVIDENCE_REFERENCE", is_fact=True,
         )

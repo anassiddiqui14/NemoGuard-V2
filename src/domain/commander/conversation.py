@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional
 
 from src.store.postgres_database import PostgresDatabase
 from src.domain.commander.status_projector import StatusProjector
+from src.domain.agents.commander_live_agent import CommanderLiveAgent
 
 
 def _generate_id(prefix: str) -> str:
@@ -60,6 +61,37 @@ class CommanderConversation:
             os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db")
         )
         self.projector = StatusProjector(self.db)
+        self.agent = CommanderLiveAgent()
+
+    def _load_context(self, incident_id: str) -> Dict[str, Any]:
+        """Assembles the same real evidence/hypothesis/plan context an
+        operator would see in the workspace, for the LLM to ground its
+        response in -- never fabricated, always read live from the DB."""
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT status, actual_root_cause, rca_confidence FROM incident WHERE incident_id = %s",
+                (incident_id,),
+            )
+            status_row = cursor.fetchone()
+            status = status_row[0] if status_row else "UNKNOWN"
+
+            cursor = conn.execute(
+                "SELECT statement, cause_type, confidence FROM hypothesis WHERE incident_id = %s ORDER BY confidence DESC LIMIT 5",
+                (incident_id,),
+            )
+            hypotheses = [{"statement": r[0], "cause_type": r[1], "confidence": r[2]} for r in cursor.fetchall()]
+
+            cursor = conn.execute(
+                "SELECT action_plan_id, status, overall_risk FROM action_plan WHERE incident_id = %s ORDER BY created_at DESC LIMIT 1",
+                (incident_id,),
+            )
+            plan_row = cursor.fetchone()
+            plan = (
+                {"action_plan_id": plan_row[0], "status": plan_row[1], "overall_risk": plan_row[2]}
+                if plan_row else {}
+            )
+
+        return {"status": status, "hypotheses": hypotheses, "plan": plan}
 
     def _log_audit(self, incident_id: str, actor: str, event_type: str, summary: str) -> None:
         with self.db.get_connection() as conn:
@@ -156,54 +188,25 @@ class CommanderConversation:
     # ASK -- read-only
     # ------------------------------------------------------------------
 
-    def ask(self, incident_id: str, tenant_id: str, question: str, asked_by: str) -> Dict[str, Any]:
-        """Read-only: answers using current incident state, never mutates
-        anything. Uses a deterministic evidence-grounded summary rather
-        than invoking a full LLM call for every question, keeping ASK fast
-        and guaranteed side-effect-free -- see class docstring."""
+    async def ask(self, incident_id: str, tenant_id: str, question: str, asked_by: str) -> Dict[str, Any]:
+        """Read-only: a REAL LLM call (CommanderLiveAgent), grounded in the
+        incident's current evidence/hypothesis/plan state, with read-only
+        tool access for anything not already in that context. Genuinely
+        answers the specific question asked rather than returning a fixed
+        template -- see src/domain/agents/commander_live_agent.py. Never
+        mutates incident state or guidance_revision."""
         self._require_incident(incident_id, tenant_id)
         self._add_message(incident_id, "OPERATOR", question, intent="ASK", created_by=asked_by)
 
-        with self.db.get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT status, actual_root_cause, rca_confidence FROM incident WHERE incident_id = %s",
-                (incident_id,),
-            )
-            status, root_cause, confidence = cursor.fetchone() or (None, None, None)
+        context = self._load_context(incident_id)
+        answer = await self.agent.ask(incident_id, context, question)
 
-            cursor = conn.execute(
-                "SELECT statement, cause_type, confidence FROM hypothesis WHERE incident_id = %s ORDER BY confidence DESC LIMIT 3",
-                (incident_id,),
-            )
-            hypotheses = [{"statement": r[0], "cause_type": r[1], "confidence": r[2]} for r in cursor.fetchall()]
-
-            cursor = conn.execute(
-                "SELECT action_plan_id, status, overall_risk FROM action_plan WHERE incident_id = %s ORDER BY created_at DESC LIMIT 1",
-                (incident_id,),
-            )
-            plan_row = cursor.fetchone()
-
-        if hypotheses:
-            top = hypotheses[0]
-            answer = (
-                f"Incident is currently {status}. Top hypothesis ({round((top['confidence'] or 0) * 100)}% "
-                f"confidence, {top['cause_type']}): {top['statement']}."
-            )
-            if len(hypotheses) > 1:
-                answer += f" {len(hypotheses) - 1} alternative hypothesis(es) were also considered."
-        else:
-            answer = f"Incident is currently {status}. No root-cause hypothesis has been formulated yet."
-
-        if plan_row:
-            plan_id, plan_status, plan_risk = plan_row
-            answer += f" A {plan_risk}-risk recovery plan ({plan_id}) is currently {plan_status}."
-
-        self._add_message(incident_id, "COMMANDER", answer, evidence_refs=[h["statement"] for h in hypotheses])
+        self._add_message(incident_id, "COMMANDER", answer, evidence_refs=[h["statement"] for h in context["hypotheses"]])
 
         return {
             "answer": answer,
-            "incident_state": status,
-            "hypotheses": hypotheses,
+            "incident_state": context["status"],
+            "hypotheses": context["hypotheses"],
             "guidance_revision": self._get_current_revision(incident_id),
         }
 
@@ -211,7 +214,7 @@ class CommanderConversation:
     # GUIDE / ADD_FACT -- state-changing, persisted, revision-tracked
     # ------------------------------------------------------------------
 
-    def guide(
+    async def guide(
         self, incident_id: str, tenant_id: str, text: str, submitted_by: str, *,
         guidance_type: str = "INVESTIGATION_DIRECTION", is_fact: bool = False,
     ) -> Dict[str, Any]:
@@ -259,12 +262,13 @@ class CommanderConversation:
             f"Operator {'confirmed a fact' if is_fact else 'provided guidance'} (revision {new_revision}): {text}",
         )
 
-        commander_ack = (
-            "Noted -- I've recorded this as a confirmed fact and will weigh it accordingly."
-            if is_fact else "Understood -- I've recorded this guidance."
-        )
-        if is_material:
-            commander_ack += " This looks like it may materially affect the current investigation; flagging for review."
+        # Real LLM-generated acknowledgment, grounded in the incident's
+        # current context and the specific text the operator provided --
+        # not a fixed template. The deterministic is_material classification
+        # above is passed in as a fact for the model to reference, but the
+        # classification decision itself was never delegated to the LLM.
+        context = self._load_context(incident_id)
+        commander_ack = await self.agent.react_to_guidance(incident_id, context, text, is_fact, is_material)
         self._add_message(incident_id, "COMMANDER", commander_ack)
 
         return {
