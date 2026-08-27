@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Radio, ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck } from 'lucide-react';
+import { Radio, ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck, Sparkles } from 'lucide-react';
 import { useCommander } from '../../hooks/useCommander';
 import { EmptyState } from './shared';
 
@@ -44,6 +44,51 @@ function ConversationBubble({ role, intent, content, created_at }: { role: strin
     );
 }
 
+const THINKING_LABELS: Record<string, string> = {
+    ASK: 'Investigating',
+    GUIDE: 'Weighing guidance',
+    ADD_FACT: 'Reconciling fact',
+};
+
+/**
+ * "Commander is thinking" indicator. ASK/GUIDE/ADD_FACT can take anywhere
+ * from a few seconds (guidance reactions) to 60-90s (ASK, which may call
+ * real read-only tools like query_logs before answering -- see
+ * CommanderLiveAgent). Without this, the input area going quiet for that
+ * long looked indistinguishable from a hung/broken request.
+ */
+function ThinkingBubble({ mode }: { mode: 'ASK' | 'GUIDE' | 'ADD_FACT' }) {
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="flex justify-start mb-2.5"
+        >
+            <div className="max-w-[85%] rounded-2xl px-3.5 py-2.5 bg-white/[0.03] ring-1 ring-white/[0.06] flex items-center gap-2">
+                <motion.span
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 2.2, repeat: Infinity, ease: 'linear' }}
+                    className="flex-shrink-0"
+                >
+                    <Sparkles className="w-3 h-3 text-agent-active" />
+                </motion.span>
+                <span className="text-[11.5px] text-text-muted font-medium">{THINKING_LABELS[mode]}</span>
+                <span className="flex items-center gap-0.5">
+                    {[0, 1, 2].map((i) => (
+                        <motion.span
+                            key={i}
+                            className="w-1 h-1 rounded-full bg-text-muted"
+                            animate={{ opacity: [0.25, 1, 0.25], y: [0, -2, 0] }}
+                            transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }}
+                        />
+                    ))}
+                </span>
+            </div>
+        </motion.div>
+    );
+}
+
 export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
     const { pulse, messages, loading, sending, ask, guide, addFact } = useCommander(incidentId);
     const [mode, setMode] = useState<'ASK' | 'GUIDE' | 'ADD_FACT'>('ASK');
@@ -52,7 +97,7 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
 
     useEffect(() => {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-    }, [messages.length]);
+    }, [messages.length, sending]);
 
     const handleSubmit = async () => {
         if (!text.trim() || sending) return;
@@ -104,7 +149,7 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                     </div>
                 </div>
                 <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
-                    {messages.length === 0 ? (
+                    {messages.length === 0 && !sending ? (
                         <EmptyState icon={<MessageSquare className="w-5 h-5" />} title="Ask, guide, or add a confirmed fact" subtitle="Commander will answer questions, accept investigation guidance, and record confirmed facts -- but never accepts approval or execution through chat." />
                     ) : (
                         <AnimatePresence initial={false}>
@@ -113,6 +158,7 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                                     <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
                                 </motion.div>
                             ))}
+                            {sending && <ThinkingBubble key="thinking" mode={mode} />}
                         </AnimatePresence>
                     )}
                 </div>
@@ -122,7 +168,8 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                             <button
                                 key={m}
                                 onClick={() => setMode(m)}
-                                className={`focus-ring press-scale text-[10.5px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${mode === m
+                                disabled={sending}
+                                className={`focus-ring press-scale text-[10.5px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${mode === m
                                     ? 'bg-primary/20 text-primary ring-1 ring-primary/35'
                                     : 'bg-white/[0.03] text-text-muted ring-1 ring-white/[0.06] hover:text-text-secondary'
                                     }`}
@@ -141,15 +188,18 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                                     handleSubmit();
                                 }
                             }}
+                            disabled={sending}
                             placeholder={
-                                mode === 'ASK'
-                                    ? 'Ask Commander about this incident...'
-                                    : mode === 'GUIDE'
-                                        ? 'Provide investigation guidance...'
-                                        : 'State a confirmed fact...'
+                                sending
+                                    ? 'Commander is responding...'
+                                    : mode === 'ASK'
+                                        ? 'Ask Commander about this incident...'
+                                        : mode === 'GUIDE'
+                                            ? 'Provide investigation guidance...'
+                                            : 'State a confirmed fact...'
                             }
                             rows={2}
-                            className="flex-1 resize-none rounded-xl px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50 transition-all"
+                            className="flex-1 resize-none rounded-xl px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50 transition-all disabled:opacity-60"
                         />
                         <button
                             onClick={handleSubmit}
