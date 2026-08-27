@@ -8,6 +8,7 @@ import { authFetch } from '../../contexts/AuthGateContext';
 import { SituationHeader } from './SituationHeader';
 import { AlertsPanel, AgentAndHypothesisRow, ActivityAndImpactRow } from './InvestigationPanels';
 import { RecoveryRail } from './RecoveryRail';
+import { CommanderPanel } from './CommanderPanel';
 import { EvidenceModal } from './EvidenceModal';
 import { CancelIncidentModal } from './CancelIncidentModal';
 import { PlanApprovalModal } from '../PlanApprovalModal';
@@ -254,6 +255,7 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
                         onExecute={handleExecute}
                     />
                 }
+                commander={<CommanderPanel incidentId={incidentId} />}
             />
 
             <AnimatePresence>

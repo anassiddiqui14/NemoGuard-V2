@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { LayoutGrid, Search as SearchIcon, Activity, BrainCircuit, ShieldCheck } from 'lucide-react';
+import { LayoutGrid, Search as SearchIcon, Activity, BrainCircuit, ShieldCheck, Radio } from 'lucide-react';
 
-type TabKey = 'overview' | 'evidence' | 'investigation' | 'activity' | 'recovery';
+type TabKey = 'overview' | 'evidence' | 'investigation' | 'activity' | 'recovery' | 'commander';
 
 interface Props {
     alertCount: number;
@@ -11,6 +11,7 @@ interface Props {
     investigation: React.ReactNode;
     activity: React.ReactNode;
     recovery: React.ReactNode;
+    commander: React.ReactNode;
 }
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
@@ -19,6 +20,7 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
     { key: 'investigation', label: 'Investigation', icon: <BrainCircuit className="w-3.5 h-3.5" /> },
     { key: 'activity', label: 'Activity & impact', icon: <Activity className="w-3.5 h-3.5" /> },
     { key: 'recovery', label: 'Recovery plan', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+    { key: 'commander', label: 'Commander', icon: <Radio className="w-3.5 h-3.5" /> },
 ];
 
 /**
@@ -32,7 +34,7 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
  * shows exactly one focused section at a time -- addressing direct feedback
  * that the dashboard felt cluttered compared to a tabbed alternative design.
  */
-export function WorkspaceTabs({ alertCount, overview, evidence, investigation, activity, recovery }: Props) {
+export function WorkspaceTabs({ alertCount, overview, evidence, investigation, activity, recovery, commander }: Props) {
     const [active, setActive] = useState<TabKey>('overview');
 
     const content: Record<TabKey, React.ReactNode> = {
@@ -41,6 +43,7 @@ export function WorkspaceTabs({ alertCount, overview, evidence, investigation, a
         investigation,
         activity,
         recovery,
+        commander,
     };
 
     return (
