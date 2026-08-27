@@ -145,6 +145,49 @@ async def startup_event():
     except Exception as e:
         print(f"Failed to connect to Temporal: {e}")
 
+    # Background Teams-notification poller (WP-ORG-002 §4.19-4.20 Phase A).
+    # Periodically catches up commander_status_update projection + Teams
+    # dispatch for every non-terminal incident, rather than requiring every
+    # audit-event call site across orchestrator.py to be individually
+    # threaded through to NotificationDispatcher. A short interval keeps
+    # this close to real-time without adding meaningful DB load (each tick
+    # is a handful of indexed SELECTs per active incident).
+    asyncio.create_task(_teams_notification_poller())
+
+
+async def _teams_notification_poller() -> None:
+    """
+    Keeps Commander Pulse projection AND Teams dispatch moving forward for
+    every incident, independent of whether/when any particular incident's
+    workspace happens to be open in a browser (get_pulse() only projects
+    on-demand when polled by the frontend). Dispatch is intentionally
+    decoupled from projection (see NotificationDispatcher.
+    find_undispatched_updates) so it doesn't matter which code path
+    created a given commander_status_update row -- this tick will still
+    find and deliver it exactly once.
+    """
+    from src.domain.commander.status_projector import StatusProjector
+    from src.domain.notifications.dispatcher import NotificationDispatcher
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    projector = StatusProjector(db)
+    dispatcher = NotificationDispatcher(db)
+    while True:
+        try:
+            with db.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT incident_id FROM incident WHERE status NOT IN ('RESOLVED', 'FAILED', 'CLOSED', 'CANCELLED')"
+                )
+                active_incident_ids = [row[0] for row in cursor.fetchall()]
+            for incident_id in active_incident_ids:
+                try:
+                    projector.project_unprojected_events(incident_id)
+                except Exception as e:
+                    print(f"Teams notification poller: projection failed for {incident_id}: {e}")
+            await dispatcher.dispatch_all_pending()
+        except Exception as e:
+            print(f"Teams notification poller: tick failed: {e}")
+        await asyncio.sleep(15)
+
 # --- 12.1 Overview endpoints ---
 
 @app.get("/api/v2/status")
@@ -1155,6 +1198,83 @@ async def commander_add_fact(incident_id: str, req: CommanderFactRequest, curren
         )
     except IncidentNotFoundError:
         raise HTTPException(status_code=404, detail="Incident not found")
+
+
+# ---------------------------------------------------------------------------
+# Teams Incident Communications (WP-ORG-002 §4.19-4.22). Admin-only route
+# management -- webhook URLs themselves are never accepted/stored here,
+# only routing/policy metadata (see migrations/013_teams_notifications.sql).
+# ---------------------------------------------------------------------------
+
+class TeamsRouteIn(BaseModel):
+    name: str
+    enabled: bool = True
+    environment: Optional[str] = None
+    service_pattern: Optional[str] = None
+    severity_threshold: Optional[str] = None
+    team_id: Optional[str] = None
+    channel_id: Optional[str] = None
+    delivery_mode: str = "WORKFLOWS_WEBHOOK"
+    notify_on: List[str] = []
+
+
+@app.post("/api/v2/admin/teams/routes")
+async def create_teams_route(payload: TeamsRouteIn, current_user: User = Depends(require_role("admin"))):
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    route_id = f"TROUTE-{uuid.uuid4().hex[:8].upper()}"
+    now = datetime.now(timezone.utc).isoformat()
+    with db.get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO teams_notification_route (
+                route_id, name, enabled, environment, service_pattern, severity_threshold,
+                team_id, channel_id, delivery_mode, notify_on_json, created_by, created_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                route_id, payload.name, int(payload.enabled), payload.environment, payload.service_pattern,
+                payload.severity_threshold, payload.team_id, payload.channel_id, payload.delivery_mode,
+                json.dumps(payload.notify_on), current_user.user_id, now, now,
+            ),
+        )
+    expected_env_var = "TEAMS_WEBHOOK_URL_" + "".join(c if c.isalnum() else "_" for c in route_id.upper())
+    return {
+        "route_id": route_id,
+        "note": f"Set the webhook URL via the environment variable {expected_env_var} for this route to actually deliver.",
+    }
+
+
+@app.get("/api/v2/admin/teams/routes")
+async def list_teams_routes(current_user: User = Depends(require_role("admin"))):
+    from src.domain.notifications.teams_adapter import resolve_webhook_url
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    with db.get_connection() as conn:
+        cursor = conn.execute("SELECT * FROM teams_notification_route ORDER BY created_at DESC")
+        cols = [c[0] for c in cursor.description]
+        rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
+    for r in rows:
+        r["webhook_configured"] = bool(resolve_webhook_url(r["route_id"]))
+        if r.get("notify_on_json"):
+            try:
+                r["notify_on"] = json.loads(r["notify_on_json"])
+            except Exception:
+                r["notify_on"] = []
+    return rows
+
+
+@app.get("/api/v2/admin/teams/deliveries")
+async def list_teams_deliveries(incident_id: Optional[str] = None, current_user: User = Depends(require_role("admin"))):
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    with db.get_connection() as conn:
+        if incident_id:
+            cursor = conn.execute(
+                "SELECT * FROM teams_notification_delivery WHERE incident_id = %s ORDER BY created_at DESC LIMIT 200",
+                (incident_id,),
+            )
+        else:
+            cursor = conn.execute("SELECT * FROM teams_notification_delivery ORDER BY created_at DESC LIMIT 200")
+        cols = [c[0] for c in cursor.description]
+        return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
 
 @app.get("/api/v2/incidents/{incident_id}/events/stream")
