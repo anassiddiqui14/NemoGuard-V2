@@ -1082,6 +1082,81 @@ async def get_replay_result_endpoint(replay_id: str, current_user: User = Depend
     return {"replay": replay, "result": result}
 
 
+# ---------------------------------------------------------------------------
+# Commander Live / Commander Pulse (WP-ORG-002).
+# See docs/NemoGuard_Internal_Org_Next_Steps_for_Coding_Agent_2026-08-27_v2_Commander_Live.md
+# section 4. Commander Pulse projects the existing audit_event stream into
+# meaningful status updates; Commander Live is the persistent
+# ASK/GUIDE/ADD_FACT conversation attached to every incident. Every
+# endpoint below is scoped to the caller's tenant via the same
+# _require_incident_in_tenant helper used by every other incident
+# sub-resource.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v2/incidents/{incident_id}/commander/status")
+def get_commander_pulse(incident_id: str, current_user: User = Depends(get_current_user)):
+    from src.domain.commander.status_projector import StatusProjector
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
+    return StatusProjector(db).get_pulse(incident_id)
+
+
+@app.get("/api/v2/incidents/{incident_id}/commander/messages")
+def get_commander_messages(incident_id: str, current_user: User = Depends(get_current_user)):
+    from src.domain.commander.conversation import CommanderConversation
+    conv = CommanderConversation()
+    return conv.get_messages(incident_id, current_user.tenant_id)
+
+
+class CommanderAskRequest(BaseModel):
+    question: str
+
+
+@app.post("/api/v2/incidents/{incident_id}/commander/ask")
+def commander_ask(incident_id: str, req: CommanderAskRequest, current_user: User = Depends(get_current_user)):
+    from src.domain.commander.conversation import CommanderConversation, IncidentNotFoundError
+    conv = CommanderConversation()
+    try:
+        return conv.ask(incident_id, current_user.tenant_id, req.question, current_user.user_id)
+    except IncidentNotFoundError:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+
+class CommanderGuidanceRequest(BaseModel):
+    text: str
+    guidance_type: Optional[str] = "INVESTIGATION_DIRECTION"
+
+
+@app.post("/api/v2/incidents/{incident_id}/commander/guidance")
+def commander_guidance(incident_id: str, req: CommanderGuidanceRequest, current_user: User = Depends(require_role("operator"))):
+    from src.domain.commander.conversation import CommanderConversation, IncidentNotFoundError
+    conv = CommanderConversation()
+    try:
+        return conv.guide(
+            incident_id, current_user.tenant_id, req.text, current_user.user_id,
+            guidance_type=req.guidance_type or "INVESTIGATION_DIRECTION", is_fact=False,
+        )
+    except IncidentNotFoundError:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+
+class CommanderFactRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/v2/incidents/{incident_id}/commander/facts")
+def commander_add_fact(incident_id: str, req: CommanderFactRequest, current_user: User = Depends(require_role("operator"))):
+    from src.domain.commander.conversation import CommanderConversation, IncidentNotFoundError
+    conv = CommanderConversation()
+    try:
+        return conv.guide(
+            incident_id, current_user.tenant_id, req.text, current_user.user_id,
+            guidance_type="MANUAL_EVIDENCE_REFERENCE", is_fact=True,
+        )
+    except IncidentNotFoundError:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+
 @app.get("/api/v2/incidents/{incident_id}/events/stream")
 async def stream_events(incident_id: str, token: Optional[str] = None):
     # EventSource (used by the frontend's SSE client) cannot send custom
