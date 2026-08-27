@@ -42,7 +42,7 @@ export function UserMenu() {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -8, scale: 0.97 }}
                         transition={{ duration: 0.15 }}
-                        className="absolute right-0 top-full mt-2 w-72 glass-panel rounded-xl shadow-2xl overflow-hidden z-50 ring-1 ring-white/[0.08]"
+                        className="absolute right-0 top-full mt-2 w-72 menu-panel rounded-xl overflow-hidden z-50"
                     >
                         <div className="px-4 py-3.5 border-b border-white/[0.06]">
                             <div className="text-[13px] font-semibold text-text-primary truncate">{user.displayName}</div>

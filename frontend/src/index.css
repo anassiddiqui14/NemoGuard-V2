@@ -100,6 +100,21 @@
     box-shadow: 0 12px 32px -20px rgba(0, 0, 0, 0.65);
   }
 
+  /*
+   * Floating dropdown/popover menus (user menu, notifications) sit above
+   * arbitrary page content rather than a single flat background, so the
+   * semi-transparent glass-panel treatment reads as washed-out/see-through
+   * in these contexts -- especially in light mode where --panel-bg is a
+   * light, low-opacity white. menu-panel uses a solid (opaque) surface
+   * color instead of a translucent one, while keeping the same blur/
+   * shadow/border language as the rest of the app's floating surfaces.
+   */
+  .menu-panel {
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--panel-border);
+    box-shadow: 0 20px 44px -22px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  }
+
   .console-surface {
     background:
       linear-gradient(145deg, rgba(255, 255, 255, 0.045), transparent 38%),

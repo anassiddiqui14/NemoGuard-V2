@@ -70,7 +70,7 @@ function NotificationBell({ onSelectIncident }: { onSelectIncident: (id: string)
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -8, scale: 0.97 }}
                         transition={{ duration: 0.15 }}
-                        className="absolute right-0 top-full mt-2 w-80 glass-panel rounded-xl shadow-2xl overflow-hidden z-50 ring-1 ring-white/[0.08]"
+                        className="absolute right-0 top-full mt-2 w-80 menu-panel rounded-xl overflow-hidden z-50"
                     >
                         <div className="px-4 py-3 border-b border-white/[0.06] text-[12.5px] font-semibold text-text-primary">
                             Notifications
