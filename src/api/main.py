@@ -935,6 +935,153 @@ async def get_adoption_readiness(current_user: User = Depends(require_role("admi
 
 
 
+# ---------------------------------------------------------------------------
+# Historical Incident Replay (WP-ORG-001).
+# See docs/NemoGuard_Internal_Org_Next_Steps_for_Coding_Agent_2026-08-27_v2_Commander_Live.md
+# §3. Replays a past incident through the SAME investigation graph used
+# for live incidents (src/domain/replay/replay_engine.py), using only
+# point-in-time evidence, with the real root cause hidden until scoring.
+# Admin-only: this ingests/exposes potentially sensitive historical
+# incident data and drives real (metered) LLM calls.
+# ---------------------------------------------------------------------------
+
+class HistoricalSnapshotIn(BaseModel):
+    snapshot_type: str
+    payload: Any
+    snapshot_timestamp: Optional[str] = None
+    source_reference: Optional[str] = None
+
+
+class HistoricalGroundTruthIn(BaseModel):
+    root_cause: str
+    cause_type: Optional[str] = None
+    actual_recovery: Optional[str] = None
+    actual_impacted_assets: Optional[List[str]] = None
+    actual_business_impact: Optional[str] = None
+    actual_resolution_time_seconds: Optional[float] = None
+    postmortem_reference: Optional[str] = None
+
+
+class HistoricalIncidentIn(BaseModel):
+    source_system: str
+    title: str
+    opened_at: str
+    resolved_at: Optional[str] = None
+    service: Optional[str] = None
+    pipeline: Optional[str] = None
+    environment: Optional[str] = None
+    severity: Optional[str] = None
+    external_incident_id: Optional[str] = None
+    snapshots: List[HistoricalSnapshotIn] = []
+    ground_truth: Optional[HistoricalGroundTruthIn] = None
+
+
+class ReplayStartIn(BaseModel):
+    model_provider: Optional[str] = "nvidia_nim"
+    model_name: Optional[str] = "nvidia/nemotron-3-ultra-550b-a55b"
+    prompt_version: Optional[str] = "v1"
+
+
+@app.post("/api/v2/replay/historical-incidents")
+async def create_historical_incident(payload: HistoricalIncidentIn, current_user: User = Depends(require_role("admin"))):
+    from src.domain.replay.replay_engine import ReplayEngine
+    engine = ReplayEngine()
+    historical_incident_id = engine.create_historical_incident(
+        source_system=payload.source_system,
+        title=payload.title,
+        opened_at=payload.opened_at,
+        resolved_at=payload.resolved_at,
+        service=payload.service,
+        pipeline=payload.pipeline,
+        environment=payload.environment,
+        severity=payload.severity,
+        external_incident_id=payload.external_incident_id,
+        created_by=current_user.user_id,
+        snapshots=[s.model_dump() for s in payload.snapshots],
+        ground_truth=payload.ground_truth.model_dump() if payload.ground_truth else None,
+    )
+    return {"historical_incident_id": historical_incident_id}
+
+
+@app.get("/api/v2/replay/historical-incidents")
+async def list_historical_incidents(current_user: User = Depends(require_role("admin"))):
+    from src.domain.replay.replay_engine import ReplayEngine
+    return ReplayEngine().list_historical_incidents()
+
+
+@app.get("/api/v2/replay/historical-incidents/{historical_incident_id}")
+async def get_historical_incident_detail(historical_incident_id: str, current_user: User = Depends(require_role("admin"))):
+    from src.domain.replay.replay_engine import ReplayEngine, HistoricalIncidentNotFoundError
+    engine = ReplayEngine()
+    try:
+        incident = engine.get_historical_incident(historical_incident_id)
+    except HistoricalIncidentNotFoundError:
+        raise HTTPException(status_code=404, detail="Historical incident not found")
+    with engine.db.get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT id, model_provider, model_name, status, started_at, completed_at, error_message "
+            "FROM historical_incident_replay WHERE historical_incident_id = %s ORDER BY started_at DESC",
+            (historical_incident_id,),
+        )
+        cols = [c[0] for c in cursor.description]
+        replays = [dict(zip(cols, row)) for row in cursor.fetchall()]
+        cursor = conn.execute(
+            "SELECT 1 FROM historical_incident_ground_truth WHERE historical_incident_id = %s",
+            (historical_incident_id,),
+        )
+        has_ground_truth = cursor.fetchone() is not None
+    incident["replays"] = replays
+    incident["has_ground_truth"] = has_ground_truth
+    return incident
+
+
+async def _run_replay_background(replay_id: str) -> None:
+    from src.domain.replay.replay_engine import ReplayEngine
+    try:
+        await ReplayEngine().run_replay(replay_id)
+    except Exception as e:
+        print(f"Replay {replay_id} background execution failed: {e}")
+
+
+@app.post("/api/v2/replay/incidents/{historical_incident_id}")
+async def start_incident_replay(historical_incident_id: str, payload: ReplayStartIn, current_user: User = Depends(require_role("admin"))):
+    from src.domain.replay.replay_engine import ReplayEngine, HistoricalIncidentNotFoundError
+    engine = ReplayEngine()
+    try:
+        replay_id = engine.start_replay(
+            historical_incident_id,
+            model_provider=payload.model_provider or "nvidia_nim",
+            model_name=payload.model_name or "nvidia/nemotron-3-ultra-550b-a55b",
+            prompt_version=payload.prompt_version or "v1",
+            created_by=current_user.user_id,
+        )
+    except HistoricalIncidentNotFoundError:
+        raise HTTPException(status_code=404, detail="Historical incident not found")
+    asyncio.create_task(_run_replay_background(replay_id))
+    return {"replay_id": replay_id, "status": "PENDING"}
+
+
+@app.get("/api/v2/replay/{replay_id}")
+async def get_replay_status(replay_id: str, current_user: User = Depends(require_role("admin"))):
+    from src.domain.replay.replay_engine import ReplayEngine
+    try:
+        return ReplayEngine().get_replay(replay_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Replay not found")
+
+
+@app.get("/api/v2/replay/{replay_id}/result")
+async def get_replay_result_endpoint(replay_id: str, current_user: User = Depends(require_role("admin"))):
+    from src.domain.replay.replay_engine import ReplayEngine
+    engine = ReplayEngine()
+    try:
+        replay = engine.get_replay(replay_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Replay not found")
+    result = engine.get_replay_result(replay_id)
+    return {"replay": replay, "result": result}
+
+
 @app.get("/api/v2/incidents/{incident_id}/events/stream")
 async def stream_events(incident_id: str, token: Optional[str] = None):
     # EventSource (used by the frontend's SSE client) cannot send custom

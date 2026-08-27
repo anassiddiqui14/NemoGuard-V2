@@ -1,5 +1,6 @@
 import json
 import os
+import contextvars
 import psycopg2.extras
 from src.store.postgres_database import PostgresDatabase
 
@@ -12,8 +13,62 @@ from src.store.postgres_database import PostgresDatabase
 # needed) is completely unaffected.
 LOCALSTACK_LAB_ENABLED = os.environ.get("NEMOGUARD_LOCALSTACK_LAB", "0") == "1"
 
+# WP-ORG-001 (Historical Incident Replay): when a replay is in progress, this
+# contextvar is set to the historical_incident_id being replayed. Read tools
+# (query_logs, get_cmdb_context, get_runbook, read_runbook_document) check
+# this FIRST and, if set, resolve evidence exclusively from
+# historical_incident_snapshot rows for that incident instead of the live
+# incident/log_event/runbook tables -- guaranteeing the investigation graph
+# can only ever see point-in-time evidence during a replay, never live data
+# and never (structurally, not just by convention) the hidden
+# historical_incident_ground_truth row. See src/domain/replay/replay_engine.py.
+REPLAY_CONTEXT: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("replay_context", default=None)
+
+
+def _replay_snapshot_lookup(snapshot_type: str) -> "list[dict] | None":
+    """If a replay is active (REPLAY_CONTEXT set), returns the parsed
+    payload_json list for the given snapshot_type from
+    historical_incident_snapshot, or an empty list if none exist. Returns
+    None when no replay is active, so callers fall through to their normal
+    live-data query path."""
+    replay_incident_id = REPLAY_CONTEXT.get()
+    if not replay_incident_id:
+        return None
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    with db.get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT payload_json FROM historical_incident_snapshot "
+            "WHERE historical_incident_id = %s AND snapshot_type = %s "
+            "ORDER BY snapshot_timestamp ASC",
+            (replay_incident_id, snapshot_type),
+        )
+        rows = cursor.fetchall()
+    out = []
+    for row in rows:
+        try:
+            parsed = json.loads(row[0])
+            if isinstance(parsed, list):
+                out.extend(parsed)
+            else:
+                out.append(parsed)
+        except Exception:
+            continue
+    return out
+
+
 def query_logs(incident_id: str, keyword: str = "") -> str:
     """Queries the log_event table for the primary_run_id associated with an incident."""
+    replay_logs = _replay_snapshot_lookup("logs")
+    if replay_logs is not None:
+        if keyword:
+            replay_logs = [
+                l for l in replay_logs
+                if keyword.lower() in json.dumps(l).lower()
+            ]
+        if not replay_logs:
+            return "No logs found matching criteria in this historical incident's point-in-time snapshot."
+        return json.dumps(replay_logs[:50], indent=2)
+
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
         cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -53,6 +108,12 @@ def query_logs(incident_id: str, keyword: str = "") -> str:
 
 def get_cmdb_context(service_name: str) -> str:
     """Fetches downstream/upstream dependencies from the CMDB database."""
+    replay_cmdb = _replay_snapshot_lookup("cmdb")
+    if replay_cmdb is not None:
+        if not replay_cmdb:
+            return f"No point-in-time CMDB/topology snapshot recorded for this historical incident."
+        return json.dumps({"query": service_name, "historical_snapshot": replay_cmdb}, indent=2)
+
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
         cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -161,6 +222,12 @@ def read_runbook_document(query: str) -> str:
 
 def get_runbook(service_name: str) -> str:
     """Fetches Runbook based on service name from the database."""
+    replay_runbooks = _replay_snapshot_lookup("runbooks")
+    if replay_runbooks is not None:
+        if not replay_runbooks:
+            return f"No runbooks were recorded as available at the time of this historical incident."
+        return json.dumps(replay_runbooks, indent=2)
+
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
         cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
