@@ -1112,6 +1112,132 @@ class IncidentOrchestrator:
                 f"triggered by new correlated evidence (alert {new_alert_id}, run_id={new_run_id}).",
             )
 
+    async def reinvestigate_from_commander_guidance(
+        self, incident_id: str, guidance_text: str, is_fact: bool, guidance_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Re-runs the full multi-agent investigation (RCA -> Impact ->
+        Runbook -> Critic) in response to operator guidance/a confirmed
+        fact submitted through Commander Live that the deterministic
+        classifier in src/domain/commander/conversation.py flagged as
+        materially state-changing. Mirrors triage_feedback()'s pattern
+        (feedback becomes authoritative NEW EVIDENCE re-fed into the full
+        investigation, not just patched text) rather than
+        _maybe_reinvestigate_on_new_evidence()'s pattern, since this is
+        triggered by human input, not a new correlated alert.
+
+        Skips re-investigation if the incident has no plan yet (still
+        actively investigating -- the in-flight run will naturally
+        incorporate this guidance once it's persisted as
+        commander_guidance, since RCA reads recent guidance as context in
+        a future pass; for now, guidance during active investigation is
+        simply not re-triggered here to avoid racing the in-flight run)
+        or is already terminal.
+        """
+        try:
+            current_state = self.state_service.get_current_state(incident_id)
+        except Exception as e:
+            return {"error": f"Could not read incident state: {e}"}
+
+        # Only re-investigate while the incident is sitting at a plan-review
+        # checkpoint (PLAN_READY / AWAITING_APPROVAL / MANUAL_ACTION_REQUIRED
+        # -- the states save_agent_findings() knows how to walk back from to
+        # PLAN_READY). BUG FIX (found live 2026-08-28): the initial allowlist
+        # here mistakenly permitted EXECUTING/VERIFYING through, and
+        # save_agent_findings()'s own state-transition handling only knows
+        # AWAITING_APPROVAL/MANUAL_ACTION_REQUIRED -> INVESTIGATING -> PLAN_READY
+        # -- calling it while EXECUTING raised "Cannot transition from
+        # EXECUTING to PLAN_READY" and silently dropped the entire
+        # re-investigation result (including PLAN_REVISED) on the floor.
+        if current_state not in (
+            IncidentState.PLAN_READY, IncidentState.AWAITING_APPROVAL, IncidentState.MANUAL_ACTION_REQUIRED,
+        ):
+            return {"status": "skipped", "reason": f"incident is {current_state.value}; not re-investigating now"}
+
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT action_plan_id, plan_version FROM action_plan WHERE incident_id = %s ORDER BY created_at DESC LIMIT 1",
+                (incident_id,),
+            )
+            plan_row = cursor.fetchone()
+        if not plan_row:
+            return {"status": "skipped", "reason": "no existing plan to revise"}
+        rejected_plan_id, prev_version = plan_row[0], plan_row[1] or 1
+
+        alerts_data = []
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT alert.alert_id, alert.severity, alert.alert_type, alert.source_system, alert.message FROM alert "
+                "JOIN incident_alert ON alert.alert_id = incident_alert.alert_id "
+                "WHERE incident_alert.incident_id = %s",
+                (incident_id,),
+            )
+            for row in cursor.fetchall():
+                alerts_data.append({
+                    "alert_id": row[0], "severity": row[1], "alert_type": row[2],
+                    "source_system": row[3], "message": row[4],
+                })
+
+        authority_label = "a CONFIRMED FACT (authoritative)" if is_fact else "operator guidance"
+        self._log_audit(
+            incident_id, "Commander", "REINVESTIGATION_TRIGGERED",
+            f"Re-running investigation: operator provided {authority_label} via Commander Live "
+            f"(guidance_id={guidance_id}) that was flagged as materially state-changing: \"{guidance_text}\"",
+        )
+
+        from src.domain.agents.langgraph_investigator import LangGraphInvestigator
+        investigator = LangGraphInvestigator()
+        feedback_context = (
+            f"OPERATOR-PROVIDED {'CONFIRMED FACT' if is_fact else 'GUIDANCE'} (via Commander Live chat): "
+            f"\"{guidance_text}\"\n\n"
+            f"{'This is an authoritative, confirmed fact from the operator -- treat it as ground truth.' if is_fact else 'This is an operator observation -- weigh it as strong but not necessarily authoritative evidence.'} "
+            "Re-evaluate whether the current root cause and recovery plan still apply given this input, "
+            "or whether it points to a different/additional root cause the plan must address."
+        )
+        try:
+            final_state = await investigator.investigate(
+                incident_id, alerts_data, audit_callback=self._log_audit,
+                feedback_context=feedback_context,
+            )
+        except Exception as e:
+            self._log_audit(incident_id, "SYSTEM", "REINVESTIGATION_FAILED", f"Re-investigation after Commander Live guidance failed: {e}")
+            return {"error": f"Re-investigation failed: {e}"}
+
+        rca_res = final_state.get("rca_result", {})
+        impact_res = final_state.get("impact_result", {})
+        plan_res = final_state.get("final_plan", {})
+        rca_hypotheses = rca_res.get("hypotheses") or [{
+            "statement": rca_res.get("finding", "Unknown root cause"),
+            "cause_type": rca_res.get("cause_type", "OTHER"),
+            "confidence": rca_res.get("confidence", 0.9),
+        }]
+        llm_response = {
+            "evidence": rca_res.get("evidence", []),
+            "hypotheses": rca_hypotheses,
+            "impacts": impact_res.get("impacts", []),
+            "action_plan": {
+                "rationale": plan_res.get("rationale", ""),
+                "expected_outcome": plan_res.get("expected_outcome", ""),
+                "risk": plan_res.get("risk", "MEDIUM"),
+                "steps": plan_res.get("steps", []),
+            },
+        }
+        result = self.save_agent_findings(
+            incident_id, llm_response,
+            critic_passed=final_state.get("critic_passed", True),
+            critic_feedback=final_state.get("critic_feedback", ""),
+            parent_plan_id=rejected_plan_id,
+            feedback_reference=guidance_id,
+            plan_version=prev_version + 1,
+        )
+        if "error" not in result:
+            self._log_audit(
+                incident_id, "Commander", "PLAN_REVISED",
+                f"Plan revised to v{prev_version + 1} ({result.get('plan_id')}) after re-investigation "
+                f"triggered by Commander Live guidance (guidance_id={guidance_id}).",
+            )
+        return result
+
     async def process_webhook(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Serialize correlation decisions to prevent duplicate incidents.
 

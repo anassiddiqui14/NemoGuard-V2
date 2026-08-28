@@ -43,6 +43,8 @@ _MATERIAL_KEYWORDS = (
     "not correct", "incorrect", "wrong", "actually", "instead",
     "already", "partial", "stale", "duplicate", "do not", "don't",
     "confirmed", "rule out", "ruled out", "contradicts", "unsafe",
+    "reinvestigate", "re-investigate", "investigate again", "look again",
+    "check again", "re-run", "rerun the investigation",
 )
 
 
@@ -196,10 +198,14 @@ class CommanderConversation:
         template -- see src/domain/agents/commander_live_agent.py. Never
         mutates incident state or guidance_revision."""
         self._require_incident(incident_id, tenant_id)
+        # Load prior turns BEFORE persisting this new message, so the
+        # history passed to the LLM doesn't include the question it's
+        # about to answer twice.
+        history = self.get_messages(incident_id, tenant_id)
         self._add_message(incident_id, "OPERATOR", question, intent="ASK", created_by=asked_by)
 
         context = self._load_context(incident_id)
-        answer = await self.agent.ask(incident_id, context, question)
+        answer = await self.agent.ask(incident_id, context, question, history=history)
 
         self._add_message(incident_id, "COMMANDER", answer, evidence_refs=[h["statement"] for h in context["hypotheses"]])
 
@@ -271,10 +277,43 @@ class CommanderConversation:
         commander_ack = await self.agent.react_to_guidance(incident_id, context, text, is_fact, is_material)
         self._add_message(incident_id, "COMMANDER", commander_ack)
 
+        # Actually perform the "actual decision to re-run the investigation
+        # graph" the class docstring above defers to the caller -- this WAS
+        # never implemented anywhere, so is_material was computed and
+        # persisted but nothing ever consumed it. Runs in the background
+        # (fire-and-forget via asyncio.create_task) so guide()/the HTTP
+        # response returns immediately with the Commander's acknowledgment;
+        # the re-investigation result shows up later as its own
+        # PLAN_REVISED audit event / Commander Pulse update, exactly like
+        # every other re-investigation path in this codebase
+        # (triage_feedback, _maybe_reinvestigate_on_new_evidence).
+        reinvestigation_triggered = False
+        if is_material:
+            import asyncio as _asyncio
+            from src.domain.orchestrator import IncidentOrchestrator
+
+            async def _run_reinvestigation():
+                try:
+                    result = await IncidentOrchestrator(self.db.db_path).reinvestigate_from_commander_guidance(
+                        incident_id, text, is_fact, guidance_id,
+                    )
+                    print(f"Commander-triggered reinvestigation for {incident_id}: {result}")
+                except Exception as e:
+                    print(f"Commander-triggered reinvestigation for {incident_id} failed: {e}")
+
+            _asyncio.create_task(_run_reinvestigation())
+            reinvestigation_triggered = True
+            with self.db.get_connection() as conn:
+                conn.execute(
+                    "UPDATE commander_guidance SET triggered_reinvestigation = 1 WHERE guidance_id = %s",
+                    (guidance_id,),
+                )
+
         return {
             "guidance_id": guidance_id,
             "guidance_revision": new_revision,
             "is_material": is_material,
             "authority": authority,
             "commander_response": commander_ack,
+            "reinvestigation_triggered": reinvestigation_triggered,
         }

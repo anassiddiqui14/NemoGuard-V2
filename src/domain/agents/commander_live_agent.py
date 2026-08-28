@@ -96,9 +96,35 @@ class CommanderLiveAgent(BaseAgent):
             f"{plan.get('status', 'not yet created')}."
         )
 
-    async def ask(self, incident_id: str, context: Dict[str, Any], question: str) -> str:
+    @staticmethod
+    def _history_to_messages(history: Optional[List[Dict[str, Any]]]) -> List[Dict[str, str]]:
+        """Converts prior incident_message rows (role OPERATOR/COMMANDER)
+        into OpenAI-style chat turns (user/assistant) so the LLM actually
+        has memory of the conversation instead of treating every call as
+        the first message ever exchanged. Capped to the most recent 12
+        turns to bound prompt size; older context is still available to
+        the operator via the persisted transcript, just not replayed into
+        every subsequent LLM call."""
+        if not history:
+            return []
+        turns = []
+        for m in history[-12:]:
+            role = "user" if m.get("role") == "OPERATOR" else "assistant"
+            content = m.get("content") or ""
+            if content:
+                turns.append({"role": role, "content": content})
+        return turns
+
+    async def ask(
+        self, incident_id: str, context: Dict[str, Any], question: str,
+        history: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
         """Real LLM call, with read-only tool access, grounded in the
-        incident's current evidence/hypotheses/plan context."""
+        incident's current evidence/hypotheses/plan context AND the prior
+        conversation turns for this incident (so follow-up questions like
+        "what about the second one?" or repeated instructions like
+        "reinvestigate" are understood in context rather than treated as
+        an isolated, memoryless message)."""
         self.system_prompt = ASK_SYSTEM_PROMPT
         prompt = (
             f"Incident ID: {incident_id}\n\n"
@@ -108,15 +134,18 @@ class CommanderLiveAgent(BaseAgent):
             "read_runbook_document if you need more information than what's provided above. "
             "When you are ready, give your final natural-language answer as plain text (not JSON)."
         )
-        result = await self._answer_with_optional_tools(prompt)
+        result = await self._answer_with_optional_tools(prompt, history=history)
         return result
 
-    async def _answer_with_optional_tools(self, prompt: str) -> str:
+    async def _answer_with_optional_tools(
+        self, prompt: str, history: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
         """Like call_llm_with_tools, but returns plain text rather than
         requiring JSON -- ASK answers are conversational prose, not a
         structured record."""
         messages = [
             {"role": "system", "content": self.system_prompt},
+            *self._history_to_messages(history),
             {"role": "user", "content": prompt},
         ]
         tools = _get_read_only_tools_schema()
