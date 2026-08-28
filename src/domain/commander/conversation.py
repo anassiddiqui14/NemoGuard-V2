@@ -298,8 +298,39 @@ class CommanderConversation:
                         incident_id, text, is_fact, guidance_id,
                     )
                     print(f"Commander-triggered reinvestigation for {incident_id}: {result}")
+                    # Explicit chat-visible outcome message -- previously the
+                    # ONLY signal that re-investigation had started/finished
+                    # was the audit_event/SSE stream, which most operators
+                    # were not watching during a chat-triggered request.
+                    # BUG FIX (user-reported 2026-08-28): the chat box gave
+                    # zero indication anything was happening, and after
+                    # completion, zero indication it had finished either.
+                    status = result.get("status")
+                    if status == "skipped":
+                        outcome = (
+                            f"I looked into re-investigating, but the incident is currently "
+                            f"{result.get('reason', 'not in a state I can safely re-investigate right now')}. "
+                            "I'll hold off until it reaches a plan-review checkpoint."
+                        )
+                    elif "error" in result:
+                        outcome = f"Re-investigation failed: {result['error']}. The previous plan remains in effect."
+                    elif result.get("plan_id"):
+                        outcome = (
+                            f"Re-investigation complete. I've produced a revised recovery plan "
+                            f"({result['plan_id']}) based on your input -- check the Recovery plan tab to review it."
+                        )
+                    else:
+                        outcome = "Re-investigation finished, but I wasn't able to produce a revised plan. Please check the incident's audit log for details."
+                    self._add_message(incident_id, "COMMANDER", outcome)
                 except Exception as e:
                     print(f"Commander-triggered reinvestigation for {incident_id} failed: {e}")
+                    try:
+                        self._add_message(
+                            incident_id, "COMMANDER",
+                            f"Re-investigation hit an unexpected error and did not complete: {e}. The previous plan remains in effect.",
+                        )
+                    except Exception:
+                        pass
 
             _asyncio.create_task(_run_reinvestigation())
             reinvestigation_triggered = True
@@ -308,6 +339,15 @@ class CommanderConversation:
                     "UPDATE commander_guidance SET triggered_reinvestigation = 1 WHERE guidance_id = %s",
                     (guidance_id,),
                 )
+            # Tell the operator NOW (synchronously, before the background
+            # task even starts) that re-investigation is beginning -- this
+            # is the message that makes the chat box show something is
+            # happening immediately, rather than going quiet for the full
+            # 1-3 minutes the real multi-agent pipeline takes to run.
+            commander_ack += (
+                " I'm re-investigating now with this in mind -- this involves re-running the full "
+                "root-cause and impact analysis, so it may take a minute or two. I'll post here when it's done."
+            )
 
         return {
             "guidance_id": guidance_id,

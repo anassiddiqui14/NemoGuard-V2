@@ -1185,6 +1185,27 @@ class IncidentOrchestrator:
             f"(guidance_id={guidance_id}) that was flagged as materially state-changing: \"{guidance_text}\"",
         )
 
+        # Explicitly move the incident to INVESTIGATING for the duration of
+        # this re-run. BUG FIX (found live 2026-08-28): without this, the
+        # incident stayed at PLAN_READY/AWAITING_APPROVAL the whole time the
+        # re-investigation was actually running, so every phase-based UI
+        # indicator that keys off incident.status (the Agent Constellation
+        # in the Investigation tab, the investigating/executing badges
+        # elsewhere) never showed anything was happening -- the only visible
+        # signal was the audit_event/SSE stream itself, which most operators
+        # were not staring at during a chat-triggered re-investigation.
+        # save_agent_findings() already walks PLAN_READY back through this
+        # same transition for the *first* triage; doing it explicitly here
+        # up front (rather than only after the LLM call returns) is what
+        # actually makes the UI light up DURING the run, not just after.
+        try:
+            self.state_service.transition(
+                incident_id=incident_id, to=IncidentState.INVESTIGATING,
+                actor="Commander", reason="Re-investigating based on operator guidance from Commander Live.",
+            )
+        except Exception as e:
+            print(f"reinvestigate_from_commander_guidance: could not transition {incident_id} to INVESTIGATING: {e}")
+
         from src.domain.agents.langgraph_investigator import LangGraphInvestigator
         investigator = LangGraphInvestigator()
         feedback_context = (
