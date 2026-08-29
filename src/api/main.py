@@ -1277,6 +1277,90 @@ async def list_teams_deliveries(incident_id: Optional[str] = None, current_user:
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
 
+# ---------------------------------------------------------------------------
+# Incident Memory (WP-ORG-003). Admin-only review/lifecycle management --
+# users must be able to view/edit/approve/reject/redact/delete memory as
+# policy permits (acceptance criteria). Draft generation and similarity
+# retrieval happen automatically inside the orchestrator (see
+# src/domain/orchestrator.py::_generate_memory_draft_best_effort /
+# _retrieve_memory_feedback_context); these endpoints are purely for the
+# human review workflow and inspecting what was retrieved for a given
+# incident.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v2/admin/memory")
+async def list_incident_memory(status: Optional[str] = None, current_user: User = Depends(require_role("admin"))):
+    from src.domain.memory.memory_engine import MemoryEngine
+    return MemoryEngine().list_memory(current_user.tenant_id, status=status)
+
+
+@app.get("/api/v2/admin/memory/{memory_id}")
+async def get_incident_memory_detail(memory_id: str, current_user: User = Depends(require_role("admin"))):
+    from src.domain.memory.memory_engine import MemoryEngine
+    memory = MemoryEngine().get_memory(memory_id, current_user.tenant_id)
+    if not memory:
+        raise HTTPException(status_code=404, detail="Memory record not found")
+    return memory
+
+
+class MemoryStatusUpdateIn(BaseModel):
+    new_status: str
+    review_notes: Optional[str] = None
+
+
+@app.post("/api/v2/admin/memory/{memory_id}/status")
+async def update_incident_memory_status(memory_id: str, payload: MemoryStatusUpdateIn, current_user: User = Depends(require_role("admin"))):
+    from src.domain.memory.memory_engine import MemoryEngine, VALID_STATUSES
+    if payload.new_status not in VALID_STATUSES:
+        raise HTTPException(status_code=422, detail=f"Invalid new_status. Must be one of: {sorted(VALID_STATUSES)}")
+    engine = MemoryEngine()
+    ok = engine.update_status(memory_id, current_user.tenant_id, payload.new_status, current_user.user_id, payload.review_notes)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Memory record not found")
+    return {"memory_id": memory_id, "memory_status": payload.new_status}
+
+
+class MemoryEditIn(BaseModel):
+    root_cause: Optional[str] = None
+    cause_type: Optional[str] = None
+    successful_recovery: Optional[str] = None
+    human_feedback: Optional[str] = None
+    verification_result: Optional[str] = None
+    data_integrity_result: Optional[str] = None
+
+
+@app.patch("/api/v2/admin/memory/{memory_id}")
+async def edit_incident_memory(memory_id: str, payload: MemoryEditIn, current_user: User = Depends(require_role("admin"))):
+    from src.domain.memory.memory_engine import MemoryEngine
+    fields = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not fields:
+        raise HTTPException(status_code=422, detail="No editable fields provided")
+    ok = MemoryEngine().edit_memory(memory_id, current_user.tenant_id, current_user.user_id, **fields)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Memory record not found")
+    return {"memory_id": memory_id, "memory_status": "DRAFT"}
+
+
+@app.delete("/api/v2/admin/memory/{memory_id}")
+async def delete_incident_memory(memory_id: str, current_user: User = Depends(require_role("admin"))):
+    from src.domain.memory.memory_engine import MemoryEngine
+    ok = MemoryEngine().delete_memory(memory_id, current_user.tenant_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Memory record not found")
+    return {"status": "deleted", "memory_id": memory_id}
+
+
+@app.get("/api/v2/incidents/{incident_id}/memory-retrievals")
+def get_incident_memory_retrievals(incident_id: str, current_user: User = Depends(get_current_user)):
+    """Lets an operator see exactly what historical memory (if any) was
+    retrieved and presented as evidence for THIS incident's investigation
+    -- acceptance criterion: 'memory retrieval is visible in the UI'."""
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
+    from src.domain.memory.memory_engine import MemoryEngine
+    return MemoryEngine(db).get_retrievals_for_incident(incident_id)
+
+
 @app.get("/api/v2/incidents/{incident_id}/events/stream")
 async def stream_events(incident_id: str, token: Optional[str] = None):
     # EventSource (used by the frontend's SSE client) cannot send custom

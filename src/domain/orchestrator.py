@@ -54,6 +54,28 @@ class IncidentOrchestrator:
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, (self._generate_id("AUD"), incident_id, "SYSTEM", actor, event_type, summary, datetime.now(timezone.utc).isoformat()))
 
+    def _generate_memory_draft_best_effort(self, incident_id: str) -> None:
+        """
+        Generates a DRAFT incident_memory record for a newly-resolved
+        incident (WP-ORG-003). Best-effort and never allowed to affect the
+        incident's own resolution outcome -- memory generation is pure
+        bookkeeping for FUTURE incidents, so any failure here is caught
+        and logged, never re-raised into the resolution path that called
+        it. The record starts as DRAFT and does not participate in any
+        future investigation until a human explicitly approves it via the
+        admin memory-review endpoints.
+        """
+        try:
+            from src.domain.memory.memory_engine import MemoryEngine
+            memory_id = MemoryEngine(self.db).generate_draft_memory(incident_id)
+            if memory_id:
+                self._log_audit(
+                    incident_id, "SYSTEM", "MEMORY_DRAFT_CREATED",
+                    f"Draft incident memory {memory_id} generated for future review/approval.",
+                )
+        except Exception as e:
+            print(f"Incident Memory: draft generation failed for {incident_id}: {e}")
+
     def _save_deterministic_impact(
         self,
         conn,
@@ -212,6 +234,45 @@ class IncidentOrchestrator:
             print(f"LLM Error: {e}")
             return {"error": str(e)}
 
+    def _retrieve_memory_feedback_context(self, incident_id: str, alerts_data: list) -> str:
+        """
+        WP-ORG-003 similarity retrieval: derives a rough failure hint from
+        this incident's own alerts (before RCA has even run), retrieves
+        the top APPROVED memory matches, and formats them as a
+        feedback_context string using the EXACT same injection mechanism
+        RCAAgent.analyze() already accepts for human-rejection feedback --
+        no agent code changes required. Best-effort: any failure here
+        must never block triage itself, so it is caught and logged, and
+        triage proceeds with an empty feedback_context.
+        """
+        try:
+            from src.domain.memory.memory_engine import MemoryEngine
+            with self.db.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT tenant_id, primary_job_id FROM incident WHERE incident_id = %s", (incident_id,),
+                )
+                row = cursor.fetchone()
+            tenant_id = row[0] if row else "default_tenant"
+            service = row[1] if row else None
+            root_cause_hint = " ".join(a.get("message", "") for a in alerts_data)[:2000]
+            if not root_cause_hint:
+                return ""
+
+            engine = MemoryEngine(self.db)
+            matches = engine.retrieve_similar(tenant_id, None, root_cause_hint, service=service)
+            if not matches:
+                return ""
+            engine.record_retrieval(incident_id, matches, presented_to_rca=True)
+            self._log_audit(
+                incident_id, "Incident Memory", "MEMORY_RETRIEVED",
+                f"Retrieved {len(matches)} similar approved incident(s) from memory as historical evidence "
+                f"(top match: {matches[0]['similarity_score']*100:.0f}% similar to {matches[0]['incident_id']}).",
+            )
+            return engine.build_feedback_context(matches)
+        except Exception as e:
+            print(f"Incident Memory: retrieval failed for {incident_id}: {e}")
+            return ""
+
     def triage_incident(self, incident_id: str, has_runbook: bool = True):
         import asyncio
         import json
@@ -238,8 +299,10 @@ class IncidentOrchestrator:
                     "message": row[4]
                 })
 
+        memory_context = self._retrieve_memory_feedback_context(incident_id, alerts_data)
+
         try:
-            final_state = asyncio.run(investigator.investigate(incident_id, alerts_data, audit_callback=self._log_audit))
+            final_state = asyncio.run(investigator.investigate(incident_id, alerts_data, audit_callback=self._log_audit, feedback_context=memory_context))
             
             rca_res = final_state.get("rca_result", {})
             impact_res = final_state.get("impact_result", {})
@@ -854,6 +917,7 @@ class IncidentOrchestrator:
         if all_verified:
             self._log_audit(incident_id, "Verifier", "VERIFICATION_PASSED", "Independent verification passed for all executed actions.")
             self._log_audit(incident_id, "Commander", "INCIDENT_RESOLVED", "Incident resolved successfully — verified against real system state.")
+            self._generate_memory_draft_best_effort(incident_id)
         else:
             self._log_audit(incident_id, "Verifier", "VERIFICATION_FAILED", "One or more actions failed independent verification; incident NOT marked resolved.")
             self._log_audit(incident_id, "Commander", "INCIDENT_ESCALATED", "Plan execution did not verify successfully. Human intervention required.")
@@ -1462,6 +1526,7 @@ class IncidentOrchestrator:
                         f"Incident auto-resolved based on external recovery signal, not an executed NemoGuard plan. "
                         f"Reasoning: {analysis.get('reasoning')}"
                     )
+                    self._generate_memory_draft_best_effort(correlated_incident_id)
                     return {
                         "status": "ingested_and_incident_auto_resolved",
                         "alert_id": alert_id,
