@@ -1350,6 +1350,34 @@ async def delete_incident_memory(memory_id: str, current_user: User = Depends(re
     return {"status": "deleted", "memory_id": memory_id}
 
 
+@app.get("/api/v2/incidents/{incident_id}/recurrences")
+def get_incident_recurrences(incident_id: str, current_user: User = Depends(get_current_user)):
+    """WP-ORG-006: surfaces any detected historical-recurrence links for
+    this incident (both directions -- as the new incident that resembled
+    something prior, and as a prior incident that a later one resembled)."""
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
+    with db.get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT r.*, i.title AS prior_title, i.actual_root_cause AS prior_root_cause "
+            "FROM incident_recurrence r JOIN incident i ON i.incident_id = r.prior_incident_id "
+            "WHERE r.new_incident_id = %s",
+            (incident_id,),
+        )
+        cols = [c[0] for c in cursor.description]
+        as_new = [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+        cursor = conn.execute(
+            "SELECT r.*, i.title AS new_title, i.status AS new_status "
+            "FROM incident_recurrence r JOIN incident i ON i.incident_id = r.new_incident_id "
+            "WHERE r.prior_incident_id = %s",
+            (incident_id,),
+        )
+        cols = [c[0] for c in cursor.description]
+        as_prior = [dict(zip(cols, row)) for row in cursor.fetchall()]
+    return {"as_new_incident": as_new, "as_prior_incident": as_prior}
+
+
 @app.get("/api/v2/incidents/{incident_id}/memory-retrievals")
 def get_incident_memory_retrievals(incident_id: str, current_user: User = Depends(get_current_user)):
     """Lets an operator see exactly what historical memory (if any) was

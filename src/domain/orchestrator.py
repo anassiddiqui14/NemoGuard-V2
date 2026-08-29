@@ -54,6 +54,78 @@ class IncidentOrchestrator:
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, (self._generate_id("AUD"), incident_id, "SYSTEM", actor, event_type, summary, datetime.now(timezone.utc).isoformat()))
 
+    def _detect_and_link_recurrence(self, new_incident_id: str, new_alert: Dict[str, Any]) -> None:
+        """
+        WP-ORG-006: when a new incident is created (no active-incident
+        match found), separately search TERMINAL incidents (RESOLVED,
+        FAILED, CLOSED, CANCELLED) for a similar historical root cause and
+        record a durable recurrence LINK if one is found. This NEVER
+        reopens/reuses the old incident -- it stays terminal and immutable
+        -- it only makes a "this looks like it's happened before" signal
+        visible to operators. Deliberately uses the same lightweight
+        keyword-overlap approach as incident memory retrieval rather than
+        introducing a second scoring scheme, and is best-effort (a failure
+        here can never block or affect the new incident's own creation).
+        """
+        try:
+            from src.domain.memory.signature import extract_keywords
+            new_keywords = set(extract_keywords(new_alert.get("message", "") + " " + new_alert.get("alert_type", "")))
+            if not new_keywords:
+                return
+
+            with self.db.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT incident_id, actual_root_cause FROM incident "
+                    "WHERE status IN ('RESOLVED', 'FAILED', 'CLOSED', 'CANCELLED') "
+                    "AND actual_root_cause IS NOT NULL AND incident_id != %s "
+                    "ORDER BY updated_at DESC LIMIT 200",
+                    (new_incident_id,),
+                )
+                candidates = cursor.fetchall()
+
+            best_match = None
+            best_score = 0.0
+            best_overlap: set = set()
+            for prior_incident_id, root_cause in candidates:
+                prior_keywords = set(extract_keywords(root_cause or ""))
+                if not prior_keywords:
+                    continue
+                overlap = new_keywords & prior_keywords
+                union = new_keywords | prior_keywords
+                score = len(overlap) / len(union) if union else 0.0
+                if score > best_score:
+                    best_score = score
+                    best_match = prior_incident_id
+                    best_overlap = overlap
+
+            # Conservative threshold -- this is a "worth showing the
+            # operator" signal, not a definitive claim of identical root
+            # cause, so require genuine keyword overlap rather than a
+            # near-zero coincidental match.
+            if best_match and best_score >= 0.34:
+                now = datetime.now(timezone.utc).isoformat()
+                with self.db.get_connection() as conn:
+                    conn.execute(
+                        """
+                        INSERT INTO incident_recurrence (
+                            recurrence_id, new_incident_id, prior_incident_id, similarity_score,
+                            match_reasons_json, detected_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            self._generate_id("REC"), new_incident_id, best_match, best_score,
+                            json.dumps([f"shared keywords: {', '.join(sorted(best_overlap))}"]), now,
+                        ),
+                    )
+                self._log_audit(
+                    new_incident_id, "Correlator Engine", "HISTORICAL_RECURRENCE_DETECTED",
+                    f"This incident's failure signature is {best_score*100:.0f}% similar to prior "
+                    f"terminal incident {best_match} (shared keywords: {', '.join(sorted(best_overlap))}). "
+                    f"{best_match} was NOT reopened -- this is an informational link only.",
+                )
+        except Exception as e:
+            print(f"Incident recurrence detection failed for {new_incident_id}: {e}")
+
     def _generate_memory_draft_best_effort(self, incident_id: str) -> None:
         """
         Generates a DRAFT incident_memory record for a newly-resolved
@@ -1601,9 +1673,16 @@ class IncidentOrchestrator:
                     INSERT INTO incident_alert (incident_id, alert_id, correlation_score, correlation_reasons_json, added_at)
                     VALUES (%s, %s, %s, %s, %s)
                 """, (incident.incident_id, alert_id, 1.0, json.dumps(["Direct webhook correlation"]), now))
-                
+
                 # Auto-start triage (Now handled in api/main.py by kicking off Temporal workflow)
-                
+
+                # WP-ORG-006: this alert matched no ACTIVE incident, so a
+                # brand new incident was just created above. Separately
+                # check whether it resembles a prior TERMINAL incident's
+                # root cause -- if so, record an informational recurrence
+                # link (never reopen/reuse the old incident itself).
+                self._detect_and_link_recurrence(incident.incident_id, {"message": message, "alert_type": alert_type})
+
                 return {
                     "status": "ingested_and_incident_created", 
                     "alert_id": alert_id, 
