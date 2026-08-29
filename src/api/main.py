@@ -1126,6 +1126,91 @@ async def get_replay_result_endpoint(replay_id: str, current_user: User = Depend
 
 
 # ---------------------------------------------------------------------------
+# Model Evaluation Service (WP-ORG-004). Admin-only: runs the SAME incident
+# suite (historical incidents from WP-ORG-001) against multiple
+# organization-approved models and produces a real, computed scorecard.
+# ---------------------------------------------------------------------------
+
+class ModelEvaluationRunIn(BaseModel):
+    name: str
+    models: List[str]
+    historical_incident_ids: List[str]
+    prompt_version: Optional[str] = "v1"
+
+
+@app.post("/api/v2/admin/model-evaluation/runs")
+async def create_model_evaluation_run(payload: ModelEvaluationRunIn, current_user: User = Depends(require_role("admin"))):
+    from src.domain.evaluation.evaluation_engine import EvaluationEngine
+    engine = EvaluationEngine()
+    try:
+        run_id = engine.create_run(
+            name=payload.name, models=payload.models,
+            historical_incident_ids=payload.historical_incident_ids,
+            prompt_version=payload.prompt_version or "v1", created_by=current_user.user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"run_id": run_id, "status": "PENDING"}
+
+
+async def _run_model_evaluation_background(run_id: str) -> None:
+    from src.domain.evaluation.evaluation_engine import EvaluationEngine
+    try:
+        await EvaluationEngine().run_evaluation(run_id)
+    except Exception as e:
+        print(f"Model evaluation run {run_id} background execution failed: {e}")
+
+
+@app.post("/api/v2/admin/model-evaluation/runs/{run_id}/start")
+async def start_model_evaluation_run(run_id: str, current_user: User = Depends(require_role("admin"))):
+    """
+    Starts execution of every (model, historical_incident) pair in this run
+    as a background task -- this can legitimately take a long time (each
+    replay is a real, full multi-agent investigation against a live LLM),
+    so the API returns immediately, matching how a single replay is already
+    dispatched via asyncio.create_task in _run_replay_background above.
+    """
+    from src.domain.evaluation.evaluation_engine import EvaluationEngine
+    engine = EvaluationEngine()
+    run = engine.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Evaluation run not found")
+    asyncio.create_task(_run_model_evaluation_background(run_id))
+    return {"run_id": run_id, "status": "RUNNING"}
+
+
+@app.get("/api/v2/admin/model-evaluation/runs")
+async def list_model_evaluation_runs(current_user: User = Depends(require_role("admin"))):
+    from src.domain.evaluation.evaluation_engine import EvaluationEngine
+    return EvaluationEngine().list_runs()
+
+
+@app.get("/api/v2/admin/model-evaluation/runs/{run_id}")
+async def get_model_evaluation_run(run_id: str, current_user: User = Depends(require_role("admin"))):
+    from src.domain.evaluation.evaluation_engine import EvaluationEngine
+    run = EvaluationEngine().get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Evaluation run not found")
+    return run
+
+
+@app.get("/api/v2/admin/model-evaluation/runs/{run_id}/scorecard")
+async def get_model_evaluation_scorecard(run_id: str, current_user: User = Depends(require_role("admin"))):
+    """
+    The scorecard requested by the spec: RCA Top-1/Top-3, cause-family
+    accuracy, evidence citation presence, and latency, computed live per
+    model from real replay results. Metrics this deployment doesn't yet
+    instrument (tool-loop counts, token usage, cost) are explicitly marked
+    unavailable rather than fabricated.
+    """
+    from src.domain.evaluation.evaluation_engine import EvaluationEngine
+    try:
+        return EvaluationEngine().get_scorecard(run_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Evaluation run not found")
+
+
+# ---------------------------------------------------------------------------
 # Commander Live / Commander Pulse (WP-ORG-002).
 # See docs/NemoGuard_Internal_Org_Next_Steps_for_Coding_Agent_2026-08-27_v2_Commander_Live.md
 # section 4. Commander Pulse projects the existing audit_event stream into

@@ -68,13 +68,13 @@ def _plan_violates_data_integrity_policy(rca: Dict, steps: List[Dict]) -> str:
 
 
 class GroundingCritic(BaseAgent):
-    def __init__(self):
+    def __init__(self, model_override: str = None):
         super().__init__(
             agent_name="Grounding_Critic",
             # Final safety/grounding gate before a plan reaches a human approver — route to the
             # stronger model since this is the last automated check standing between the AI's
             # output and a real recovery action.
-            model="nvidia/nemotron-3-ultra-550b-a55b",
+            model=model_override or "nvidia/nemotron-3-ultra-550b-a55b",
             system_prompt="""You are the Grounding Critic -- the final independent safety/verification
 gate before a recovery plan reaches a human approver (spec: "Grounding and Safety Critic").
 
@@ -148,11 +148,20 @@ format as your final response (do not wrap it in markdown):
         return result
 
 class LangGraphInvestigator:
-    def __init__(self):
-        self.rca_agent = RCAAgent()
-        self.dep_agent = DependencyAgent()
-        self.runbook_agent = RunbookAgent()
-        self.critic = GroundingCritic()
+    def __init__(self, model_override: str = None):
+        """
+        `model_override` (WP-ORG-004 Model Evaluation Service): when set,
+        EVERY agent in the investigation graph (RCA, Dependency, Runbook,
+        Grounding Critic) uses this exact model instead of its own default,
+        so the full pipeline can be run end-to-end against a single
+        organization-approved model for real, apples-to-apples comparison.
+        None (the default for every live/production incident) leaves each
+        agent's own carefully-chosen default model untouched.
+        """
+        self.rca_agent = RCAAgent(model_override=model_override)
+        self.dep_agent = DependencyAgent(model_override=model_override)
+        self.runbook_agent = RunbookAgent(model_override=model_override)
+        self.critic = GroundingCritic(model_override=model_override)
         self.graph = self._build_graph()
         
     def _build_graph(self):

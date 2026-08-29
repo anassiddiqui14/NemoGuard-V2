@@ -4,7 +4,7 @@ from .agent_tools import _get_full_tools_schema, execute_tool_call, LOCALSTACK_L
 import json
 
 class RCAAgent(BaseAgent):
-    def __init__(self):
+    def __init__(self, model_override: str = None):
         # When the LocalStack lab is enabled, the RCA agent also has access
         # to real CloudWatch Logs / S3 / Lambda-metrics tools and is
         # instructed to use them to build a complete picture (not just
@@ -60,7 +60,13 @@ conclusion, and lets the system track when new evidence should change your ranki
             # Root-cause diagnosis is the single most consequential decision in the pipeline
             # (everything downstream — impact, runbook selection, the recovery plan — depends
             # on getting this right), so we route it to the larger/stronger reasoning model.
-            model="nvidia/nemotron-3-ultra-550b-a55b",
+            # `model_override` (WP-ORG-004 Model Evaluation Service) lets an
+            # evaluation run substitute a different organization-approved
+            # model for this agent specifically, so the SAME incident suite
+            # can be run against multiple models for real, measurable
+            # comparison rather than just changing the constant below and
+            # hoping nobody forgets to revert it.
+            model=model_override or "nvidia/nemotron-3-ultra-550b-a55b",
             system_prompt=f"""You are the Root Cause Analysis (RCA) Agent. 
 Your job is to investigate an incident by querying logs.
 Use the `query_logs` tool to fetch logs for the incident ONCE. Do NOT loop or call the tool multiple times unnecessarily.

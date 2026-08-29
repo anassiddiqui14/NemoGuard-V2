@@ -214,13 +214,13 @@ class ReplayEngine:
         """
         with self.db.get_connection() as conn:
             cursor = conn.execute(
-                "SELECT historical_incident_id FROM historical_incident_replay WHERE id = %s",
+                "SELECT historical_incident_id, model_name FROM historical_incident_replay WHERE id = %s",
                 (replay_id,),
             )
             row = cursor.fetchone()
             if not row:
                 raise ValueError(f"Replay {replay_id} not found")
-            historical_incident_id = row[0]
+            historical_incident_id, replay_model_name = row
 
         started_at = datetime.now(timezone.utc).isoformat()
         with self.db.get_connection() as conn:
@@ -252,7 +252,15 @@ class ReplayEngine:
         token = REPLAY_CONTEXT.set(historical_incident_id)
         start_perf = time.perf_counter()
         try:
-            investigator = LangGraphInvestigator()
+            # WP-ORG-004 Model Evaluation Service: this replay row's own
+            # model_name (set at start_replay() time) now actually drives
+            # which model every agent in the investigation graph uses --
+            # previously it was persisted to the DB but silently ignored,
+            # so every replay always ran against whatever hardcoded default
+            # model each agent happened to have, making "model_name" on the
+            # replay row purely cosmetic and any cross-model comparison
+            # impossible.
+            investigator = LangGraphInvestigator(model_override=replay_model_name)
             final_state = await investigator.investigate(historical_incident_id, alerts)
         except Exception as e:
             with self.db.get_connection() as conn:

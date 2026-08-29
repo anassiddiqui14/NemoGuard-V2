@@ -4,7 +4,7 @@ from .agent_tools import _get_full_tools_schema, execute_tool_call, LOCALSTACK_L
 import json
 
 class RunbookAgent(BaseAgent):
-    def __init__(self):
+    def __init__(self, model_override: str = None):
         # Structural policy enforcement (not just "hoping the LLM remembers"):
         # for any incident where the RCA finding indicates data was written
         # to a table before the failure, the FIRST recovery steps MUST be
@@ -31,7 +31,7 @@ rows that already committed.""" if LOCALSTACK_LAB_ENABLED else ""
 
         super().__init__(
             agent_name="Runbook_Agent",
-            model="nvidia/nemotron-3-super-120b-a12b",
+            model=model_override or "nvidia/nemotron-3-super-120b-a12b",
             system_prompt=f"""You are the Runbook Agent.
 Your job is to search the runbook library and propose actionable recovery steps based on the incident context.
 Use the `get_runbook` tool to fetch standard operating procedures for the services identified in the alerts or RCA finding.

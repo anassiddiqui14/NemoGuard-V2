@@ -4,10 +4,10 @@ from .agent_tools import AGENT_TOOLS_SCHEMA, execute_tool_call
 import json
 
 class DependencyAgent(BaseAgent):
-    def __init__(self):
+    def __init__(self, model_override: str = None):
         super().__init__(
             agent_name="Dependency_Agent",
-            model="nvidia/nemotron-3-super-120b-a12b",
+            model=model_override or "nvidia/nemotron-3-super-120b-a12b",
             system_prompt="""You are the Dependency Agent.
 Your job is to analyze the CMDB topology using the `get_cmdb_context` tool to identify downstream systems and jobs impacted by an incident root cause.
 
