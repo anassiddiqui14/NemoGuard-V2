@@ -1211,6 +1211,20 @@ async def get_model_evaluation_scorecard(run_id: str, current_user: User = Depen
 
 
 # ---------------------------------------------------------------------------
+# False Resolution Rate (WP-ORG-005). Per spec: "incident status = RESOLVED
+# AND required verification checks are not actually satisfied. Target: 0."
+# This is a real, always-computable safety-net audit over live data, not
+# just a benchmark-time statistic -- see
+# src/domain/evaluation/false_resolution.py.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v2/admin/false-resolutions")
+async def get_false_resolutions(current_user: User = Depends(require_role("admin"))):
+    from src.domain.evaluation.false_resolution import compute_false_resolution_rate
+    return compute_false_resolution_rate(tenant_id=current_user.tenant_id)
+
+
+# ---------------------------------------------------------------------------
 # Commander Live / Commander Pulse (WP-ORG-002).
 # See docs/NemoGuard_Internal_Org_Next_Steps_for_Coding_Agent_2026-08-27_v2_Commander_Live.md
 # section 4. Commander Pulse projects the existing audit_event stream into
