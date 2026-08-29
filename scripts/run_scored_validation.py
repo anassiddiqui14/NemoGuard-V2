@@ -113,6 +113,32 @@ class Harness:
         r.raise_for_status()
         return r.json()
 
+    def cancel_incident(self, incident_id: str, reason: str) -> None:
+        try:
+            self.http.post(
+                f"{API_BASE}/api/v2/incidents/{incident_id}/cancel",
+                headers=self.h(), timeout=30.0, json={"reason": reason},
+            )
+        except Exception:
+            pass
+
+    def reset_alarm_to_ok(self, alarm_name: str) -> None:
+        # Matches the exact same real reset mechanism already proven live
+        # in scripts/run_ai_evaluation.py's Harness.reset_alarm_to_ok --
+        # a real CloudWatch (LocalStack-emulated) set_alarm_state call.
+        # Without this, a same-alarm scenario triggered again while the
+        # alarm is still in ALARM state will correlate onto whatever
+        # incident that alarm is already attached to instead of producing
+        # a fresh, independently-scoreable incident.
+        try:
+            import boto3
+            boto3.client(
+                "cloudwatch", endpoint_url="http://localhost:4566",
+                aws_access_key_id="test", aws_secret_access_key="test", region_name="us-east-1",
+            ).set_alarm_state(AlarmName=alarm_name, StateValue="OK", StateReason="Reset by scored validation harness.")
+        except Exception as e:
+            print(f"  (warning: could not reset alarm {alarm_name}: {e})")
+
 
 def run_one_scenario(h: Harness, scenario: ScoredScenario, model_name: Optional[str], prompt_version: str) -> ScenarioRunResult:
     run = ScenarioRunResult(scenario_id=scenario.scenario_id, model_name=model_name, prompt_version=prompt_version)
@@ -127,6 +153,16 @@ def run_one_scenario(h: Harness, scenario: ScoredScenario, model_name: Optional[
         run.trigger_failed = True
         run.trigger_error = "No single-trigger mapping for this scenario in this CLI version; requires a manual multi-step sequence."
         return run
+
+    # Reset the alarm to OK before triggering, matching the same real
+    # mechanism proven live in run_ai_evaluation.py. Without this, if this
+    # scenario shares an alarm with a still-open incident from an earlier
+    # run in the same session, the new alert deterministically correlates
+    # onto that old incident instead of producing an independently
+    # -scoreable one.
+    if scenario.alarm_name:
+        h.reset_alarm_to_ok(scenario.alarm_name)
+        time.sleep(2)
 
     before_ids = {i["incident_id"] for i in h.list_incidents()}
     before_counts = {iid: h.incident_alert_count(iid) for iid in before_ids}
