@@ -306,6 +306,32 @@ def run_one_scenario(h: Harness, scenario: ScoredScenario, model_name: Optional[
     return run
 
 
+def _check_stale_incidents(h: Harness, allow_stale: bool) -> bool:
+    """
+    Real finding from the first full-catalog run (see
+    docs/validation/scored_validation_run_2026-08-29_findings.md): a
+    single stale non-terminal incident sitting in the active-incident
+    correlation-candidate set can silently absorb/derail EVERY new
+    scenario's alert, degrading the entire suite's trigger success rate
+    toward zero without any individual scenario's pipeline ever being
+    meaningfully exercised. Fails fast with a clear, actionable message
+    unless the operator explicitly acknowledges the risk.
+    """
+    non_terminal = [i for i in h.list_incidents() if i.get("status") not in ("RESOLVED", "FAILED", "CLOSED", "CANCELLED")]
+    if not non_terminal:
+        return True
+    print(f"\n⚠️  {len(non_terminal)} non-terminal incident(s) already exist and will be visible as correlation")
+    print("   candidates to every new scenario alert triggered by this run, which can silently absorb")
+    print("   new alerts instead of producing independently-scoreable incidents:")
+    for i in non_terminal:
+        print(f"     - {i['incident_id']} ({i['status']}): {i.get('title', '')[:80]}")
+    if allow_stale:
+        print("   --allow-stale-incidents was passed; proceeding anyway.\n")
+        return True
+    print("\n   Resolve/cancel these first, or pass --allow-stale-incidents to proceed anyway.")
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", default="all", help="scenario_id, or 'all'")
@@ -313,12 +339,18 @@ def main() -> int:
     parser.add_argument("--prompt-version", default="v1")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--out", default=None)
+    parser.add_argument("--allow-stale-incidents", action="store_true",
+                         help="Proceed even if non-terminal incidents already exist (they may absorb new scenario alerts via correlation).")
     args = parser.parse_args()
 
     if args.scenario == "all":
         scenarios = SCENARIO_CATALOG
     else:
         scenarios = [get_scenario(args.scenario)]
+
+    with httpx.Client() as precheck_client:
+        if not _check_stale_incidents(Harness(precheck_client), args.allow_stale_incidents):
+            return 2
 
     store = ScoredValidationStore()
     run_id = store.start_run(model_name=args.model, prompt_version=args.prompt_version, total_scenarios=len(scenarios))
