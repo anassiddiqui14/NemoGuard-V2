@@ -9,7 +9,7 @@ import threading
 import uuid
 import re
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from src.store.postgres_database import PostgresDatabase
 from src.domain.enums import IncidentState
@@ -1524,7 +1524,25 @@ class IncidentOrchestrator:
         )
         deterministic_match = deterministic_incident_id is not None and deterministic_score >= correlator.min_cluster_score
 
-        # Insert the new alert into the DB
+        # Insert the new alert into the DB. CRITICAL: this `with conn:`
+        # block must ONLY ever contain fast, synchronous DB writes. It
+        # must NEVER contain an `await` that can call out to a real LLM
+        # (a full re-investigation can legitimately take minutes) --
+        # holding an open Postgres connection/transaction for that long
+        # blocks ALL other writers to the same row (observed live:
+        # `idle in transaction` for 2+ days after one such call never
+        # returned, silently blocking every subsequent write to that
+        # incident, including this whole webhook-processing lock's next
+        # acquirer, since process_webhook() also holds a class-level
+        # threading.Lock for the ENTIRE duration of this method). Any
+        # post-commit-only, LLM-driving side effect (reinvestigation,
+        # memory-draft generation, recurrence detection) must be
+        # deferred via a flag and executed AFTER this block exits.
+        deferred_reinvestigation: Optional[tuple] = None
+        deferred_memory_draft_incident_id: Optional[str] = None
+        deferred_recurrence: Optional[tuple] = None
+        early_return: Optional[Dict[str, Any]] = None
+
         with self.db.get_connection() as conn:
             conn.execute("""
                 INSERT INTO alert (alert_id, run_id, opened_ts, severity, alert_type, source_system, message, status)
@@ -1598,8 +1616,8 @@ class IncidentOrchestrator:
                         f"Incident auto-resolved based on external recovery signal, not an executed NemoGuard plan. "
                         f"Reasoning: {analysis.get('reasoning')}"
                     )
-                    self._generate_memory_draft_best_effort(correlated_incident_id)
-                    return {
+                    deferred_memory_draft_incident_id = correlated_incident_id
+                    early_return = {
                         "status": "ingested_and_incident_auto_resolved",
                         "alert_id": alert_id,
                         "incident_id": correlated_incident_id,
@@ -1634,12 +1652,14 @@ class IncidentOrchestrator:
                 # (i.e. is past active investigation), re-run the full
                 # investigation with this alert included so the hypothesis/
                 # plan reflects ALL evidence, not just the first alert seen.
-                # Runs in the background (does not block the webhook
-                # response) using the same re-investigation machinery
-                # triage_feedback already uses for human-rejected plans.
-                await self._maybe_reinvestigate_on_new_evidence(correlated_incident_id, run_id, alert_id)
+                # DEFERRED until after this `with conn:` block exits (see
+                # the critical comment above `deferred_reinvestigation`) --
+                # this is a real multi-agent LLM call that can take minutes,
+                # and must never run while this transaction/connection is
+                # still open.
+                deferred_reinvestigation = (correlated_incident_id, run_id, alert_id)
 
-                return {
+                early_return = {
                     "status": "ingested_and_correlated",
                     "alert_id": alert_id,
                     "incident_id": correlated_incident_id,
@@ -1681,17 +1701,34 @@ class IncidentOrchestrator:
                 # check whether it resembles a prior TERMINAL incident's
                 # root cause -- if so, record an informational recurrence
                 # link (never reopen/reuse the old incident itself).
-                self._detect_and_link_recurrence(incident.incident_id, {"message": message, "alert_type": alert_type})
+                # _detect_and_link_recurrence is synchronous DB-only work
+                # (no LLM call), so it's safe to run inside this block, but
+                # deferred anyway for consistency/simplicity with the other
+                # branches above.
+                deferred_recurrence = (incident.incident_id, {"message": message, "alert_type": alert_type})
 
-                return {
-                    "status": "ingested_and_incident_created", 
-                    "alert_id": alert_id, 
+                early_return = {
+                    "status": "ingested_and_incident_created",
+                    "alert_id": alert_id,
                     "incident_id": incident.incident_id,
                     "reasoning": analysis.get("reasoning")
                 }
-                
+
+        # Everything below runs AFTER the `with conn:` block above has
+        # exited (committing the alert/incident/correlation DB writes) --
+        # any of these may legitimately take minutes (real LLM calls) and
+        # must never hold open a DB transaction while doing so.
+        if deferred_memory_draft_incident_id:
+            self._generate_memory_draft_best_effort(deferred_memory_draft_incident_id)
+        if deferred_recurrence:
+            self._detect_and_link_recurrence(*deferred_recurrence)
+        if deferred_reinvestigation:
+            await self._maybe_reinvestigate_on_new_evidence(*deferred_reinvestigation)
+        if early_return is not None:
+            return early_return
+
         return {
-            "status": "ingested", 
-            "alert_id": alert_id, 
+            "status": "ingested",
+            "alert_id": alert_id,
             "reasoning": analysis.get("reasoning")
         }
