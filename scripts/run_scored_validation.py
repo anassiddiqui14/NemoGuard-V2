@@ -345,6 +345,8 @@ def main() -> int:
 
     if args.scenario == "all":
         scenarios = SCENARIO_CATALOG
+    elif "," in args.scenario:
+        scenarios = [get_scenario(s.strip()) for s in args.scenario.split(",") if s.strip()]
     else:
         scenarios = [get_scenario(args.scenario)]
 
