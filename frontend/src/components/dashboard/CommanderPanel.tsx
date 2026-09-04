@@ -45,7 +45,7 @@ function ConversationBubble({ role, intent, content, created_at }: { role: strin
 }
 
 const THINKING_LABELS: Record<string, string> = {
-    ASK: 'Investigating',
+    ASK: 'Thinking',
     GUIDE: 'Weighing guidance',
     ADD_FACT: 'Reconciling fact',
 };
