@@ -70,15 +70,43 @@ export function useCommander(incidentId: string | null) {
         return () => clearInterval(interval);
     }, [incidentId, refresh]);
 
-    const ask = useCallback(
-        async (question: string) => {
-            if (!incidentId || !question.trim()) return null;
+    // Optimistic local echo of the operator's own message. Without this,
+    // the ONLY way the operator's just-sent message became visible was
+    // waiting for the full backend round-trip (which includes a real LLM
+    // call, often 10-90+ seconds) to finish and then re-fetching the whole
+    // message list -- so the "Thinking" indicator appeared FIRST, and the
+    // operator's own message only popped in afterward, alongside the
+    // Commander's reply. This made the chat feel broken/unresponsive
+    // (user-reported). optimisticMessages are rendered immediately, then
+    // discarded the moment the next real refresh() brings back the
+    // authoritative persisted list (which will already include this exact
+    // message, now with a real message_id/created_at from the server).
+    const [optimisticMessages, setOptimisticMessages] = useState<CommanderMessage[]>([]);
+
+    const sendTurn = useCallback(
+        async (
+            endpoint: string,
+            body: Record<string, unknown>,
+            optimisticContent: string,
+            optimisticIntent: CommanderMessage['intent'],
+        ) => {
+            if (!incidentId || !optimisticContent.trim()) return null;
+            setOptimisticMessages((prev) => [
+                ...prev,
+                {
+                    message_id: `optimistic-${Date.now()}`,
+                    role: 'OPERATOR',
+                    intent: optimisticIntent,
+                    content: optimisticContent,
+                    created_at: new Date().toISOString(),
+                },
+            ]);
             setSending(true);
             try {
-                const res = await authFetch(`/api/v2/incidents/${incidentId}/commander/ask`, {
+                const res = await authFetch(`/api/v2/incidents/${incidentId}/commander/${endpoint}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ question }),
+                    body: JSON.stringify(body),
                 });
                 if (!res.ok) return null;
                 const data = await res.json();
@@ -87,54 +115,27 @@ export function useCommander(incidentId: string | null) {
                 return data;
             } finally {
                 setSending(false);
+                setOptimisticMessages([]);
             }
         },
         [incidentId, refresh],
+    );
+
+    const ask = useCallback(
+        (question: string) => sendTurn('ask', { question }, question, 'ASK'),
+        [sendTurn],
     );
 
     const guide = useCallback(
-        async (text: string, guidanceType = 'INVESTIGATION_DIRECTION') => {
-            if (!incidentId || !text.trim()) return null;
-            setSending(true);
-            try {
-                const res = await authFetch(`/api/v2/incidents/${incidentId}/commander/guidance`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text, guidance_type: guidanceType }),
-                });
-                if (!res.ok) return null;
-                const data = await res.json();
-                setGuidanceRevision(data.guidance_revision ?? 0);
-                await refresh();
-                return data;
-            } finally {
-                setSending(false);
-            }
-        },
-        [incidentId, refresh],
+        (text: string, guidanceType = 'INVESTIGATION_DIRECTION') =>
+            sendTurn('guidance', { text, guidance_type: guidanceType }, text, 'GUIDE'),
+        [sendTurn],
     );
 
     const addFact = useCallback(
-        async (text: string) => {
-            if (!incidentId || !text.trim()) return null;
-            setSending(true);
-            try {
-                const res = await authFetch(`/api/v2/incidents/${incidentId}/commander/facts`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text }),
-                });
-                if (!res.ok) return null;
-                const data = await res.json();
-                setGuidanceRevision(data.guidance_revision ?? 0);
-                await refresh();
-                return data;
-            } finally {
-                setSending(false);
-            }
-        },
-        [incidentId, refresh],
+        (text: string) => sendTurn('facts', { text }, text, 'ADD_FACT'),
+        [sendTurn],
     );
 
-    return { pulse, messages, guidanceRevision, loading, sending, ask, guide, addFact };
+    return { pulse, messages, optimisticMessages, guidanceRevision, loading, sending, ask, guide, addFact };
 }

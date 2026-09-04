@@ -132,25 +132,93 @@ class IncidentLifecycleWorkflow:
         if timed_out:
             # Timed out waiting for a decision -- escalate rather than
             # blocking forever (build plan section 14.4 "escalation
-            # timeout"). Moves the incident back to INVESTIGATING (a legal
-            # transition from AWAITING_APPROVAL) so it visibly falls out of
-            # "awaiting approval" and re-enters the active work queue as
-            # needing attention, and records an explicit escalation audit
-            # event so operators can see exactly why/when this happened.
-            workflow.logger.warning(f"Approval wait timed out for {incident_id}; escalating.")
+            # timeout").
+            #
+            # BUG FIX (user-reported live: "the main page gets stuck at
+            # Investigating"): this previously transitioned the incident to
+            # INVESTIGATING and then simply returned, ending the workflow.
+            # INVESTIGATING is only a legal state if there is an active
+            # investigation actually producing a new plan -- the state
+            # machine allows INVESTIGATING to go ONLY to PLAN_READY, FAILED,
+            # or RESOLVED, never anywhere else. With no workflow left
+            # running for this incident, NOTHING could ever move it out of
+            # INVESTIGATING again: it was a structurally dead end, not a
+            # transient "actively re-investigating" state. Confirmed live:
+            # INC-A014B4C1 sat at INVESTIGATING for 6+ hours with zero
+            # subsequent agent activity after this exact code path ran.
+            #
+            # Fix: actually re-run the real triage activity here (the same
+            # one the initial investigation used) so INVESTIGATING
+            # genuinely means "an agent is working on this right now" again,
+            # then continue the workflow into the SAME approve/execute loop
+            # a fresh triage would use, rather than ending the workflow.
+            workflow.logger.warning(f"Approval wait timed out for {incident_id}; escalating and re-investigating.")
             await workflow.execute_activity(
                 log_escalation_audit_event_activity,
                 {
                     "incident_id": incident_id,
-                    "summary": f"No approval decision received within {effective_timeout}; escalated for human attention.",
+                    "summary": f"No approval decision received within {effective_timeout}; escalating and re-running investigation.",
                 },
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=RetryPolicy(maximum_attempts=3),
             )
             await self._transition(
-                incident_id, "INVESTIGATING", "Approval wait timed out; escalated back to active investigation."
+                incident_id, "INVESTIGATING", "Approval wait timed out; re-running investigation for a fresh plan."
             )
-            return {"status": "escalated", "reason": "approval_timeout"}
+            triage_result = await workflow.execute_activity(
+                triage_incident_activity,
+                incident_id,
+                start_to_close_timeout=timedelta(minutes=15),
+                retry_policy=RetryPolicy(maximum_attempts=3),
+            )
+            if triage_result.get("status") != "EXECUTED" or not triage_result.get("saved_plan"):
+                workflow.logger.warning(f"Post-timeout re-triage failed for {incident_id}; leaving for manual review.")
+                await workflow.execute_activity(
+                    log_escalation_audit_event_activity,
+                    {
+                        "incident_id": incident_id,
+                        "summary": "Post-timeout re-investigation failed to produce a plan; requires manual review.",
+                    },
+                    start_to_close_timeout=timedelta(seconds=30),
+                    retry_policy=RetryPolicy(maximum_attempts=3),
+                )
+                await self._transition(incident_id, "FAILED", "Post-timeout re-investigation failed to produce a plan.")
+                return {"status": "failed", "reason": "post_timeout_retriage_failed"}
+
+            # Re-enter the SAME approval wait the initial investigation
+            # used, with a fresh full-length timeout, so a human still has
+            # to approve/reject the newly-produced plan -- this escalation
+            # path never bypasses the approval gate, it only ensures the
+            # incident isn't left permanently stuck with no active work.
+            await self._transition(incident_id, "AWAITING_APPROVAL", "Recovery plan ready after re-investigation; awaiting human approval.")
+            timed_out = False
+            try:
+                await workflow.wait_condition(
+                    lambda: self.approval_decision is not None or self.cancel_requested,
+                    timeout=effective_timeout,
+                )
+            except asyncio.TimeoutError:
+                timed_out = True
+
+            if self.cancel_requested:
+                await self._transition(incident_id, "CANCELLED", self.cancel_reason or "Cancelled via workflow signal.")
+                return {"status": "completed", "action": "cancelled"}
+
+            if timed_out:
+                # Timed out a second time -- do not loop forever. Escalate
+                # to a genuine terminal state for human intervention rather
+                # than re-triaging indefinitely.
+                await workflow.execute_activity(
+                    log_escalation_audit_event_activity,
+                    {
+                        "incident_id": incident_id,
+                        "summary": f"No approval decision received within a second {effective_timeout} window after re-investigation; marking FAILED for manual review.",
+                    },
+                    start_to_close_timeout=timedelta(seconds=30),
+                    retry_policy=RetryPolicy(maximum_attempts=3),
+                )
+                await self._transition(incident_id, "FAILED", "No approval received after re-investigation; requires manual review.")
+                return {"status": "escalated", "reason": "approval_timeout_after_retriage"}
 
         # 4. Proceed based on approval
         if self.approval_decision == "approve":

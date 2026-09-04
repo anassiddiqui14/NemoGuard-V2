@@ -90,7 +90,7 @@ function ThinkingBubble({ mode }: { mode: 'ASK' | 'GUIDE' | 'ADD_FACT' }) {
 }
 
 export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
-    const { pulse, messages, loading, sending, ask, guide, addFact } = useCommander(incidentId);
+    const { pulse, messages, optimisticMessages, loading, sending, ask, guide, addFact } = useCommander(incidentId);
     const [mode, setMode] = useState<'ASK' | 'GUIDE' | 'ADD_FACT'>('ASK');
     const [text, setText] = useState('');
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -133,9 +133,18 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                     ) : pulse.length === 0 ? (
                         <EmptyState icon={<Radio className="w-5 h-5" />} title="No status updates yet" subtitle="Commander Pulse will populate as the investigation progresses." />
                     ) : (
-                        pulse.map((u) => (
-                            <PulseItem key={u.update_id} headline={u.headline} summary={u.summary} severity={u.severity} created_at={u.created_at} />
-                        ))
+                        <AnimatePresence initial={false}>
+                            {pulse.map((u, idx) => (
+                                <motion.div
+                                    key={u.update_id}
+                                    initial={{ opacity: 0, x: -8 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: idx === 0 ? 0 : 0.02 * idx, type: 'spring', stiffness: 260, damping: 22 }}
+                                >
+                                    <PulseItem headline={u.headline} summary={u.summary} severity={u.severity} created_at={u.created_at} />
+                                </motion.div>
+                            ))}
+                        </AnimatePresence>
                     )}
                 </div>
             </div>
@@ -144,17 +153,55 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
             <div className="console-surface rounded-2xl overflow-hidden flex flex-col h-[480px]">
                 <div className="px-4 py-3.5 flex items-center justify-between border-b border-white/[0.05]">
                     <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-3.5 h-3.5 text-agent-active" />
+                        <motion.span
+                            animate={sending ? { scale: [1, 1.15, 1], opacity: [1, 0.7, 1] } : { scale: 1, opacity: 1 }}
+                            transition={sending ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
+                        >
+                            <ShieldCheck className="w-3.5 h-3.5 text-agent-active" />
+                        </motion.span>
                         <div className="font-semibold text-[13px] text-text-primary">Commander</div>
                     </div>
+                    <AnimatePresence>
+                        {sending && (
+                            <motion.span
+                                initial={{ opacity: 0, x: 6 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0 }}
+                                className="text-[9.5px] font-bold uppercase tracking-wide text-agent-active flex items-center gap-1.5"
+                            >
+                                <span className="w-1.5 h-1.5 rounded-full bg-agent-active animate-pulse" /> live
+                            </motion.span>
+                        )}
+                    </AnimatePresence>
                 </div>
                 <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
-                    {messages.length === 0 && !sending ? (
+                    {messages.length === 0 && optimisticMessages.length === 0 && !sending ? (
                         <EmptyState icon={<MessageSquare className="w-5 h-5" />} title="Ask, guide, or add a confirmed fact" subtitle="Commander will answer questions, accept investigation guidance, and record confirmed facts -- but never accepts approval or execution through chat." />
                     ) : (
                         <AnimatePresence initial={false}>
                             {messages.map((m) => (
-                                <motion.div key={m.message_id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+                                <motion.div
+                                    key={m.message_id}
+                                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+                                >
+                                    <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
+                                </motion.div>
+                            ))}
+                            {/* Optimistic echo of the operator's just-sent message --
+                                appears INSTANTLY (before the backend round-trip
+                                completes), so the operator's own text is never
+                                hidden behind the Thinking indicator. Discarded the
+                                moment refresh() brings back the real persisted
+                                version of this same message. */}
+                            {optimisticMessages.map((m) => (
+                                <motion.div
+                                    key={m.message_id}
+                                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+                                >
                                     <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
                                 </motion.div>
                             ))}
