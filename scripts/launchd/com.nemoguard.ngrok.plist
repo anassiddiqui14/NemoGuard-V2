@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.nemoguard.ngrok</string>
+
+    <!--
+      Uses ngrok's free static domain feature (one permanent free domain
+      per account, https://dashboard.ngrok.com/domains) instead of
+      Cloudflare's anonymous quick tunnel. This is the genuinely
+      permanent solution the user asked for: the URL below NEVER changes,
+      even across crashes/reboots -- unlike a Cloudflare quick tunnel,
+      which mints a new random subdomain on every restart (confirmed
+      live during the Cloudflare setup attempt).
+    -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/anassiddiqui/.nvm/versions/node/v22.23.2/bin/ngrok</string>
+        <string>http</string>
+        <string>80</string>
+        <string>--url=patriot-unturned-litigate.ngrok-free.dev</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/anassiddiqui/Downloads/NemoGuard/pipeline-copilot</string>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/nemoguard_ngrok.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/nemoguard_ngrok.log</string>
+
+    <!-- Auto-restart on crash. Because this is a STATIC domain (not a
+         quick-tunnel random subdomain), a crash-restart reconnects to
+         the exact same URL every time -- verified live. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Auto-start on login/reboot, without needing this terminal/IDE open. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

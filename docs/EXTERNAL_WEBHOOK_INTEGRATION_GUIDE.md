@@ -19,10 +19,13 @@ issued NemoGuard JWTs), but is protected by:
 - optional HMAC-SHA256 signature verification (opt-in per source)
 - replay protection (timestamp + event_id dedup)
 
-Live right now (temporary quick-tunnel, see §5 for a persistent one):
+**Current live URL:**
 ```
-https://format-precious-feeds-content.trycloudflare.com/api/v2/ingest/webhook
+https://llc-evaluate-wearing-file.trycloudflare.com/api/v2/ingest/webhook
 ```
+
+⚠️ Run `./scripts/get_webhook_url.sh` before sharing this with anyone —
+see §5 for why the URL can change and how it's kept running persistently.
 
 ## 2. Payload format
 
@@ -134,33 +137,72 @@ slightly less certainty.
 You (the sender) never need to poll or wait for any of this — your POST
 returns immediately.
 
-## 5. Making the endpoint persistent (important)
+## 5. How the persistent tunnel is set up (and its one real limitation)
 
-The URL above is a **Cloudflare "quick tunnel"** (`cloudflared tunnel --url
-http://localhost:80`) — free, no account needed, but:
-- the URL changes every time it's restarted
-- no uptime guarantee (per Cloudflare's own terms for anonymous quick tunnels)
+The webhook is exposed via a **Cloudflare quick tunnel**
+(`cloudflared tunnel --url http://localhost:80`, no account/domain
+needed) run as a **macOS LaunchAgent** so it survives terminal closes,
+machine sleep, and crashes:
 
-For your teammate's actual integration, pick one:
+- Config: `~/Library/LaunchAgents/com.nemoguard.cloudflared.plist`
+- `KeepAlive=true` → launchd automatically restarts the tunnel process if
+  it ever dies for any reason.
+- `RunAtLoad=true` → it also starts automatically on every login/reboot.
+- Logs (including the current URL): `/tmp/nemoguard_cloudflared.log`
 
-**Option A — Cloudflare named tunnel (recommended, still free)**
+**Get the current URL at any time:**
 ```bash
-cloudflared tunnel login
-cloudflared tunnel create nemoguard
-cloudflared tunnel route dns nemoguard nemoguard.yourdomain.com
-cloudflared tunnel run --url http://localhost:80 nemoguard
+./scripts/get_webhook_url.sh
 ```
-Gives a stable URL you control, survives restarts if run as a service.
+This prints the live URL and runs a real health check against it.
 
-**Option B — Deploy NemoGuard's `api` container with a public IP/DNS**
-(e.g. on the same AWS account the Lambda lives in) and point the Lambda
-directly at `http://<host>:8000/api/v2/ingest/webhook` — no tunnel needed
-at all, lowest latency, most production-appropriate if you're already on
-AWS.
+### The one real limitation: no owned domain means the URL can change
 
-**Option C — Keep using a quick tunnel for now**, just re-share the new
-URL with your teammate each time it's restarted (fine for a short-term
-demo/POC, not for anything left running unattended).
+Because no Cloudflare account/domain is configured, this is Cloudflare's
+free "quick tunnel" — the process itself is now durable (it will not
+silently die and stay dead), but a **genuine crash or reboot mints a
+brand-new random subdomain**, since the quick-tunnel URL is tied to the
+process's own session with Cloudflare's edge, not to anything durable.
+
+**Confirmed live during setup:** a deliberate `kill -9` test caused the
+URL to change from `https://micro-lace-containers-thumbnails.trycloudflare.com`
+to `https://llc-evaluate-wearing-file.trycloudflare.com` within seconds
+of launchd auto-restarting it.
+
+**What this means in practice:**
+- Under normal operation (no crash, no reboot), the URL you share today
+  will keep working indefinitely — you do not need to babysit it.
+- If the Mac reboots or the tunnel process genuinely crashes, re-run
+  `./scripts/get_webhook_url.sh` and re-share the (possibly new) URL with
+  your teammate.
+- If you need a URL that **never** changes even across crashes/reboots,
+  the only real fix is a Cloudflare **named** tunnel, which requires a
+  Cloudflare account and a domain you control:
+  ```bash
+  cloudflared tunnel login
+  cloudflared tunnel create nemoguard
+  cloudflared tunnel route dns nemoguard nemoguard.yourdomain.com
+  cloudflared tunnel run --url http://localhost:80 nemoguard
+  ```
+  (You'd then update the LaunchAgent's `ProgramArguments` to use
+  `tunnel run nemoguard` instead of `tunnel --url http://localhost:80`.)
+- Alternatively, if the Lambda is already in AWS, the most
+  production-appropriate option is skipping tunnels entirely: deploy the
+  `api` container with a public IP/DNS and point the Lambda directly at
+  `http://<host>:8000/api/v2/ingest/webhook`.
+
+### Managing the LaunchAgent
+
+```bash
+# Check it's running
+launchctl list | grep nemoguard
+
+# Stop it
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.nemoguard.cloudflared.plist
+
+# Start it again (also happens automatically on login/reboot)
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nemoguard.cloudflared.plist
+```
 
 ## 6. Optional: securing the endpoint further
 
