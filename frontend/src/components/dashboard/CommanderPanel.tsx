@@ -105,7 +105,20 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 16, scale: 0.96 }}
                         transition={{ type: 'spring', stiffness: 340, damping: 28 }}
-                        className="console-surface rounded-2xl overflow-hidden shadow-2xl shadow-black/40 w-[min(92vw,420px)] h-[560px] flex flex-col"
+                        // Deliberately NOT using `console-surface` here --
+                        // that class is only 55% opaque with a backdrop
+                        // blur, designed for panels that sit WITHIN the
+                        // page's own scroll flow over a fairly uniform
+                        // background. As a floating overlay meant to sit
+                        // clearly on top of arbitrary page content (tab
+                        // bars, text, etc.), that translucency let page
+                        // content behind it bleed through distractingly
+                        // (confirmed live via a real screenshot showing
+                        // "Recovery plan" tab text visible through the
+                        // chat bubbles). Uses a solid, near-opaque
+                        // background instead so the floating panel always
+                        // reads clearly regardless of what's behind it.
+                        className="rounded-2xl overflow-hidden shadow-2xl shadow-black/50 ring-1 ring-white/[0.08] w-[min(92vw,420px)] h-[min(70vh,560px)] flex flex-col bg-[#0D0D15]"
                     >
                         <div className="px-4 py-3.5 flex items-center justify-between border-b border-white/[0.05] flex-shrink-0">
                             <div className="flex items-center gap-2">
