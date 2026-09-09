@@ -10,6 +10,7 @@ import { IntelligencePage } from '../pages/IntelligencePage/IntelligencePage';
 import { SettingsPage } from '../pages/SettingsPage/SettingsPage';
 import { ScenarioCockpitPage } from '../pages/ScenarioCockpitPage/ScenarioCockpitPage';
 import { AdoptionReadinessPage } from '../pages/AdoptionReadinessPage/AdoptionReadinessPage';
+import { AdminPage } from '../pages/AdminPage/AdminPage';
 
 export function AppRoutes() {
     return (
@@ -30,6 +31,7 @@ export function AppRoutes() {
                 <Route path="intelligence" element={<IntelligencePage />} />
                 <Route path="scenario-cockpit" element={<ScenarioCockpitPage />} />
                 <Route path="adoption-readiness" element={<AdoptionReadinessPage />} />
+                <Route path="admin" element={<AdminPage />} />
                 <Route path="settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
