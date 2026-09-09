@@ -69,12 +69,51 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
     const [open, setOpen] = useState(false);
     const [tab, setTab] = useState<'chat' | 'pulse'>('chat');
 
+    // BUG FIX (user-reported): "when i close and re open chat, it should
+    // start from where i left not from starting". Root cause: the chat's
+    // scrollable message container lives inside AnimatePresence's
+    // conditional render (`{open && (...)}`) so it -- unlike the message
+    // DATA itself, which lives in useCommander() in this always-mounted
+    // outer component and survives closing fine -- is genuinely unmounted
+    // every time the panel closes. Remounting on reopen always starts a
+    // fresh DOM element at scrollTop=0, and the auto-scroll-to-bottom
+    // effect below then always jumped it straight to the newest message,
+    // discarding wherever in the conversation the operator had scrolled
+    // to before closing.
+    //
+    // Fix: persist the last scroll position in a ref that lives in this
+    // outer, never-unmounted component (survives the inner panel's
+    // mount/unmount cycles), and restore it the moment the scrollable div
+    // remounts. Only auto-scroll to the newest message when the operator
+    // was ALREADY at (or near) the bottom before a new message arrived --
+    // exactly like how real chat apps (Slack, iMessage, etc.) behave: if
+    // you're actively reading history, a new message doesn't yank you
+    // away from it, but if you were already caught up, it keeps you
+    // caught up.
+    const lastScrollTopRef = useRef(0);
+    const wasNearBottomRef = useRef(true);
+
     useEffect(() => {
         if (sending) setOpen(true);
     }, [sending]);
 
+    // Restore scroll position the instant the scrollable div (re)mounts --
+    // this specifically handles the close/reopen case, since a fresh DOM
+    // node always starts at scrollTop=0 regardless of what value we
+    // previously observed.
     useEffect(() => {
-        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+        if (open && tab === 'chat' && scrollRef.current) {
+            scrollRef.current.scrollTop = lastScrollTopRef.current;
+        }
+    }, [open, tab]);
+
+    // Auto-scroll to the newest message ONLY if the operator was already
+    // near the bottom (i.e. actively following the live conversation),
+    // not if they'd scrolled up to review earlier history.
+    useEffect(() => {
+        if (wasNearBottomRef.current) {
+            scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+        }
     }, [messages.length, sending]);
 
     const submitLockRef = useRef(false);
@@ -159,7 +198,15 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
 
                         {tab === 'chat' ? (
                             <>
-                                <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 mt-2">
+                                <div
+                                    ref={scrollRef}
+                                    onScroll={(e) => {
+                                        const el = e.currentTarget;
+                                        lastScrollTopRef.current = el.scrollTop;
+                                        wasNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+                                    }}
+                                    className="flex-1 overflow-y-auto px-4 py-3 mt-2"
+                                >
                                     {messages.length === 0 && visibleMessages.length === 0 && !sending ? (
                                         <EmptyState icon={<MessageSquare className="w-5 h-5" />} title="Ask, guide, or add a confirmed fact" subtitle="Commander answers questions, accepts guidance, and records facts -- but never approves or executes through chat." />
                                     ) : (
