@@ -105,20 +105,28 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 16, scale: 0.96 }}
                         transition={{ type: 'spring', stiffness: 340, damping: 28 }}
-                        // Deliberately NOT using `console-surface` here --
-                        // that class is only 55% opaque with a backdrop
-                        // blur, designed for panels that sit WITHIN the
-                        // page's own scroll flow over a fairly uniform
-                        // background. As a floating overlay meant to sit
-                        // clearly on top of arbitrary page content (tab
-                        // bars, text, etc.), that translucency let page
-                        // content behind it bleed through distractingly
-                        // (confirmed live via a real screenshot showing
-                        // "Recovery plan" tab text visible through the
-                        // chat bubbles). Uses a solid, near-opaque
-                        // background instead so the floating panel always
-                        // reads clearly regardless of what's behind it.
-                        className="rounded-2xl overflow-hidden shadow-2xl shadow-black/50 ring-1 ring-white/[0.08] w-[min(92vw,420px)] h-[min(70vh,560px)] flex flex-col bg-[#0D0D15]"
+                        // Uses `menu-panel`, not `console-surface`.
+                        // console-surface is only 55% opaque with a
+                        // backdrop blur, designed for panels that sit
+                        // WITHIN the page's own scroll flow over a fairly
+                        // uniform background -- as a floating overlay
+                        // meant to sit on top of arbitrary page content,
+                        // that translucency let page content bleed through
+                        // distractingly (confirmed live via a screenshot
+                        // showing "Recovery plan" tab text visible through
+                        // the chat bubbles).
+                        //
+                        // BUG FIX (user-reported, 2nd round): my first fix
+                        // used a hardcoded dark color (bg-[#0D0D15]),
+                        // which broke light mode entirely -- this app has
+                        // a real light/dark toggle (ThemeContext.tsx) and
+                        // menu-panel is the EXISTING, theme-aware solution
+                        // for this exact scenario (dropdowns/popovers
+                        // floating over arbitrary content), using
+                        // var(--color-surface-elevated) which resolves
+                        // correctly in both themes. Should have reused
+                        // this the first time instead of hardcoding.
+                        className="menu-panel rounded-2xl overflow-hidden shadow-2xl w-[min(92vw,420px)] h-[min(70vh,560px)] flex flex-col"
                     >
                         <div className="px-4 py-3.5 flex items-center justify-between border-b border-white/[0.05] flex-shrink-0">
                             <div className="flex items-center gap-2">
@@ -251,8 +259,15 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                     )}
                 </AnimatePresence>
                 {!open && sending && (
+                    // BUG FIX (same theme issue as the panel background):
+                    // ring-[#0A0A0F] was hardcoded dark, breaking light
+                    // mode. ring-[var(--color-surface)] resolves to the
+                    // real page background in whichever theme is active
+                    // (dark: #0D0D16, light: #FFFFFF -- see index.css),
+                    // so the badge's "cutout" ring always matches the
+                    // actual page it's sitting on.
                     <motion.span
-                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-agent-active ring-2 ring-[#0A0A0F]"
+                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-agent-active ring-2 ring-[var(--color-surface)]"
                         animate={{ scale: [1, 1.3, 1] }}
                         transition={{ duration: 1.2, repeat: Infinity }}
                     />
