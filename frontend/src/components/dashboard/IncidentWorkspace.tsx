@@ -257,17 +257,16 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
                 }
             />
 
-            {/* Commander now lives as a persistent panel on the incident
-                page itself, NOT as one of WorkspaceTabs' tabs. Per user
-                feedback, having it as a tab meant navigating to any other
-                tab made an in-flight "Thinking" indicator appear to vanish
-                (even after fixing the underlying unmount bug, it still felt
-                hidden/gone to the operator since Commander wasn't visible
-                at all unless that specific tab was selected). Rendering it
-                here means it's always on-screen regardless of which tab is
-                active, with its own internal collapse toggle for when the
-                operator wants to focus on another panel without losing any
-                visibility into whether Commander is actively working. */}
+            {/* Commander is now a floating launcher (Intercom/Drift
+                pattern), rendered here at fixed position rather than as
+                one of WorkspaceTabs' tabs. Per direct user feedback: an
+                always-visible bottom panel was explicitly rejected ("bad
+                design, i never said bottom") in favor of matching how
+                modern chat/coding agents actually dock -- closed by
+                default, opened on demand, and it auto-opens the instant a
+                request starts so "Thinking" is never silently hidden
+                regardless of which workspace tab is active or whether the
+                operator had closed it. */}
             <CommanderPanel incidentId={incidentId} />
 
             <AnimatePresence>

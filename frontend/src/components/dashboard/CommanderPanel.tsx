@@ -1,13 +1,10 @@
 import { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Radio, ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck, Sparkles, ChevronDown } from 'lucide-react';
+import { ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck, Sparkles, X, Bot } from 'lucide-react';
 import { useCommander } from '../../hooks/useCommander';
 import { EmptyState } from './shared';
 
-const SEVERITY_DOT: Record<string, string> = {
-    critical: 'bg-critical',
-    warning: 'bg-warning',
-};
+const SEVERITY_DOT: Record<string, string> = { critical: 'bg-critical', warning: 'bg-warning' };
 
 function PulseItem({ headline, summary, severity, created_at }: { headline: string; summary?: string; severity?: string | null; created_at: string }) {
     const dotClass = (severity && SEVERITY_DOT[severity]) || 'bg-healthy';
@@ -44,44 +41,19 @@ function ConversationBubble({ role, intent, content, created_at }: { role: strin
     );
 }
 
-const THINKING_LABELS: Record<string, string> = {
-    ASK: 'Thinking',
-    GUIDE: 'Weighing guidance',
-    ADD_FACT: 'Reconciling fact',
-};
+const THINKING_LABELS: Record<string, string> = { ASK: 'Thinking', GUIDE: 'Weighing guidance', ADD_FACT: 'Reconciling fact' };
 
-/**
- * "Commander is thinking" indicator. ASK/GUIDE/ADD_FACT can take anywhere
- * from a few seconds (guidance reactions) to 60-90s (ASK, which may call
- * real read-only tools like query_logs before answering -- see
- * CommanderLiveAgent). Without this, the input area going quiet for that
- * long looked indistinguishable from a hung/broken request.
- */
 function ThinkingBubble({ mode }: { mode: 'ASK' | 'GUIDE' | 'ADD_FACT' }) {
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="flex justify-start mb-2.5"
-        >
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex justify-start mb-2.5">
             <div className="max-w-[85%] rounded-2xl px-3.5 py-2.5 bg-white/[0.03] ring-1 ring-white/[0.06] flex items-center gap-2">
-                <motion.span
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 2.2, repeat: Infinity, ease: 'linear' }}
-                    className="flex-shrink-0"
-                >
+                <motion.span animate={{ rotate: 360 }} transition={{ duration: 2.2, repeat: Infinity, ease: 'linear' }} className="flex-shrink-0">
                     <Sparkles className="w-3 h-3 text-agent-active" />
                 </motion.span>
                 <span className="text-[11.5px] text-text-muted font-medium">{THINKING_LABELS[mode]}</span>
                 <span className="flex items-center gap-0.5">
                     {[0, 1, 2].map((i) => (
-                        <motion.span
-                            key={i}
-                            className="w-1 h-1 rounded-full bg-text-muted"
-                            animate={{ opacity: [0.25, 1, 0.25], y: [0, -2, 0] }}
-                            transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }}
-                        />
+                        <motion.span key={i} className="w-1 h-1 rounded-full bg-text-muted" animate={{ opacity: [0.25, 1, 0.25], y: [0, -2, 0] }} transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }} />
                     ))}
                 </span>
             </div>
@@ -94,40 +66,18 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
     const [mode, setMode] = useState<'ASK' | 'GUIDE' | 'ADD_FACT'>('ASK');
     const [text, setText] = useState('');
     const scrollRef = useRef<HTMLDivElement>(null);
+    const [open, setOpen] = useState(false);
+    const [tab, setTab] = useState<'chat' | 'pulse'>('chat');
 
-    // Per user feedback: Commander now lives permanently on the incident
-    // page instead of being one of the tabs (previously navigating between
-    // tabs made "Thinking" appear to vanish). Since it's always mounted
-    // now, it can take up meaningful vertical space -- collapsible so
-    // operators can shrink it down while still working the other panels,
-    // WITHOUT ever unmounting the chat (collapsing uses a CSS `hidden`
-    // class below, never conditional rendering, so useCommander's
-    // sending/optimisticMessages state is never destroyed by collapsing).
-    // Auto-expands the moment a request starts, so an operator who
-    // collapsed the panel still sees the Thinking indicator surface.
-    const [collapsed, setCollapsed] = useState(false);
     useEffect(() => {
-        if (sending) setCollapsed(false);
+        if (sending) setOpen(true);
     }, [sending]);
 
     useEffect(() => {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }, [messages.length, sending]);
 
-    // BUG FIX (user-reported live, confirmed via screenshot showing two
-    // identical "ASK what's the RCA?" bubbles at the SAME timestamp):
-    // handleSubmit's guard checked the React `sending` STATE, which only
-    // updates on the NEXT render -- it does nothing to stop a second
-    // synchronous call to handleSubmit that happens before that re-render
-    // commits (e.g. the Enter keydown handler and a near-simultaneous
-    // click on the send button both firing handleSubmit in the same tick,
-    // or a fast double-press). Both invocations read the same stale
-    // `sending === false` and both went through, sending two identical
-    // requests. A plain useRef lock is checked and flipped SYNCHRONOUSLY
-    // (no render involved), so the second call is blocked immediately,
-    // regardless of React's render/state-update timing.
     const submitLockRef = useRef(false);
-
     const handleSubmit = async () => {
         if (!text.trim() || sending || submitLockRef.current) return;
         submitLockRef.current = true;
@@ -142,187 +92,159 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
         }
     };
 
-    if (!incidentId) {
-        return (
-            <div className="console-surface rounded-2xl min-h-[120px] flex items-center justify-center">
-                <EmptyState icon={<MessageSquare className="w-5 h-5" />} title="No incident selected" subtitle="Select an incident to open its Commander session." />
-            </div>
-        );
-    }
+    if (!incidentId) return null;
+
+    const visibleMessages = optimisticMessages.filter((om) => !messages.some((m) => m.role === om.role && m.content === om.content));
 
     return (
-        <div className="console-surface rounded-2xl overflow-hidden">
-            {/* Persistent header -- always visible, even when the body below
-                is collapsed, so the "live"/Thinking indicator is never hidden
-                regardless of collapse state or which workspace tab is active. */}
-            <button
-                type="button"
-                onClick={() => setCollapsed((c) => !c)}
-                className="focus-ring w-full px-4 py-3 flex items-center justify-between border-b border-white/[0.05] hover:bg-white/[0.02] transition-colors"
-                aria-expanded={!collapsed}
-            >
-                <div className="flex items-center gap-2">
-                    <motion.span
-                        animate={sending ? { scale: [1, 1.15, 1], opacity: [1, 0.7, 1] } : { scale: 1, opacity: 1 }}
-                        transition={sending ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
+        <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
+            <AnimatePresence>
+                {open && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 16, scale: 0.96 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 16, scale: 0.96 }}
+                        transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+                        className="console-surface rounded-2xl overflow-hidden shadow-2xl shadow-black/40 w-[min(92vw,420px)] h-[560px] flex flex-col"
                     >
-                        <ShieldCheck className="w-3.5 h-3.5 text-agent-active" />
-                    </motion.span>
-                    <div className="font-semibold text-[13px] text-text-primary">Commander</div>
-                    <AnimatePresence>
-                        {sending && (
-                            <motion.span
-                                initial={{ opacity: 0, x: 6 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0 }}
-                                className="text-[9.5px] font-bold uppercase tracking-wide text-agent-active flex items-center gap-1.5"
-                            >
-                                <span className="w-1.5 h-1.5 rounded-full bg-agent-active animate-pulse" /> live
-                            </motion.span>
-                        )}
-                    </AnimatePresence>
-                </div>
-                <div className="flex items-center gap-2">
-                    {collapsed && messages.length > 0 && (
-                        <span className="text-[10px] text-text-muted">{messages.length} messages</span>
-                    )}
-                    <ChevronDown className={`w-4 h-4 text-text-muted transition-transform ${collapsed ? '' : 'rotate-180'}`} />
-                </div>
-            </button>
-
-            {/* Collapsing uses CSS `hidden`, never conditional rendering --
-                the chat/pulse subtree (and useCommander's state) stays
-                mounted at all times. */}
-            <div className={collapsed ? 'hidden' : 'grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-4 p-4'}>
-                {/* Commander Pulse */}
-                <div className="console-surface rounded-2xl overflow-hidden flex flex-col h-[360px]">
-                    <div className="px-4 py-3.5 flex items-center justify-between border-b border-white/[0.05]">
-                        <div className="flex items-center gap-2">
-                            <Radio className="w-3.5 h-3.5 text-primary" />
-                            <div className="font-semibold text-[13px] text-text-primary">Commander Pulse</div>
+                        <div className="px-4 py-3.5 flex items-center justify-between border-b border-white/[0.05] flex-shrink-0">
+                            <div className="flex items-center gap-2">
+                                <motion.span animate={sending ? { scale: [1, 1.15, 1], opacity: [1, 0.7, 1] } : { scale: 1, opacity: 1 }} transition={sending ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}>
+                                    <ShieldCheck className="w-3.5 h-3.5 text-agent-active" />
+                                </motion.span>
+                                <div className="font-semibold text-[13px] text-text-primary">Commander</div>
+                                {sending && (
+                                    <span className="text-[9.5px] font-bold uppercase tracking-wide text-agent-active flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-agent-active animate-pulse" /> live
+                                    </span>
+                                )}
+                            </div>
+                            <button onClick={() => setOpen(false)} className="focus-ring press-scale w-7 h-7 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-white/[0.05] transition-colors">
+                                <X className="w-4 h-4" />
+                            </button>
                         </div>
-                        <span className="text-[9.5px] font-semibold uppercase tracking-wide text-text-muted">{pulse.length} updates</span>
-                    </div>
-                    <div className="flex-1 overflow-y-auto px-4 py-2">
-                        {loading ? (
-                            <div className="text-[11px] text-text-muted py-4 text-center">Loading status...</div>
-                        ) : pulse.length === 0 ? (
-                            <EmptyState icon={<Radio className="w-5 h-5" />} title="No status updates yet" subtitle="Commander Pulse will populate as the investigation progresses." />
-                        ) : (
-                            <AnimatePresence initial={false}>
-                                {pulse.map((u, idx) => (
-                                    <motion.div
-                                        key={u.update_id}
-                                        initial={{ opacity: 0, x: -8 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: idx === 0 ? 0 : 0.02 * idx, type: 'spring', stiffness: 260, damping: 22 }}
-                                    >
-                                        <PulseItem headline={u.headline} summary={u.summary} severity={u.severity} created_at={u.created_at} />
-                                    </motion.div>
-                                ))}
-                            </AnimatePresence>
-                        )}
-                    </div>
-                </div>
 
-                {/* Commander Live conversation */}
-                <div className="console-surface rounded-2xl overflow-hidden flex flex-col h-[360px]">
-                    <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
-                        {messages.length === 0 && optimisticMessages.length === 0 && !sending ? (
-                            <EmptyState icon={<MessageSquare className="w-5 h-5" />} title="Ask, guide, or add a confirmed fact" subtitle="Commander will answer questions, accept investigation guidance, and record confirmed facts -- but never accepts approval or execution through chat." />
-                        ) : (
-                            <AnimatePresence initial={false}>
-                                {messages.map((m) => (
-                                    <motion.div
-                                        key={m.message_id}
-                                        initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                                        transition={{ type: 'spring', stiffness: 300, damping: 24 }}
-                                    >
-                                        <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
-                                    </motion.div>
-                                ))}
-                                {/* Optimistic echo of the operator's just-sent message --
-                                appears INSTANTLY (before the backend round-trip
-                                completes), so the operator's own text is never
-                                hidden behind the Thinking indicator. Discarded the
-                                moment refresh() brings back the real persisted
-                                version of this same message.
-
-                                Defense-in-depth against the "I see my message
-                                twice" bug: even though useCommander now skips its
-                                background poll while a send is in flight, filter
-                                out any optimistic entry whose exact content
-                                already appears in the real, persisted `messages`
-                                list -- covers the brief window between the real
-                                message landing in `messages` and sendTurn's own
-                                cleanup clearing optimisticMessages. */}
-                                {optimisticMessages
-                                    .filter((om) => !messages.some((m) => m.role === om.role && m.content === om.content))
-                                    .map((m) => (
-                                        <motion.div
-                                            key={m.message_id}
-                                            initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                                            transition={{ type: 'spring', stiffness: 300, damping: 24 }}
-                                        >
-                                            <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
-                                        </motion.div>
-                                    ))}
-                                {sending && <ThinkingBubble key="thinking" mode={mode} />}
-                            </AnimatePresence>
-                        )}
-                    </div>
-                    <div className="border-t border-white/[0.06] p-3">
-                        <div className="flex gap-1.5 mb-2">
-                            {(['ASK', 'GUIDE', 'ADD_FACT'] as const).map((m) => (
+                        <div className="flex gap-1 px-3 pt-2.5 flex-shrink-0">
+                            {(['chat', 'pulse'] as const).map((t) => (
                                 <button
-                                    key={m}
-                                    onClick={() => setMode(m)}
-                                    disabled={sending}
-                                    className={`focus-ring press-scale text-[10.5px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${mode === m
-                                        ? 'bg-primary/20 text-primary ring-1 ring-primary/35'
-                                        : 'bg-white/[0.03] text-text-muted ring-1 ring-white/[0.06] hover:text-text-secondary'
-                                        }`}
+                                    key={t}
+                                    onClick={() => setTab(t)}
+                                    className={`focus-ring press-scale text-[10.5px] font-semibold px-3 py-1.5 rounded-lg transition-colors ${tab === t ? 'bg-primary/20 text-primary ring-1 ring-primary/35' : 'bg-white/[0.03] text-text-muted ring-1 ring-white/[0.06] hover:text-text-secondary'}`}
                                 >
-                                    {m.replace('_', ' ')}
+                                    {t === 'chat' ? 'Chat' : `Pulse${pulse.length > 0 ? ` (${pulse.length})` : ''}`}
                                 </button>
                             ))}
                         </div>
-                        <div className="flex items-end gap-2">
-                            <textarea
-                                value={text}
-                                onChange={(e) => setText(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                        e.preventDefault();
-                                        handleSubmit();
-                                    }
-                                }}
-                                disabled={sending}
-                                placeholder={
-                                    sending
-                                        ? 'Commander is responding...'
-                                        : mode === 'ASK'
-                                            ? 'Ask Commander about this incident...'
-                                            : mode === 'GUIDE'
-                                                ? 'Provide investigation guidance...'
-                                                : 'State a confirmed fact...'
-                                }
-                                rows={2}
-                                className="flex-1 resize-none rounded-xl px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50 transition-all disabled:opacity-60"
-                            />
-                            <button
-                                onClick={handleSubmit}
-                                disabled={!text.trim() || sending}
-                                className="focus-ring press-scale flex-shrink-0 w-9 h-9 rounded-xl bg-primary text-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                                <ArrowUp className="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
+
+                        {tab === 'chat' ? (
+                            <>
+                                <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 mt-2">
+                                    {messages.length === 0 && visibleMessages.length === 0 && !sending ? (
+                                        <EmptyState icon={<MessageSquare className="w-5 h-5" />} title="Ask, guide, or add a confirmed fact" subtitle="Commander answers questions, accepts guidance, and records facts -- but never approves or executes through chat." />
+                                    ) : (
+                                        <AnimatePresence initial={false}>
+                                            {messages.map((m) => (
+                                                <motion.div key={m.message_id} initial={{ opacity: 0, y: 10, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 300, damping: 24 }}>
+                                                    <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
+                                                </motion.div>
+                                            ))}
+                                            {visibleMessages.map((m) => (
+                                                <motion.div key={m.message_id} initial={{ opacity: 0, y: 10, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 300, damping: 24 }}>
+                                                    <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
+                                                </motion.div>
+                                            ))}
+                                            {sending && <ThinkingBubble key="thinking" mode={mode} />}
+                                        </AnimatePresence>
+                                    )}
+                                </div>
+                                <div className="border-t border-white/[0.06] p-3 flex-shrink-0">
+                                    <div className="flex gap-1.5 mb-2">
+                                        {(['ASK', 'GUIDE', 'ADD_FACT'] as const).map((m) => (
+                                            <button
+                                                key={m}
+                                                onClick={() => setMode(m)}
+                                                disabled={sending}
+                                                className={`focus-ring press-scale text-[10.5px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${mode === m ? 'bg-primary/20 text-primary ring-1 ring-primary/35' : 'bg-white/[0.03] text-text-muted ring-1 ring-white/[0.06] hover:text-text-secondary'}`}
+                                            >
+                                                {m.replace('_', ' ')}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="flex items-end gap-2">
+                                        <textarea
+                                            value={text}
+                                            onChange={(e) => setText(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    handleSubmit();
+                                                }
+                                            }}
+                                            disabled={sending}
+                                            placeholder={sending ? 'Commander is responding...' : mode === 'ASK' ? 'Ask Commander...' : mode === 'GUIDE' ? 'Provide guidance...' : 'State a confirmed fact...'}
+                                            rows={2}
+                                            className="flex-1 resize-none rounded-xl px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50 transition-all disabled:opacity-60"
+                                        />
+                                        <button
+                                            onClick={handleSubmit}
+                                            disabled={!text.trim() || sending}
+                                            className="focus-ring press-scale flex-shrink-0 w-9 h-9 rounded-xl bg-primary text-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            <ArrowUp className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex-1 overflow-y-auto px-4 py-3 mt-2">
+                                {loading ? (
+                                    <div className="text-[11px] text-text-muted py-4 text-center">Loading status...</div>
+                                ) : pulse.length === 0 ? (
+                                    <EmptyState icon={<Sparkles className="w-5 h-5" />} title="No status updates yet" subtitle="Commander Pulse populates as the investigation progresses." />
+                                ) : (
+                                    <AnimatePresence initial={false}>
+                                        {pulse.map((u, idx) => (
+                                            <motion.div key={u.update_id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx === 0 ? 0 : 0.02 * idx, type: 'spring', stiffness: 260, damping: 22 }}>
+                                                <PulseItem headline={u.headline} summary={u.summary} severity={u.severity} created_at={u.created_at} />
+                                            </motion.div>
+                                        ))}
+                                    </AnimatePresence>
+                                )}
+                            </div>
+                        )}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* The launcher button -- always visible, closed by default.
+                Shows a pulsing badge while Commander is actively working
+                so the operator has a persistent, ambient signal even with
+                the panel collapsed, without ever taking up page real
+                estate the way the earlier permanent-panel design did. */}
+            <motion.button
+                onClick={() => setOpen((o) => !o)}
+                whileTap={{ scale: 0.92 }}
+                className="focus-ring relative w-14 h-14 rounded-full bg-primary text-white shadow-2xl shadow-primary/30 flex items-center justify-center"
+            >
+                <AnimatePresence mode="wait">
+                    {open ? (
+                        <motion.span key="close" initial={{ opacity: 0, rotate: -90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: 90 }}>
+                            <X className="w-5 h-5" />
+                        </motion.span>
+                    ) : (
+                        <motion.span key="bot" initial={{ opacity: 0, rotate: 90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: -90 }}>
+                            <Bot className="w-5 h-5" />
+                        </motion.span>
+                    )}
+                </AnimatePresence>
+                {!open && sending && (
+                    <motion.span
+                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-agent-active ring-2 ring-[#0A0A0F]"
+                        animate={{ scale: [1, 1.3, 1] }}
+                        transition={{ duration: 1.2, repeat: Infinity }}
+                    />
+                )}
+            </motion.button>
         </div>
     );
 }
