@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Radio, ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck, Sparkles } from 'lucide-react';
+import { Radio, ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck, Sparkles, ChevronDown } from 'lucide-react';
 import { useCommander } from '../../hooks/useCommander';
 import { EmptyState } from './shared';
 
@@ -95,6 +95,21 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
     const [text, setText] = useState('');
     const scrollRef = useRef<HTMLDivElement>(null);
 
+    // Per user feedback: Commander now lives permanently on the incident
+    // page instead of being one of the tabs (previously navigating between
+    // tabs made "Thinking" appear to vanish). Since it's always mounted
+    // now, it can take up meaningful vertical space -- collapsible so
+    // operators can shrink it down while still working the other panels,
+    // WITHOUT ever unmounting the chat (collapsing uses a CSS `hidden`
+    // class below, never conditional rendering, so useCommander's
+    // sending/optimisticMessages state is never destroyed by collapsing).
+    // Auto-expands the moment a request starts, so an operator who
+    // collapsed the panel still sees the Thinking indicator surface.
+    const [collapsed, setCollapsed] = useState(false);
+    useEffect(() => {
+        if (sending) setCollapsed(false);
+    }, [sending]);
+
     useEffect(() => {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }, [messages.length, sending]);
@@ -129,57 +144,31 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
 
     if (!incidentId) {
         return (
-            <div className="console-surface rounded-2xl min-h-[300px] flex items-center justify-center">
+            <div className="console-surface rounded-2xl min-h-[120px] flex items-center justify-center">
                 <EmptyState icon={<MessageSquare className="w-5 h-5" />} title="No incident selected" subtitle="Select an incident to open its Commander session." />
             </div>
         );
     }
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-4">
-            {/* Commander Pulse */}
-            <div className="console-surface rounded-2xl overflow-hidden flex flex-col h-[480px]">
-                <div className="px-4 py-3.5 flex items-center justify-between border-b border-white/[0.05]">
-                    <div className="flex items-center gap-2">
-                        <Radio className="w-3.5 h-3.5 text-primary" />
-                        <div className="font-semibold text-[13px] text-text-primary">Commander Pulse</div>
-                    </div>
-                    <span className="text-[9.5px] font-semibold uppercase tracking-wide text-text-muted">{pulse.length} updates</span>
-                </div>
-                <div className="flex-1 overflow-y-auto px-4 py-2">
-                    {loading ? (
-                        <div className="text-[11px] text-text-muted py-4 text-center">Loading status...</div>
-                    ) : pulse.length === 0 ? (
-                        <EmptyState icon={<Radio className="w-5 h-5" />} title="No status updates yet" subtitle="Commander Pulse will populate as the investigation progresses." />
-                    ) : (
-                        <AnimatePresence initial={false}>
-                            {pulse.map((u, idx) => (
-                                <motion.div
-                                    key={u.update_id}
-                                    initial={{ opacity: 0, x: -8 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{ delay: idx === 0 ? 0 : 0.02 * idx, type: 'spring', stiffness: 260, damping: 22 }}
-                                >
-                                    <PulseItem headline={u.headline} summary={u.summary} severity={u.severity} created_at={u.created_at} />
-                                </motion.div>
-                            ))}
-                        </AnimatePresence>
-                    )}
-                </div>
-            </div>
-
-            {/* Commander Live conversation */}
-            <div className="console-surface rounded-2xl overflow-hidden flex flex-col h-[480px]">
-                <div className="px-4 py-3.5 flex items-center justify-between border-b border-white/[0.05]">
-                    <div className="flex items-center gap-2">
-                        <motion.span
-                            animate={sending ? { scale: [1, 1.15, 1], opacity: [1, 0.7, 1] } : { scale: 1, opacity: 1 }}
-                            transition={sending ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
-                        >
-                            <ShieldCheck className="w-3.5 h-3.5 text-agent-active" />
-                        </motion.span>
-                        <div className="font-semibold text-[13px] text-text-primary">Commander</div>
-                    </div>
+        <div className="console-surface rounded-2xl overflow-hidden">
+            {/* Persistent header -- always visible, even when the body below
+                is collapsed, so the "live"/Thinking indicator is never hidden
+                regardless of collapse state or which workspace tab is active. */}
+            <button
+                type="button"
+                onClick={() => setCollapsed((c) => !c)}
+                className="focus-ring w-full px-4 py-3 flex items-center justify-between border-b border-white/[0.05] hover:bg-white/[0.02] transition-colors"
+                aria-expanded={!collapsed}
+            >
+                <div className="flex items-center gap-2">
+                    <motion.span
+                        animate={sending ? { scale: [1, 1.15, 1], opacity: [1, 0.7, 1] } : { scale: 1, opacity: 1 }}
+                        transition={sending ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
+                    >
+                        <ShieldCheck className="w-3.5 h-3.5 text-agent-active" />
+                    </motion.span>
+                    <div className="font-semibold text-[13px] text-text-primary">Commander</div>
                     <AnimatePresence>
                         {sending && (
                             <motion.span
@@ -193,22 +182,67 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                         )}
                     </AnimatePresence>
                 </div>
-                <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
-                    {messages.length === 0 && optimisticMessages.length === 0 && !sending ? (
-                        <EmptyState icon={<MessageSquare className="w-5 h-5" />} title="Ask, guide, or add a confirmed fact" subtitle="Commander will answer questions, accept investigation guidance, and record confirmed facts -- but never accepts approval or execution through chat." />
-                    ) : (
-                        <AnimatePresence initial={false}>
-                            {messages.map((m) => (
-                                <motion.div
-                                    key={m.message_id}
-                                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    transition={{ type: 'spring', stiffness: 300, damping: 24 }}
-                                >
-                                    <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
-                                </motion.div>
-                            ))}
-                            {/* Optimistic echo of the operator's just-sent message --
+                <div className="flex items-center gap-2">
+                    {collapsed && messages.length > 0 && (
+                        <span className="text-[10px] text-text-muted">{messages.length} messages</span>
+                    )}
+                    <ChevronDown className={`w-4 h-4 text-text-muted transition-transform ${collapsed ? '' : 'rotate-180'}`} />
+                </div>
+            </button>
+
+            {/* Collapsing uses CSS `hidden`, never conditional rendering --
+                the chat/pulse subtree (and useCommander's state) stays
+                mounted at all times. */}
+            <div className={collapsed ? 'hidden' : 'grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-4 p-4'}>
+                {/* Commander Pulse */}
+                <div className="console-surface rounded-2xl overflow-hidden flex flex-col h-[360px]">
+                    <div className="px-4 py-3.5 flex items-center justify-between border-b border-white/[0.05]">
+                        <div className="flex items-center gap-2">
+                            <Radio className="w-3.5 h-3.5 text-primary" />
+                            <div className="font-semibold text-[13px] text-text-primary">Commander Pulse</div>
+                        </div>
+                        <span className="text-[9.5px] font-semibold uppercase tracking-wide text-text-muted">{pulse.length} updates</span>
+                    </div>
+                    <div className="flex-1 overflow-y-auto px-4 py-2">
+                        {loading ? (
+                            <div className="text-[11px] text-text-muted py-4 text-center">Loading status...</div>
+                        ) : pulse.length === 0 ? (
+                            <EmptyState icon={<Radio className="w-5 h-5" />} title="No status updates yet" subtitle="Commander Pulse will populate as the investigation progresses." />
+                        ) : (
+                            <AnimatePresence initial={false}>
+                                {pulse.map((u, idx) => (
+                                    <motion.div
+                                        key={u.update_id}
+                                        initial={{ opacity: 0, x: -8 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ delay: idx === 0 ? 0 : 0.02 * idx, type: 'spring', stiffness: 260, damping: 22 }}
+                                    >
+                                        <PulseItem headline={u.headline} summary={u.summary} severity={u.severity} created_at={u.created_at} />
+                                    </motion.div>
+                                ))}
+                            </AnimatePresence>
+                        )}
+                    </div>
+                </div>
+
+                {/* Commander Live conversation */}
+                <div className="console-surface rounded-2xl overflow-hidden flex flex-col h-[360px]">
+                    <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
+                        {messages.length === 0 && optimisticMessages.length === 0 && !sending ? (
+                            <EmptyState icon={<MessageSquare className="w-5 h-5" />} title="Ask, guide, or add a confirmed fact" subtitle="Commander will answer questions, accept investigation guidance, and record confirmed facts -- but never accepts approval or execution through chat." />
+                        ) : (
+                            <AnimatePresence initial={false}>
+                                {messages.map((m) => (
+                                    <motion.div
+                                        key={m.message_id}
+                                        initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+                                    >
+                                        <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
+                                    </motion.div>
+                                ))}
+                                {/* Optimistic echo of the operator's just-sent message --
                                 appears INSTANTLY (before the backend round-trip
                                 completes), so the operator's own text is never
                                 hidden behind the Thinking indicator. Discarded the
@@ -223,68 +257,69 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                                 list -- covers the brief window between the real
                                 message landing in `messages` and sendTurn's own
                                 cleanup clearing optimisticMessages. */}
-                            {optimisticMessages
-                                .filter((om) => !messages.some((m) => m.role === om.role && m.content === om.content))
-                                .map((m) => (
-                                    <motion.div
-                                        key={m.message_id}
-                                        initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                                        transition={{ type: 'spring', stiffness: 300, damping: 24 }}
-                                    >
-                                        <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
-                                    </motion.div>
-                                ))}
-                            {sending && <ThinkingBubble key="thinking" mode={mode} />}
-                        </AnimatePresence>
-                    )}
-                </div>
-                <div className="border-t border-white/[0.06] p-3">
-                    <div className="flex gap-1.5 mb-2">
-                        {(['ASK', 'GUIDE', 'ADD_FACT'] as const).map((m) => (
-                            <button
-                                key={m}
-                                onClick={() => setMode(m)}
-                                disabled={sending}
-                                className={`focus-ring press-scale text-[10.5px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${mode === m
-                                    ? 'bg-primary/20 text-primary ring-1 ring-primary/35'
-                                    : 'bg-white/[0.03] text-text-muted ring-1 ring-white/[0.06] hover:text-text-secondary'
-                                    }`}
-                            >
-                                {m.replace('_', ' ')}
-                            </button>
-                        ))}
+                                {optimisticMessages
+                                    .filter((om) => !messages.some((m) => m.role === om.role && m.content === om.content))
+                                    .map((m) => (
+                                        <motion.div
+                                            key={m.message_id}
+                                            initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+                                        >
+                                            <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
+                                        </motion.div>
+                                    ))}
+                                {sending && <ThinkingBubble key="thinking" mode={mode} />}
+                            </AnimatePresence>
+                        )}
                     </div>
-                    <div className="flex items-end gap-2">
-                        <textarea
-                            value={text}
-                            onChange={(e) => setText(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleSubmit();
+                    <div className="border-t border-white/[0.06] p-3">
+                        <div className="flex gap-1.5 mb-2">
+                            {(['ASK', 'GUIDE', 'ADD_FACT'] as const).map((m) => (
+                                <button
+                                    key={m}
+                                    onClick={() => setMode(m)}
+                                    disabled={sending}
+                                    className={`focus-ring press-scale text-[10.5px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${mode === m
+                                        ? 'bg-primary/20 text-primary ring-1 ring-primary/35'
+                                        : 'bg-white/[0.03] text-text-muted ring-1 ring-white/[0.06] hover:text-text-secondary'
+                                        }`}
+                                >
+                                    {m.replace('_', ' ')}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex items-end gap-2">
+                            <textarea
+                                value={text}
+                                onChange={(e) => setText(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleSubmit();
+                                    }
+                                }}
+                                disabled={sending}
+                                placeholder={
+                                    sending
+                                        ? 'Commander is responding...'
+                                        : mode === 'ASK'
+                                            ? 'Ask Commander about this incident...'
+                                            : mode === 'GUIDE'
+                                                ? 'Provide investigation guidance...'
+                                                : 'State a confirmed fact...'
                                 }
-                            }}
-                            disabled={sending}
-                            placeholder={
-                                sending
-                                    ? 'Commander is responding...'
-                                    : mode === 'ASK'
-                                        ? 'Ask Commander about this incident...'
-                                        : mode === 'GUIDE'
-                                            ? 'Provide investigation guidance...'
-                                            : 'State a confirmed fact...'
-                            }
-                            rows={2}
-                            className="flex-1 resize-none rounded-xl px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50 transition-all disabled:opacity-60"
-                        />
-                        <button
-                            onClick={handleSubmit}
-                            disabled={!text.trim() || sending}
-                            className="focus-ring press-scale flex-shrink-0 w-9 h-9 rounded-xl bg-primary text-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                            <ArrowUp className="w-4 h-4" />
-                        </button>
+                                rows={2}
+                                className="flex-1 resize-none rounded-xl px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50 transition-all disabled:opacity-60"
+                            />
+                            <button
+                                onClick={handleSubmit}
+                                disabled={!text.trim() || sending}
+                                className="focus-ring press-scale flex-shrink-0 w-9 h-9 rounded-xl bg-primary text-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                <ArrowUp className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

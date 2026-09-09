@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { LayoutGrid, Search as SearchIcon, Activity, BrainCircuit, ShieldCheck, Radio } from 'lucide-react';
+import { LayoutGrid, Search as SearchIcon, Activity, BrainCircuit, ShieldCheck } from 'lucide-react';
 
-type TabKey = 'overview' | 'evidence' | 'investigation' | 'activity' | 'recovery' | 'commander';
+type TabKey = 'overview' | 'evidence' | 'investigation' | 'activity' | 'recovery';
 
 interface Props {
     alertCount: number;
@@ -11,16 +11,21 @@ interface Props {
     investigation: React.ReactNode;
     activity: React.ReactNode;
     recovery: React.ReactNode;
-    commander: React.ReactNode;
 }
 
+// Commander used to be a 6th tab here. Per user feedback, Commander is now
+// rendered as its own ALWAYS-VISIBLE panel on the incident page (see
+// IncidentWorkspace.tsx), not one of these tabs -- switching between these
+// remaining tabs never affects Commander's mount state at all anymore,
+// which is a stronger fix than the earlier "keep every tab mounted"
+// workaround: Commander no longer needs to survive a tab switch, because
+// it's never hidden by one in the first place.
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
     { key: 'overview', label: 'Overview', icon: <LayoutGrid className="w-3.5 h-3.5" /> },
     { key: 'evidence', label: 'Alerts', icon: <SearchIcon className="w-3.5 h-3.5" /> },
     { key: 'investigation', label: 'Investigation', icon: <BrainCircuit className="w-3.5 h-3.5" /> },
     { key: 'activity', label: 'Activity & impact', icon: <Activity className="w-3.5 h-3.5" /> },
     { key: 'recovery', label: 'Recovery plan', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
-    { key: 'commander', label: 'Commander', icon: <Radio className="w-3.5 h-3.5" /> },
 ];
 
 /**
@@ -34,7 +39,7 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
  * shows exactly one focused section at a time -- addressing direct feedback
  * that the dashboard felt cluttered compared to a tabbed alternative design.
  */
-export function WorkspaceTabs({ alertCount, overview, evidence, investigation, activity, recovery, commander }: Props) {
+export function WorkspaceTabs({ alertCount, overview, evidence, investigation, activity, recovery }: Props) {
     const [active, setActive] = useState<TabKey>('overview');
 
     const content: Record<TabKey, React.ReactNode> = {
@@ -43,7 +48,6 @@ export function WorkspaceTabs({ alertCount, overview, evidence, investigation, a
         investigation,
         activity,
         recovery,
-        commander,
     };
 
     return (
