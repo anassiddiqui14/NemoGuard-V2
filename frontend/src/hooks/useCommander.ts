@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { authFetch } from '../contexts/AuthGateContext';
 
 export interface CommanderStatusUpdate {
@@ -56,6 +56,11 @@ export function useCommander(incidentId: string | null) {
         }
     }, [incidentId]);
 
+    // Tracks whether a send is currently in flight so the background poll
+    // (below) can skip itself during that window -- see the duplicate-
+    // message bug fix explained above optimisticMessages.
+    const sendingRef = useRef(false);
+
     useEffect(() => {
         setPulse([]);
         setMessages([]);
@@ -66,7 +71,24 @@ export function useCommander(incidentId: string | null) {
         }
         setLoading(true);
         void refresh().finally(() => setLoading(false));
-        const interval = setInterval(refresh, 4000);
+        // BUG FIX (user-reported): "whenever I ping, I see my message
+        // twice". Root cause: this 4s background poll runs completely
+        // independently of sendTurn()'s own `await refresh()` call. If the
+        // backend finishes persisting the operator's message (a real LLM
+        // call, 10-90+ seconds) and THIS interval's refresh() fires and
+        // repopulates `messages` with the now-persisted message BEFORE
+        // sendTurn's own refresh()+setOptimisticMessages([]) has run, the
+        // exact same message is visible twice for one interval tick: once
+        // from `messages` (real, just fetched) and once from
+        // `optimisticMessages` (local echo, not yet cleared). Skipping the
+        // background poll entirely while a send is in flight (sendTurn
+        // does its own refresh() immediately when the request completes)
+        // closes this race without losing any real-time-ness -- the
+        // operator is actively looking at their own pending send, not
+        // waiting on background updates during that window.
+        const interval = setInterval(() => {
+            if (!sendingRef.current) void refresh();
+        }, 4000);
         return () => clearInterval(interval);
     }, [incidentId, refresh]);
 
@@ -102,6 +124,7 @@ export function useCommander(incidentId: string | null) {
                 },
             ]);
             setSending(true);
+            sendingRef.current = true;
             try {
                 const res = await authFetch(`/api/v2/incidents/${incidentId}/commander/${endpoint}`, {
                     method: 'POST',
@@ -115,6 +138,7 @@ export function useCommander(incidentId: string | null) {
                 return data;
             } finally {
                 setSending(false);
+                sendingRef.current = false;
                 setOptimisticMessages([]);
             }
         },

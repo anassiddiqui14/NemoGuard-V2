@@ -194,17 +194,28 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                                 completes), so the operator's own text is never
                                 hidden behind the Thinking indicator. Discarded the
                                 moment refresh() brings back the real persisted
-                                version of this same message. */}
-                            {optimisticMessages.map((m) => (
-                                <motion.div
-                                    key={m.message_id}
-                                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    transition={{ type: 'spring', stiffness: 300, damping: 24 }}
-                                >
-                                    <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
-                                </motion.div>
-                            ))}
+                                version of this same message.
+
+                                Defense-in-depth against the "I see my message
+                                twice" bug: even though useCommander now skips its
+                                background poll while a send is in flight, filter
+                                out any optimistic entry whose exact content
+                                already appears in the real, persisted `messages`
+                                list -- covers the brief window between the real
+                                message landing in `messages` and sendTurn's own
+                                cleanup clearing optimisticMessages. */}
+                            {optimisticMessages
+                                .filter((om) => !messages.some((m) => m.role === om.role && m.content === om.content))
+                                .map((m) => (
+                                    <motion.div
+                                        key={m.message_id}
+                                        initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+                                    >
+                                        <ConversationBubble role={m.role} intent={m.intent} content={m.content} created_at={m.created_at} />
+                                    </motion.div>
+                                ))}
                             {sending && <ThinkingBubble key="thinking" mode={mode} />}
                         </AnimatePresence>
                     )}

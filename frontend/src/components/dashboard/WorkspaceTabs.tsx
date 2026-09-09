@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { LayoutGrid, Search as SearchIcon, Activity, BrainCircuit, ShieldCheck, Radio } from 'lucide-react';
 
 type TabKey = 'overview' | 'evidence' | 'investigation' | 'activity' | 'recovery' | 'commander';
@@ -90,19 +90,54 @@ export function WorkspaceTabs({ alertCount, overview, evidence, investigation, a
                 </div>
             </div>
 
-            <AnimatePresence mode="wait">
-                <motion.div
-                    key={active}
-                    id={`workspace-panel-${active}`}
-                    role="tabpanel"
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.18 }}
-                >
-                    {content[active]}
-                </motion.div>
-            </AnimatePresence>
+            {/*
+              BUG FIX (user-reported): switching away from the Commander tab
+              and back made an in-flight "Thinking" indicator disappear and
+              never come back, even though the real backend request was
+              still running. Root cause: AnimatePresence mode="wait" only
+              ever rendered content[active] -- every OTHER tab's panel
+              (including CommanderPanel, whose useCommander() hook owns the
+              `sending`/optimisticMessages state) was fully UNMOUNTED the
+              moment you navigated away, destroying that state entirely.
+              Remounting on return started from a clean slate with no
+              memory that a request was in flight.
+
+              Fix: render every tab's content simultaneously, all the time,
+              and toggle visibility with CSS (hidden vs block) instead of
+              conditional rendering. Each tab's own component tree (and any
+              hooks/state it owns, e.g. useCommander's sending state) now
+              stays mounted for the entire lifetime of this workspace, so an
+              in-flight request's UI state survives tab switches exactly
+              like a real background task should.
+            */}
+            {/* IMPORTANT: no `key={active}` on any ancestor of this map --
+                that would make AnimatePresence unmount/remount the ENTIRE
+                subtree (including every other tab's content) on every tab
+                switch, which is exactly the bug being fixed here. Each
+                tab's own div keeps a STABLE key (tab.key) for its entire
+                lifetime; only its `hidden` attribute changes. The fade-in
+                motion is applied to just the currently-visible panel via a
+                plain re-keyed inner element that animates without ever
+                touching the hidden siblings' mount state. */}
+            {TABS.map((tab) => {
+                const isActive = tab.key === active;
+                return (
+                    <div key={tab.key} id={`workspace-panel-${tab.key}`} role="tabpanel" hidden={!isActive}>
+                        {isActive ? (
+                            <motion.div
+                                key={`${tab.key}-fade`}
+                                initial={{ opacity: 0, y: 6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.18 }}
+                            >
+                                {content[tab.key]}
+                            </motion.div>
+                        ) : (
+                            content[tab.key]
+                        )}
+                    </div>
+                );
+            })}
         </div>
     );
 }
