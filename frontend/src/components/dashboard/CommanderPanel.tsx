@@ -99,13 +99,32 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }, [messages.length, sending]);
 
+    // BUG FIX (user-reported live, confirmed via screenshot showing two
+    // identical "ASK what's the RCA?" bubbles at the SAME timestamp):
+    // handleSubmit's guard checked the React `sending` STATE, which only
+    // updates on the NEXT render -- it does nothing to stop a second
+    // synchronous call to handleSubmit that happens before that re-render
+    // commits (e.g. the Enter keydown handler and a near-simultaneous
+    // click on the send button both firing handleSubmit in the same tick,
+    // or a fast double-press). Both invocations read the same stale
+    // `sending === false` and both went through, sending two identical
+    // requests. A plain useRef lock is checked and flipped SYNCHRONOUSLY
+    // (no render involved), so the second call is blocked immediately,
+    // regardless of React's render/state-update timing.
+    const submitLockRef = useRef(false);
+
     const handleSubmit = async () => {
-        if (!text.trim() || sending) return;
+        if (!text.trim() || sending || submitLockRef.current) return;
+        submitLockRef.current = true;
         const value = text;
         setText('');
-        if (mode === 'ASK') await ask(value);
-        else if (mode === 'GUIDE') await guide(value);
-        else await addFact(value);
+        try {
+            if (mode === 'ASK') await ask(value);
+            else if (mode === 'GUIDE') await guide(value);
+            else await addFact(value);
+        } finally {
+            submitLockRef.current = false;
+        }
     };
 
     if (!incidentId) {
