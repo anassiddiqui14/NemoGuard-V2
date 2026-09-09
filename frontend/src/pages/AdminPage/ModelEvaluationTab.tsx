@@ -35,15 +35,13 @@ interface ScorecardRow {
     p95_latency_seconds: number | null;
 }
 
-const KNOWN_MODELS = ['nvidia/nemotron-3-ultra-550b-a55b', 'nvidia/nemotron-3-super-120b-a12b'];
-
 function pct(v: number | null): string {
     return v == null ? '—' : `${Math.round(v * 100)}%`;
 }
 
-function CreateRunForm({ historicalIncidents, onCreated, onCancel }: { historicalIncidents: HistoricalIncident[]; onCreated: () => void; onCancel: () => void }) {
+function CreateRunForm({ historicalIncidents, availableModels, onCreated, onCancel }: { historicalIncidents: HistoricalIncident[]; availableModels: string[]; onCreated: () => void; onCancel: () => void }) {
     const [name, setName] = useState('');
-    const [selectedModels, setSelectedModels] = useState<string[]>([KNOWN_MODELS[0]]);
+    const [selectedModels, setSelectedModels] = useState<string[]>(availableModels.slice(0, 1));
     const [selectedIncidents, setSelectedIncidents] = useState<string[]>([]);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -95,7 +93,7 @@ function CreateRunForm({ historicalIncidents, onCreated, onCancel }: { historica
             <div>
                 <div className="text-[11px] text-text-muted mb-1.5">Models to compare *</div>
                 <div className="flex flex-wrap gap-1.5">
-                    {KNOWN_MODELS.map((m) => (
+                    {availableModels.map((m) => (
                         <button key={m} onClick={() => toggleModel(m)} className={`text-[11px] font-mono px-2.5 py-1 rounded-full ring-1 transition-colors ${selectedModels.includes(m) ? 'bg-primary/20 text-primary ring-primary/35' : 'bg-white/[0.03] text-text-muted ring-white/[0.06] hover:text-text-secondary'}`}>
                             {m}
                         </button>
@@ -206,6 +204,12 @@ const STATUS_COLORS: Record<string, string> = {
 export function ModelEvaluationTab() {
     const [runs, setRuns] = useState<EvalRun[] | null>(null);
     const [historicalIncidents, setHistoricalIncidents] = useState<HistoricalIncident[]>([]);
+    // Loaded live from the SAME settings endpoint the Model Settings tab
+    // uses (/api/v2/admin/settings -> known_models), rather than a
+    // hardcoded, independently-maintained duplicate list -- which is
+    // exactly why a newly-added model (e.g. moonshotai/kimi-k3) never
+    // showed up here even after it was added to settings_service.py.
+    const [availableModels, setAvailableModels] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
@@ -234,6 +238,10 @@ export function ModelEvaluationTab() {
             .then((res) => (res.ok ? res.json() : []))
             .then(setHistoricalIncidents)
             .catch(() => setHistoricalIncidents([]));
+        authFetch('/api/v2/admin/settings')
+            .then((res) => (res.ok ? res.json() : { known_models: [] }))
+            .then((data) => setAvailableModels((data.known_models || []).map((m: { model: string }) => m.model)))
+            .catch(() => setAvailableModels([]));
     }, []);
 
     const handleStart = async (runId: string) => {
@@ -272,6 +280,7 @@ export function ModelEvaluationTab() {
                 {showForm && (
                     <CreateRunForm
                         historicalIncidents={historicalIncidents}
+                        availableModels={availableModels}
                         onCancel={() => setShowForm(false)}
                         onCreated={() => {
                             setShowForm(false);

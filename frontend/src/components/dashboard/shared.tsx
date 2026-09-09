@@ -160,6 +160,22 @@ export function LifecycleStepper({ status }: { status: string }) {
         if (idx >= 0) return idx;
         if (current === 'TRIAGING') return 2;
         if (current === 'NEEDS_REVIEW') return 3;
+        // BUG FIX (user-reported live via screenshot): MANUAL_ACTION_REQUIRED
+        // had no entry in `steps` and matched none of the fallback checks
+        // above, so it silently fell through to the final `return 0` --
+        // showing "Detected" as the current stage for an incident that was
+        // actually 4+ hours into its lifecycle (SEV-2, 90% confidence,
+        // execution already attempted). Per the state machine
+        // (src/domain/state_machine.py), MANUAL_ACTION_REQUIRED is reachable
+        // from PLAN_READY, AWAITING_APPROVAL, or EXECUTING -- i.e. it is
+        // fundamentally a late-stage "an operator must intervene" state,
+        // not an early one. Placed at the EXECUTING/VERIFYING boundary
+        // (index 5, same position as EXECUTING) since that's the most
+        // common real trigger (an execution attempt hit a snag requiring
+        // manual action) and it is never reached before PLAN_READY.
+        if (current === 'MANUAL_ACTION_REQUIRED') return 5;
+        if (current === 'FAILED' || current === 'ROLLED_BACK') return 5;
+        if (current === 'CANCELLED') return 0;
         return 0;
     })();
     // Once the incident has reached the terminal "Resolved" step, every step
