@@ -849,6 +849,42 @@ async def reload_capability_policy(current_user: User = Depends(require_role("ad
 
 
 # ---------------------------------------------------------------------------
+# System Settings (user-requested live, 2026-09-09): "i should be able to
+# change settings whenever needed from admin console." Genuinely editable
+# configuration -- currently which NVIDIA model each agent tier uses
+# (including newly-added moonshotai/kimi-k3) plus the fallback timeout --
+# backed by the system_setting table (migrations/018_system_settings.sql)
+# and src/domain/settings/settings_service.py. Every agent
+# (BaseAgent/CommanderAgent/CommanderLiveAgent/WatcherAgent) reads its
+# model choice from this service at construction/call time, so an admin
+# edit here takes effect on the very next incident/LLM call, with zero
+# code change or process restart.
+# ---------------------------------------------------------------------------
+
+class SystemSettingUpdateIn(BaseModel):
+    value: Any
+
+
+@app.get("/api/v2/admin/settings")
+async def list_system_settings(current_user: User = Depends(require_role("admin"))):
+    from src.domain.settings.settings_service import list_settings, KNOWN_MODELS
+    return {"settings": list_settings(), "known_models": KNOWN_MODELS}
+
+
+@app.patch("/api/v2/admin/settings/{setting_key}")
+async def update_system_setting(setting_key: str, payload: SystemSettingUpdateIn, current_user: User = Depends(require_role("admin"))):
+    from src.domain.settings.settings_service import update_setting
+    update_setting(setting_key, payload.value, current_user.user_id)
+    return {"setting_key": setting_key, "value": payload.value, "status": "updated"}
+
+
+@app.post("/api/v2/admin/settings/reload")
+async def reload_system_settings(current_user: User = Depends(require_role("admin"))):
+    from src.domain.settings.settings_service import reload_settings
+    settings = reload_settings()
+    return {"status": "reloaded", "settings": settings}
+
+# ---------------------------------------------------------------------------
 # Adoption Readiness Dashboard (spec §20). Every value below is either read
 # directly from a persisted, real validation-run JSON artifact under
 # docs/validation/ (produced by scripts/run_validation_suite.py,

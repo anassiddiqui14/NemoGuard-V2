@@ -4,23 +4,28 @@ import asyncio
 from typing import Dict, Any, Optional
 from openai import AsyncOpenAI
 
-# Model-tier fallback map (user-requested live fix, 2026-09-09): NVIDIA's
-# Ultra-tier endpoint (nemotron-3-ultra-550b-a55b) was confirmed live to be
-# under heavy load -- three consecutive trivial "say OK" calls measured
-# 26.3s, 62.3s, and 37.1s, versus 0.8s for the Super-tier model on the exact
-# same prompt. Every agent that primarily uses Ultra (RCA, Grounding Critic,
-# Commander Live's ASK/react_to_guidance) now automatically falls back to
-# the faster Super-tier model if a single call exceeds PRIMARY_MODEL_TIMEOUT
-# seconds, rather than the operator waiting the full multi-minute Ultra
-# latency on every single call in a multi-step investigation. This is a
-# genuine availability/latency fallback, NOT a quality substitution the
-# system pretends didn't happen -- every fallback is logged, and (per
-# WP-VAL scoring conventions elsewhere in this codebase) callers may choose
-# to surface "answered by fallback model" to the operator if they wish.
-FALLBACK_MODEL_MAP: Dict[str, str] = {
-    "nvidia/nemotron-3-ultra-550b-a55b": "nvidia/nemotron-3-super-120b-a12b",
-}
-PRIMARY_MODEL_TIMEOUT_SECONDS = 45.0
+from src.domain.settings.settings_service import get_setting, KNOWN_MODELS
+
+
+def _extra_body_for_model(model: str) -> Dict[str, Any]:
+    """
+    Different model families hosted behind the same
+    integrate.api.nvidia.com endpoint require different `extra_body`
+    invocation parameters -- e.g. Nemotron models use
+    chat_template_kwargs/reasoning_budget, while moonshotai/kimi-k3 uses
+    reasoning_effort instead. Confirmed live (2026-09-09): calling Kimi
+    WITHOUT reasoning_effort (or with too small a max_tokens budget) can
+    make it exhaust its entire token budget on internal reasoning and
+    return an EMPTY content string.
+
+    Looks up the correct params for `model` from settings_service's
+    KNOWN_MODELS list (admin-visible/extendable via the Admin console),
+    falling back to no extra params for any model not in that list.
+    """
+    for entry in KNOWN_MODELS:
+        if entry["model"] == model:
+            return dict(entry.get("extra_body") or {})
+    return {}
 
 
 def _sanitize_and_parse_json(content: str) -> Dict[str, Any]:
@@ -106,7 +111,31 @@ class BaseAgent:
             base_url="https://integrate.api.nvidia.com/v1",
             api_key=api_key or "unset"
         )
-        
+
+    def _fallback_config(self) -> Optional[Dict[str, Any]]:
+        """
+        Reads the currently-effective fallback model + timeout from
+        system_setting (admin-editable via the Admin console -> Model
+        Settings tab, live-reloadable with zero restart -- see
+        src/domain/settings/settings_service.py). Only applies a fallback
+        if this agent's OWN model matches the configured ultra_tier model
+        -- an agent already running the fast/fallback tier has nothing to
+        fall back to.
+        """
+        ultra_cfg = get_setting("model.ultra_tier") or {}
+        if self.model != ultra_cfg.get("model"):
+            return None
+        fallback_cfg = get_setting("model.fallback_tier") or {}
+        fallback_model = fallback_cfg.get("model")
+        if not fallback_model or fallback_model == self.model:
+            return None
+        timeout = get_setting("model.fallback_timeout_seconds")
+        try:
+            timeout = float(timeout)
+        except (TypeError, ValueError):
+            timeout = 45.0
+        return {"model": fallback_model, "timeout": timeout}
+
     async def _stream_completion(self, model: str, prompt: str) -> str:
         """Runs a single streamed chat.completions.create call against
         `model` and returns the accumulated content. Factored out so
@@ -122,10 +151,7 @@ class BaseAgent:
             temperature=0.1,  # Keep low for strict JSON adherence
             top_p=0.95,
             max_tokens=16384,
-            extra_body={
-                "chat_template_kwargs": {"enable_thinking": True},
-                "reasoning_budget": 16384
-            },
+            extra_body=_extra_body_for_model(model),
             stream=True
         )
 
@@ -145,26 +171,27 @@ class BaseAgent:
         """
         Calls NVIDIA Nemotron asynchronously and extracts JSON response.
 
-        MODEL-TIER FALLBACK (live fix, 2026-09-09): if this agent's primary
-        model is a known-slower tier (see FALLBACK_MODEL_MAP -- currently
-        just Ultra) and the call doesn't complete within
-        PRIMARY_MODEL_TIMEOUT_SECONDS, this automatically cancels the
-        primary attempt and retries the SAME prompt against the mapped
-        faster model, rather than the caller (and ultimately the operator)
-        waiting out NVIDIA's full multi-minute Ultra-tier latency on every
-        single call. Confirmed live: Ultra-tier calls measured 26-62s for a
-        trivial prompt on this exact endpoint, vs 0.8s for the Super tier.
-        Every fallback is logged so it's never silently indistinguishable
-        from a normal primary-model response in the logs.
+        MODEL-TIER FALLBACK (live fix, 2026-09-09; made admin-configurable
+        2026-09-09): if this agent's primary model is configured as the
+        settings service's "ultra_tier" model and the call doesn't
+        complete within the configured fallback_timeout_seconds, this
+        automatically cancels the primary attempt and retries the SAME
+        prompt against the configured fallback_tier model, rather than
+        the caller (and ultimately the operator) waiting out NVIDIA's
+        full multi-minute Ultra-tier latency on every single call.
+        Confirmed live: Ultra-tier calls measured 26-62s for a trivial
+        prompt on this exact endpoint, vs 0.8s for the Super tier. Every
+        fallback is logged so it's never silently indistinguishable from
+        a normal primary-model response in the logs.
         """
-        fallback_model = FALLBACK_MODEL_MAP.get(self.model)
+        fallback_cfg = self._fallback_config()
         used_model = self.model
         try:
             print(f"[{self.agent_name}] Calling LLM ({self.model})...")
-            if fallback_model:
+            if fallback_cfg:
                 try:
                     full_content = await asyncio.wait_for(
-                        self._stream_completion(self.model, prompt), timeout=PRIMARY_MODEL_TIMEOUT_SECONDS,
+                        self._stream_completion(self.model, prompt), timeout=fallback_cfg["timeout"],
                     )
                 except (asyncio.TimeoutError, Exception) as primary_exc:
                     # BUG FIX (found live, 2026-09-09): NVIDIA's Ultra
@@ -182,11 +209,11 @@ class BaseAgent:
                     is_timeout = isinstance(primary_exc, asyncio.TimeoutError)
                     print(
                         f"\n[{self.agent_name}] Primary model {self.model} "
-                        f"{'exceeded ' + str(PRIMARY_MODEL_TIMEOUT_SECONDS) + 's' if is_timeout else f'errored ({primary_exc})'} "
-                        f"-- falling back to {fallback_model}."
+                        f"{'exceeded ' + str(fallback_cfg['timeout']) + 's' if is_timeout else f'errored ({primary_exc})'} "
+                        f"-- falling back to {fallback_cfg['model']}."
                     )
-                    used_model = fallback_model
-                    full_content = await self._stream_completion(fallback_model, prompt)
+                    used_model = fallback_cfg["model"]
+                    full_content = await self._stream_completion(used_model, prompt)
             else:
                 full_content = await self._stream_completion(self.model, prompt)
 
@@ -237,15 +264,16 @@ class BaseAgent:
             {"role": "user", "content": prompt}
         ]
 
-        # MODEL-TIER FALLBACK (live fix, 2026-09-09): same rationale as
-        # call_llm_json above. Tool-calling agents (RCA, Grounding Critic,
+        # MODEL-TIER FALLBACK: same rationale as call_llm_json above, now
+        # driven by settings_service (admin-configurable) instead of
+        # hardcoded constants. Tool-calling agents (RCA, Grounding Critic,
         # Runbook) can make MANY Ultra-tier round-trips per investigation --
         # a single slow tier means the fallback has to apply per-iteration,
         # not just once, and once triggered the REST of this investigation
         # stays on the faster model rather than re-testing Ultra's latency
         # on every subsequent call (which would just re-incur the same
         # timeout repeatedly for no benefit).
-        fallback_model = FALLBACK_MODEL_MAP.get(self.model)
+        fallback_cfg = self._fallback_config()
         active_model = self.model
         fell_back = False
 
@@ -263,11 +291,12 @@ class BaseAgent:
                         temperature=0.1,
                         top_p=0.95,
                         max_tokens=4096,
+                        extra_body=_extra_body_for_model(model_name),
                     )
 
-                if fallback_model and not fell_back:
+                if fallback_cfg and not fell_back:
                     try:
-                        completion = await asyncio.wait_for(_make_call(active_model), timeout=PRIMARY_MODEL_TIMEOUT_SECONDS)
+                        completion = await asyncio.wait_for(_make_call(active_model), timeout=fallback_cfg["timeout"])
                     except (asyncio.TimeoutError, Exception) as primary_exc:
                         # See the identical fix + rationale in call_llm_json
                         # above: NVIDIA's Ultra tier under load returns
@@ -277,11 +306,11 @@ class BaseAgent:
                         is_timeout = isinstance(primary_exc, asyncio.TimeoutError)
                         print(
                             f"[{self.agent_name}] Primary model {active_model} "
-                            f"{'exceeded ' + str(PRIMARY_MODEL_TIMEOUT_SECONDS) + 's' if is_timeout else f'errored ({primary_exc})'} "
+                            f"{'exceeded ' + str(fallback_cfg['timeout']) + 's' if is_timeout else f'errored ({primary_exc})'} "
                             f"on tool-call iteration {iteration_count} -- "
-                            f"falling back to {fallback_model} for the remainder of this call."
+                            f"falling back to {fallback_cfg['model']} for the remainder of this call."
                         )
-                        active_model = fallback_model
+                        active_model = fallback_cfg["model"]
                         fell_back = True
                         completion = await _make_call(active_model)
                 else:
@@ -367,6 +396,7 @@ class BaseAgent:
                     temperature=0.1,
                     top_p=0.95,
                     max_tokens=4096,
+                    extra_body=_extra_body_for_model(active_model),
                 )
                 content = (completion.choices[0].message.content or "").strip()
                 if content.startswith("```json"):
