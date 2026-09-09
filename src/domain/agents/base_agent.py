@@ -1,7 +1,26 @@
 import os
 import json
-from typing import Dict, Any
+import asyncio
+from typing import Dict, Any, Optional
 from openai import AsyncOpenAI
+
+# Model-tier fallback map (user-requested live fix, 2026-09-09): NVIDIA's
+# Ultra-tier endpoint (nemotron-3-ultra-550b-a55b) was confirmed live to be
+# under heavy load -- three consecutive trivial "say OK" calls measured
+# 26.3s, 62.3s, and 37.1s, versus 0.8s for the Super-tier model on the exact
+# same prompt. Every agent that primarily uses Ultra (RCA, Grounding Critic,
+# Commander Live's ASK/react_to_guidance) now automatically falls back to
+# the faster Super-tier model if a single call exceeds PRIMARY_MODEL_TIMEOUT
+# seconds, rather than the operator waiting the full multi-minute Ultra
+# latency on every single call in a multi-step investigation. This is a
+# genuine availability/latency fallback, NOT a quality substitution the
+# system pretends didn't happen -- every fallback is logged, and (per
+# WP-VAL scoring conventions elsewhere in this codebase) callers may choose
+# to surface "answered by fallback model" to the operator if they wish.
+FALLBACK_MODEL_MAP: Dict[str, str] = {
+    "nvidia/nemotron-3-ultra-550b-a55b": "nvidia/nemotron-3-super-120b-a12b",
+}
+PRIMARY_MODEL_TIMEOUT_SECONDS = 45.0
 
 
 def _sanitize_and_parse_json(content: str) -> Dict[str, Any]:
@@ -88,38 +107,90 @@ class BaseAgent:
             api_key=api_key or "unset"
         )
         
+    async def _stream_completion(self, model: str, prompt: str) -> str:
+        """Runs a single streamed chat.completions.create call against
+        `model` and returns the accumulated content. Factored out so
+        call_llm_json can attempt the primary model with a timeout, then
+        transparently retry against a faster fallback model on timeout,
+        without duplicating the whole streaming/parsing loop twice."""
+        completion = await self.client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,  # Keep low for strict JSON adherence
+            top_p=0.95,
+            max_tokens=16384,
+            extra_body={
+                "chat_template_kwargs": {"enable_thinking": True},
+                "reasoning_budget": 16384
+            },
+            stream=True
+        )
+
+        full_content = ""
+        async for chunk in completion:
+            if not chunk.choices:
+                continue
+            reasoning = getattr(chunk.choices[0].delta, "reasoning_content", None)
+            if reasoning:
+                print(reasoning, end="", flush=True)
+            if chunk.choices[0].delta.content is not None:
+                print(chunk.choices[0].delta.content, end="", flush=True)
+                full_content += chunk.choices[0].delta.content
+        return full_content
+
     async def call_llm_json(self, prompt: str) -> Dict[str, Any]:
-        """Calls NVIDIA Nemotron asynchronously and extracts JSON response."""
+        """
+        Calls NVIDIA Nemotron asynchronously and extracts JSON response.
+
+        MODEL-TIER FALLBACK (live fix, 2026-09-09): if this agent's primary
+        model is a known-slower tier (see FALLBACK_MODEL_MAP -- currently
+        just Ultra) and the call doesn't complete within
+        PRIMARY_MODEL_TIMEOUT_SECONDS, this automatically cancels the
+        primary attempt and retries the SAME prompt against the mapped
+        faster model, rather than the caller (and ultimately the operator)
+        waiting out NVIDIA's full multi-minute Ultra-tier latency on every
+        single call. Confirmed live: Ultra-tier calls measured 26-62s for a
+        trivial prompt on this exact endpoint, vs 0.8s for the Super tier.
+        Every fallback is logged so it's never silently indistinguishable
+        from a normal primary-model response in the logs.
+        """
+        fallback_model = FALLBACK_MODEL_MAP.get(self.model)
+        used_model = self.model
         try:
-            print(f"[{self.agent_name}] Calling LLM...")
-            completion = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,  # Keep low for strict JSON adherence
-                top_p=0.95,
-                max_tokens=16384,
-                extra_body={
-                    "chat_template_kwargs": {"enable_thinking": True},
-                    "reasoning_budget": 16384
-                },
-                stream=True
-            )
-            
-            full_content = ""
-            async for chunk in completion:
-                if not chunk.choices:
-                    continue
-                reasoning = getattr(chunk.choices[0].delta, "reasoning_content", None)
-                if reasoning:
-                    print(reasoning, end="", flush=True)
-                if chunk.choices[0].delta.content is not None:
-                    print(chunk.choices[0].delta.content, end="", flush=True)
-                    full_content += chunk.choices[0].delta.content
-            
-            print(f"\n[{self.agent_name}] LLM Call Complete.")
+            print(f"[{self.agent_name}] Calling LLM ({self.model})...")
+            if fallback_model:
+                try:
+                    full_content = await asyncio.wait_for(
+                        self._stream_completion(self.model, prompt), timeout=PRIMARY_MODEL_TIMEOUT_SECONDS,
+                    )
+                except (asyncio.TimeoutError, Exception) as primary_exc:
+                    # BUG FIX (found live, 2026-09-09): NVIDIA's Ultra
+                    # endpoint under load doesn't only manifest as slow
+                    # responses -- it also returns outright API errors
+                    # ("Internal server error"). Confirmed live: a real
+                    # call took 34.7s and then raised an error, which is
+                    # NOT an asyncio.TimeoutError, so the original
+                    # `except asyncio.TimeoutError` here never caught it
+                    # and the fallback silently never triggered, wasting
+                    # the full 34.7s AND returning an error to the caller
+                    # -- the exact opposite of the intended behavior. Now
+                    # catches ANY primary-model failure (timeout OR error)
+                    # and retries against the fallback model.
+                    is_timeout = isinstance(primary_exc, asyncio.TimeoutError)
+                    print(
+                        f"\n[{self.agent_name}] Primary model {self.model} "
+                        f"{'exceeded ' + str(PRIMARY_MODEL_TIMEOUT_SECONDS) + 's' if is_timeout else f'errored ({primary_exc})'} "
+                        f"-- falling back to {fallback_model}."
+                    )
+                    used_model = fallback_model
+                    full_content = await self._stream_completion(fallback_model, prompt)
+            else:
+                full_content = await self._stream_completion(self.model, prompt)
+
+            print(f"\n[{self.agent_name}] LLM Call Complete (model={used_model}).")
             
             content = full_content.strip()
             
@@ -131,7 +202,10 @@ class BaseAgent:
                 content = content[:-3]
                 
             try:
-                return _sanitize_and_parse_json(content)
+                parsed = _sanitize_and_parse_json(content)
+                if used_model != self.model:
+                    parsed["_fallback_model_used"] = used_model
+                return parsed
             except Exception as parse_e:
                 return {"error": f"{str(parse_e)}. Content might be truncated."}
                 
@@ -163,19 +237,55 @@ class BaseAgent:
             {"role": "user", "content": prompt}
         ]
 
+        # MODEL-TIER FALLBACK (live fix, 2026-09-09): same rationale as
+        # call_llm_json above. Tool-calling agents (RCA, Grounding Critic,
+        # Runbook) can make MANY Ultra-tier round-trips per investigation --
+        # a single slow tier means the fallback has to apply per-iteration,
+        # not just once, and once triggered the REST of this investigation
+        # stays on the faster model rather than re-testing Ultra's latency
+        # on every subsequent call (which would just re-incur the same
+        # timeout repeatedly for no benefit).
+        fallback_model = FALLBACK_MODEL_MAP.get(self.model)
+        active_model = self.model
+        fell_back = False
+
         try:
             iteration_count = 0
             while iteration_count < max_iterations:
                 iteration_count += 1
-                print(f"[{self.agent_name}] Calling LLM with {len(tools)} tools... (Iter {iteration_count}/{max_iterations})")
-                completion = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    tools=tools,
-                    temperature=0.1,
-                    top_p=0.95,
-                    max_tokens=4096,
-                )
+                print(f"[{self.agent_name}] Calling LLM with {len(tools)} tools... (Iter {iteration_count}/{max_iterations}, model={active_model})")
+
+                async def _make_call(model_name: str):
+                    return await self.client.chat.completions.create(
+                        model=model_name,
+                        messages=messages,
+                        tools=tools,
+                        temperature=0.1,
+                        top_p=0.95,
+                        max_tokens=4096,
+                    )
+
+                if fallback_model and not fell_back:
+                    try:
+                        completion = await asyncio.wait_for(_make_call(active_model), timeout=PRIMARY_MODEL_TIMEOUT_SECONDS)
+                    except (asyncio.TimeoutError, Exception) as primary_exc:
+                        # See the identical fix + rationale in call_llm_json
+                        # above: NVIDIA's Ultra tier under load returns
+                        # outright API errors, not just slow responses, so
+                        # this must catch ANY primary-model failure, not
+                        # only asyncio.TimeoutError.
+                        is_timeout = isinstance(primary_exc, asyncio.TimeoutError)
+                        print(
+                            f"[{self.agent_name}] Primary model {active_model} "
+                            f"{'exceeded ' + str(PRIMARY_MODEL_TIMEOUT_SECONDS) + 's' if is_timeout else f'errored ({primary_exc})'} "
+                            f"on tool-call iteration {iteration_count} -- "
+                            f"falling back to {fallback_model} for the remainder of this call."
+                        )
+                        active_model = fallback_model
+                        fell_back = True
+                        completion = await _make_call(active_model)
+                else:
+                    completion = await _make_call(active_model)
                 
                 choice = completion.choices[0]
                 message = choice.message
@@ -252,7 +362,7 @@ class BaseAgent:
             })
             try:
                 completion = await self.client.chat.completions.create(
-                    model=self.model,
+                    model=active_model,
                     messages=messages,
                     temperature=0.1,
                     top_p=0.95,
