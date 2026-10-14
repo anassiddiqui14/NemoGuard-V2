@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Toaster } from 'react-hot-toast';
 import { IncidentQueue } from './dashboard/IncidentQueue';
 import { IncidentWorkspace } from './dashboard/IncidentWorkspace';
 import { GreetingBar } from './shell/GreetingBar';
@@ -109,8 +108,6 @@ export function Dashboard() {
 
   return (
     <div className="flex h-full min-h-0 bg-app-bg text-text-primary overflow-hidden selection:bg-primary/30">
-      <Toaster position="top-right" />
-
       <IncidentQueue
         openIncidents={sortedIncidents}
         activeIncidentId={activeIncidentId}

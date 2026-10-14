@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Search, Bell, Sun, Moon, Clock, FileCheck2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Toaster } from 'react-hot-toast';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import { GlobalNavRail } from './GlobalNavRail';
@@ -172,6 +173,32 @@ export function AppShell() {
 
     return (
         <div className="flex flex-col h-screen w-full bg-app-bg overflow-hidden font-sans">
+            {/*
+             * PHASE 1 FIX (NemoGuard UI Modernization Spec, Section 46/13):
+             * <Toaster/> was previously mounted only inside Dashboard.tsx,
+             * which unmounts on navigation to any other /app/* route. Since
+             * toast.*() calls are fired from other routes too (e.g.
+             * ScenarioCockpitPage), those toasts had no mounted <Toaster/>
+             * to render into and were silently lost. Mounting it once here,
+             * at the persistent shell level, makes toasts work from every
+             * authenticated route. Styling uses the app's actual theme
+             * tokens (surface/border/text) instead of react-hot-toast's
+             * hardcoded defaults so toasts match dark/light mode correctly.
+             */}
+            <Toaster
+                position="top-right"
+                toastOptions={{
+                    style: {
+                        background: 'var(--color-surface-elevated)',
+                        color: 'var(--color-text-primary)',
+                        border: '1px solid var(--panel-border)',
+                        fontSize: '13px',
+                        boxShadow: '0 20px 44px -22px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.04)',
+                    },
+                    success: { iconTheme: { primary: 'var(--color-healthy)', secondary: 'var(--color-surface-elevated)' } },
+                    error: { iconTheme: { primary: 'var(--color-critical)', secondary: 'var(--color-surface-elevated)' } },
+                }}
+            />
             <TopBar onSelectIncident={handleSelectIncident} onToggleNav={toggleNav} navCollapsed={navCollapsed} />
             <div className="flex flex-1 min-h-0 overflow-hidden">
                 <GlobalNavRail collapsed={navCollapsed} />
