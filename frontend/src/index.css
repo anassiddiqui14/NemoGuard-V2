@@ -163,6 +163,40 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 32%, transparent);
   }
 
+  /*
+   * UI MODERNIZATION (Phase 8, spec Section 57): a global focus-visible
+   * safety net. Audited the codebase and found only 13 of 53 .tsx files
+   * use the `.focus-ring` utility above -- the remaining ~40 files'
+   * interactive elements either fall back to each browser's own
+   * inconsistent default outline, or in several places use
+   * `focus:outline-none` with NO ring replacement at all, making those
+   * controls genuinely invisible to keyboard users when focused. Rather
+   * than risk a large, unreviewed find-and-replace across every one of
+   * those files, this global rule gives every focusable element in the
+   * app a consistent, theme-aware focus-visible ring by default. Elements
+   * that already explicitly opt into `.focus-ring` (the newer, more
+   * polished treatment used by the Phase 2 Button/IconButton/Modal
+   * primitives) are unaffected, since `:not(.focus-ring)` excludes them
+   * from this fallback.
+   */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    outline: none;
+  }
+
+  a:focus-visible:not(.focus-ring),
+  button:focus-visible:not(.focus-ring),
+  input:focus-visible:not(.focus-ring),
+  select:focus-visible:not(.focus-ring),
+  textarea:focus-visible:not(.focus-ring),
+  [tabindex]:focus-visible:not(.focus-ring) {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 32%, transparent);
+  }
+
   .gradient-border {
     position: relative;
     border-radius: 1rem;

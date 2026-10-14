@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, RefreshCw, ShieldAlert, Radio, History } from 'lucide-react';
+import { AlertTriangle, RefreshCw, ShieldAlert, Radio, History, WifiOff } from 'lucide-react';
 import { EmptyState, needsAttention, severityPill } from './shared';
 import type { IncidentSummary } from './shared';
 
@@ -8,6 +8,15 @@ interface Props {
     activeIncidentId: string | null;
     setActiveIncidentId: (id: string) => void;
     refreshQueue: () => void;
+    /**
+     * Non-null when the most recent poll failed to reach the API. The
+     * queue itself still shows the last-known-good `openIncidents` (the
+     * parent deliberately does NOT clear that data on a failed poll --
+     * see Dashboard.tsx) -- this banner exists purely so an operator can
+     * tell "the system is quiet" apart from "the dashboard lost its
+     * connection and this may be stale".
+     */
+    connectionError?: string | null;
 }
 
 function IncidentRow({
@@ -64,7 +73,7 @@ function IncidentRow({
 // resolved incident from the Incidents page still works and still opens its
 // full detail in the Command Center; it just isn't listed a second time
 // here.
-export function IncidentQueue({ openIncidents, activeIncidentId, setActiveIncidentId, refreshQueue }: Props) {
+export function IncidentQueue({ openIncidents, activeIncidentId, setActiveIncidentId, refreshQueue, connectionError }: Props) {
     return (
         <aside className="w-[300px] flex-shrink-0 border-r border-white/[0.06] bg-black/20 flex flex-col z-10">
             <div className="px-5 py-4 flex items-center justify-between">
@@ -80,6 +89,13 @@ export function IncidentQueue({ openIncidents, activeIncidentId, setActiveIncide
                     <RefreshCw className="w-3.5 h-3.5" />
                 </button>
             </div>
+
+            {connectionError && (
+                <div className="mx-3 mb-2 px-3 py-2 rounded-lg bg-warning/10 ring-1 ring-warning/25 flex items-start gap-2">
+                    <WifiOff className="w-3.5 h-3.5 text-warning flex-shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-warning leading-snug">{connectionError}</p>
+                </div>
+            )}
 
             <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-2">
                 {openIncidents.length === 0 ? (

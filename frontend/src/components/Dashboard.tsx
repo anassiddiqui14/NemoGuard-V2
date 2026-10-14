@@ -22,6 +22,16 @@ export function Dashboard() {
   // against two empty arrays on mount and immediately null out the
   // just-selected incident before the real data ever arrived.
   const [queueLoaded, setQueueLoaded] = useState(false);
+  // UI MODERNIZATION (Phase 6, spec Section 31/62): a failed poll
+  // previously wiped BOTH incident arrays to empty in the catch block --
+  // identical in appearance to the legitimate "zero active incidents"
+  // empty state. An operator whose network blipped mid-incident would see
+  // the entire queue vanish and have no way to tell "the system is
+  // actually healthy and quiet" apart from "the dashboard just lost its
+  // connection to the API". Now a failed refresh keeps the last-known-good
+  // data on screen and surfaces a dedicated, dismissable connection-error
+  // banner instead of silently discarding state.
+  const [queueError, setQueueError] = useState<string | null>(null);
 
   const refreshQueue = async () => {
     try {
@@ -29,15 +39,19 @@ export function Dashboard() {
         authFetch('/api/v2/incidents?state=open'),
         authFetch('/api/v2/incidents?state=all'),
       ]);
+      if (!openRes.ok || !allRes.ok) throw new Error(`HTTP ${openRes.status}/${allRes.status}`);
       const openData = (await openRes.json()) as IncidentSummary[];
       const allData = (await allRes.json()) as IncidentSummary[];
       setOpenIncidents(Array.isArray(openData) ? openData : []);
       setResolvedIncidents(
         Array.isArray(allData) ? allData.filter((i) => i.status?.toUpperCase() === 'RESOLVED') : [],
       );
+      setQueueError(null);
     } catch {
-      setOpenIncidents([]);
-      setResolvedIncidents([]);
+      // Deliberately do NOT clear openIncidents/resolvedIncidents here --
+      // stale-but-real data is far more useful to an operator than an
+      // empty queue that looks like "all clear".
+      setQueueError('Lost connection to the incident feed. Showing last known data.');
     } finally {
       setQueueLoaded(true);
     }
@@ -113,6 +127,7 @@ export function Dashboard() {
         activeIncidentId={activeIncidentId}
         setActiveIncidentId={setActiveIncidentId}
         refreshQueue={refreshQueue}
+        connectionError={queueError}
       />
 
       <motion.main

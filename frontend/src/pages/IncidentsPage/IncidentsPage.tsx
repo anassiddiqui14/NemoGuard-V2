@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, ListChecks } from 'lucide-react';
+import { Search, ListChecks, AlertTriangle, RefreshCw } from 'lucide-react';
 import { severityPill, statusBadge, formatElapsedSeconds, EmptyState } from '../../components/dashboard/shared';
 import { IncidentWorkspace } from '../../components/dashboard/IncidentWorkspace';
 import type { IncidentSummary } from '../../components/dashboard/shared';
@@ -11,6 +11,13 @@ type SortKey = 'detected_at' | 'severity' | 'status';
 export function IncidentsPage() {
     const [incidents, setIncidents] = useState<IncidentSummary[]>([]);
     const [loading, setLoading] = useState(true);
+    // UI MODERNIZATION (Phase 7, spec Section 62): previously there was no
+    // error state at all here -- a failed fetch silently left `incidents`
+    // empty, which then rendered the exact same "No incidents found" empty
+    // state as a genuinely empty, healthy result. An operator would have
+    // no way to tell "there really are zero incidents" apart from "the API
+    // call failed and this list may be wrong/incomplete".
+    const [error, setError] = useState<string | null>(null);
     const [query, setQuery] = useState('');
     const [sortKey, setSortKey] = useState<SortKey>('detected_at');
     // Selecting an incident now shows its full workspace INLINE, right here
@@ -24,10 +31,14 @@ export function IncidentsPage() {
     const fetchAll = async () => {
         try {
             const res = await authFetch('/api/v2/incidents?state=all');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
-            if (Array.isArray(data)) setIncidents(data);
-        } catch {
-            // ignore
+            if (Array.isArray(data)) {
+                setIncidents(data);
+                setError(null);
+            }
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Failed to load incidents');
         } finally {
             setLoading(false);
         }
@@ -111,8 +122,42 @@ export function IncidentsPage() {
                 </div>
             </div>
 
+            {/*
+             * Consistent with the Dashboard's queue fix (Phase 6): a
+             * polling failure after we already have real data should NOT
+             * hide that data behind a full error screen -- it should keep
+             * showing it (possibly stale) with a small inline warning. The
+             * full-screen error treatment only applies to the FIRST load
+             * failing, where there's no prior data to fall back to.
+             */}
+            {error && incidents.length > 0 && (
+                <div className="mb-4 px-3 py-2 rounded-lg bg-warning/10 ring-1 ring-warning/25 flex items-center gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 text-warning flex-shrink-0" />
+                    <p className="text-[11.5px] text-warning flex-1">Lost connection on the last refresh -- showing last known data.</p>
+                    <button onClick={() => void fetchAll()} className="text-[11px] font-medium text-warning hover:underline flex-shrink-0">Retry</button>
+                </div>
+            )}
             {loading ? (
                 <div className="text-[13px] text-text-muted py-10 text-center">Loading incidents…</div>
+            ) : error && incidents.length === 0 ? (
+                <div className="mt-10">
+                    <EmptyState
+                        icon={<AlertTriangle className="w-5 h-5 text-critical" />}
+                        title="Couldn't load incidents"
+                        subtitle={error}
+                        action={
+                            <button
+                                onClick={() => {
+                                    setLoading(true);
+                                    void fetchAll();
+                                }}
+                                className="inline-flex items-center gap-1.5 text-[11.5px] font-medium px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] ring-1 ring-white/[0.08] text-text-secondary hover:text-text-primary transition-colors"
+                            >
+                                <RefreshCw className="w-3.5 h-3.5" /> Retry
+                            </button>
+                        }
+                    />
+                </div>
             ) : filtered.length === 0 ? (
                 <div className="mt-10">
                     <EmptyState icon={<ListChecks className="w-5 h-5" />} title="No incidents found" subtitle="Try a different search or wait for new alerts to arrive." />

@@ -1,22 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Settings, ShieldCheck } from 'lucide-react';
-import {
-    CommandCenterIcon,
-    IncidentsIcon,
-    AgentOpsIcon,
-    IntelligenceIcon,
-    ScenarioIcon,
-    AdoptionIcon,
-} from '../../pages/LandingPage/NemoIcons';
-import { useCurrentUser } from '../../hooks/useCurrentUser';
-
-interface NavItem {
-    to: string;
-    label: string;
-    icon: React.ReactNode;
-    end?: boolean;
-}
+import { useNavItems } from '../../hooks/useNavItems';
 
 interface Props {
     collapsed: boolean;
@@ -35,24 +19,7 @@ interface Props {
  * icon-library glyphs.
  */
 export function GlobalNavRail({ collapsed }: Props) {
-    // "Admin" is only shown to users with the admin role -- this is purely
-    // a UX convenience (hiding a section most users have no use for); the
-    // real enforcement is on the backend, where every endpoint the Admin
-    // page calls is already gated with require_role("admin") regardless
-    // of whether this nav entry is visible.
-    const { roles } = useCurrentUser();
-    const isAdmin = roles.includes('admin');
-
-    const items: NavItem[] = [
-        { to: '/app', label: 'Command Center', icon: <CommandCenterIcon className="w-4.5 h-4.5" />, end: true },
-        { to: '/app/incidents', label: 'Incidents', icon: <IncidentsIcon className="w-4.5 h-4.5" /> },
-        { to: '/app/agent-operations', label: 'Agent Operations', icon: <AgentOpsIcon className="w-4.5 h-4.5" /> },
-        { to: '/app/intelligence', label: 'Intelligence', icon: <IntelligenceIcon className="w-4.5 h-4.5" /> },
-        { to: '/app/scenario-cockpit', label: 'Scenario Cockpit', icon: <ScenarioIcon className="w-4.5 h-4.5" /> },
-        { to: '/app/adoption-readiness', label: 'Adoption Readiness', icon: <AdoptionIcon className="w-4.5 h-4.5" /> },
-        ...(isAdmin ? [{ to: '/app/admin', label: 'Admin', icon: <ShieldCheck className="w-4.5 h-4.5" /> }] : []),
-        { to: '/app/settings', label: 'Settings', icon: <Settings className="w-4.5 h-4.5" /> },
-    ];
+    const items = useNavItems();
 
     return (
         <motion.aside

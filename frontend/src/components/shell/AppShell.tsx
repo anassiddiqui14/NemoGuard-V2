@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { Search, Bell, Sun, Moon, Clock, FileCheck2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Search, Bell, Sun, Moon, Clock, FileCheck2, PanelLeftClose, PanelLeftOpen, Menu } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster } from 'react-hot-toast';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import { GlobalNavRail } from './GlobalNavRail';
+import { MobileNavDrawer } from './MobileNavDrawer';
 import { UserMenu } from './UserMenu';
 import { Logomark } from '../../pages/LandingPage/Brand';
+import { CommandPalette } from '../../design-system/components/CommandPalette';
 
 function ThemeToggle() {
     const { theme, toggleTheme } = useTheme();
@@ -107,10 +109,27 @@ function NotificationBell({ onSelectIncident }: { onSelectIncident: (id: string)
     );
 }
 
-function TopBar({ onSelectIncident, onToggleNav, navCollapsed }: { onSelectIncident: (id: string) => void; onToggleNav: () => void; navCollapsed: boolean }) {
+function TopBar({ onSelectIncident, onToggleNav, navCollapsed, onOpenMobileNav, onOpenCommandPalette }: { onSelectIncident: (id: string) => void; onToggleNav: () => void; navCollapsed: boolean; onOpenMobileNav: () => void; onOpenCommandPalette: () => void }) {
     return (
         <div className="h-16 border-b border-white/[0.06] flex items-center justify-between px-6 flex-shrink-0 glass-panel z-20 relative">
             <div className="flex items-center gap-2.5 min-w-0">
+                {/*
+                 * UI MODERNIZATION (Phase 4): mobile/tablet hamburger --
+                 * previously there was no way to open navigation at all
+                 * below the md breakpoint, since GlobalNavRail is
+                 * `hidden md:flex` with no replacement. This button is the
+                 * inverse visibility of the desktop collapse toggle below
+                 * (md:hidden here, hidden md:inline-flex there) so exactly
+                 * one navigation control shows at any given width.
+                 */}
+                <button
+                    onClick={onOpenMobileNav}
+                    className="press-scale md:hidden p-2 -ml-1 mr-1 text-text-secondary hover:text-text-primary hover:bg-white/[0.05] rounded-lg transition-colors flex-shrink-0"
+                    aria-label="Open navigation"
+                    title="Open navigation"
+                >
+                    <Menu className="w-4.5 h-4.5" />
+                </button>
                 <button
                     onClick={onToggleNav}
                     className="press-scale hidden md:inline-flex p-2 -ml-1 mr-1 text-text-secondary hover:text-text-primary hover:bg-white/[0.05] rounded-lg transition-colors flex-shrink-0"
@@ -134,14 +153,22 @@ function TopBar({ onSelectIncident, onToggleNav, navCollapsed }: { onSelectIncid
             </div>
 
             <div className="flex items-center gap-2">
-                <div className="relative hidden sm:block">
+                {/*
+                 * UI MODERNIZATION (Phase 5): this used to be a static,
+                 * non-functional `<input>` with no keyboard shortcut and
+                 * no wiring to any search logic -- purely decorative.
+                 * Replaced with a trigger that opens the real command
+                 * palette (Cmd/Ctrl+K also works from anywhere in the
+                 * app, not just when this is focused).
+                 */}
+                <button
+                    onClick={onOpenCommandPalette}
+                    className="relative hidden sm:flex items-center gap-2 pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[13px] text-text-muted hover:text-text-secondary hover:bg-white/[0.05] w-56 transition-all text-left"
+                >
                     <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-                    <input
-                        type="text"
-                        placeholder="Search incidents, evidence…"
-                        className="pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[13px] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/40 w-56 transition-all"
-                    />
-                </div>
+                    <span className="flex-1">Search incidents…</span>
+                    <kbd className="text-[9.5px] font-mono px-1 py-0.5 rounded ring-1 ring-white/[0.08] flex-shrink-0">⌘K</kbd>
+                </button>
 
                 <ThemeToggle />
                 <NotificationBell onSelectIncident={onSelectIncident} />
@@ -158,6 +185,8 @@ export function AppShell() {
     // navigation) -- collapsed state persists across sessions via
     // localStorage so a user's preference sticks.
     const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem('nemoguard_nav_collapsed') === '1');
+    const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [paletteKey, setPaletteKey] = useState(0);
 
     const handleSelectIncident = (incidentId: string) => {
         navigate(`/app?incident=${encodeURIComponent(incidentId)}`);
@@ -173,6 +202,7 @@ export function AppShell() {
 
     return (
         <div className="flex flex-col h-screen w-full bg-app-bg overflow-hidden font-sans">
+            <MobileNavDrawer open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
             {/*
              * PHASE 1 FIX (NemoGuard UI Modernization Spec, Section 46/13):
              * <Toaster/> was previously mounted only inside Dashboard.tsx,
@@ -199,7 +229,23 @@ export function AppShell() {
                     error: { iconTheme: { primary: 'var(--color-critical)', secondary: 'var(--color-surface-elevated)' } },
                 }}
             />
-            <TopBar onSelectIncident={handleSelectIncident} onToggleNav={toggleNav} navCollapsed={navCollapsed} />
+            <TopBar
+                onSelectIncident={handleSelectIncident}
+                onToggleNav={toggleNav}
+                navCollapsed={navCollapsed}
+                onOpenMobileNav={() => setMobileNavOpen(true)}
+                onOpenCommandPalette={() => setPaletteKey((k) => k + 1)}
+            />
+            {/*
+             * CommandPalette owns its own Cmd/Ctrl+K listener and open
+             * state internally (so the shortcut works app-wide regardless
+             * of this click trigger). `paletteKey` is a simple counter the
+             * TopBar's search button bumps on every click -- incrementing
+             * it (even to the same conceptual "open" state) triggers the
+             * palette's internal effect to open, without needing an
+             * imperative ref/open() method on a self-contained component.
+             */}
+            <CommandPalette openSignal={paletteKey} />
             <div className="flex flex-1 min-h-0 overflow-hidden">
                 <GlobalNavRail collapsed={navCollapsed} />
                 <main className="flex-1 overflow-hidden">
