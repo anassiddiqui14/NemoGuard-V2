@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { motion } from 'framer-motion';
-import { X, Search, ShieldCheck, ShieldAlert, ShieldQuestion, Shield } from 'lucide-react';
-import { modalBackdrop, modalPanel } from './shared';
+import { Search, ShieldCheck, ShieldAlert, ShieldQuestion, Shield } from 'lucide-react';
+import { Modal } from '../../design-system/components/Modal';
 
 // Evidence authority (spec §9.2): AUTHORITATIVE/HIGH/MEDIUM/LOW is now
 // computed deterministically in code (src/domain/evidence_authority.py)
@@ -79,59 +79,57 @@ function HypothesisLedger({ hypotheses }: { hypotheses: any[] }) {
     );
 }
 
+/*
+ * UI MODERNIZATION (Phase 2): migrated to the shared Modal primitive --
+ * visually identical to the previous hand-rolled markup, but now gets
+ * Escape-to-close, a keyboard focus trap, and body-scroll lock for free.
+ */
 export function EvidenceModal({ hypothesis, hypotheses, evidence, onClose }: { hypothesis: any; hypotheses?: any[]; evidence: any[]; onClose: () => void }) {
     return (
-        <motion.div {...modalBackdrop} className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-            <motion.div {...modalPanel} className="glass-panel rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden ring-1 ring-white/[0.08]">
-                <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-primary/12 ring-1 ring-primary/25 flex items-center justify-center">
-                            <Search className="w-4 h-4 text-primary" />
-                        </div>
-                        <h2 className="text-[15px] font-semibold text-text-primary">Evidence & Grounding</h2>
-                    </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white/[0.06] rounded-full transition-colors text-text-muted hover:text-text-primary">
-                        <X className="w-4 h-4" />
-                    </button>
+        <Modal
+            open
+            onClose={onClose}
+            title="Evidence & Grounding"
+            icon={<Search className="w-4 h-4 text-primary" />}
+            maxWidth="max-w-4xl"
+        >
+            <div className="p-6 overflow-y-auto max-h-[calc(85vh-80px)] space-y-4">
+                <div>
+                    <h3 className="font-semibold text-text-primary text-[14px]">Hypothesis: {hypothesis?.title}</h3>
+                    <p className="text-[13px] text-text-secondary mb-4 mt-1 leading-relaxed">{hypothesis?.statement || 'Root cause identified based on logs and metrics.'}</p>
                 </div>
-                <div className="p-6 overflow-y-auto space-y-4">
-                    <div>
-                        <h3 className="font-semibold text-text-primary text-[14px]">Hypothesis: {hypothesis?.title}</h3>
-                        <p className="text-[13px] text-text-secondary mb-4 mt-1 leading-relaxed">{hypothesis?.statement || 'Root cause identified based on logs and metrics.'}</p>
-                    </div>
 
-                    {hypotheses && <HypothesisLedger hypotheses={hypotheses} />}
+                {hypotheses && <HypothesisLedger hypotheses={hypotheses} />}
 
-                    <div className="space-y-3">
-                        {evidence.map((ev, idx) => (
-                            <motion.div
-                                key={idx}
-                                initial={{ opacity: 0, y: 8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.2, delay: idx * 0.04 }}
-                                className="rounded-xl p-4 bg-white/[0.02] ring-1 ring-white/[0.05]"
-                            >
-                                <div className="flex justify-between items-start mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-bold text-agent-active uppercase tracking-wider">{ev.evidence_type}</span>
-                                        <AuthorityBadge authority={ev.authority} />
-                                    </div>
-                                    <span className="text-[10px] text-text-muted font-mono">{ev.source_system} | {ev.source_record_id || ev.source}</span>
+                <div className="space-y-3">
+                    {evidence.map((ev, idx) => (
+                        <motion.div
+                            key={idx}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.2, delay: idx * 0.04 }}
+                            className="rounded-xl p-4 bg-white/[0.02] ring-1 ring-white/[0.05]"
+                        >
+                            <div className="flex justify-between items-start mb-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold text-agent-active uppercase tracking-wider">{ev.evidence_type}</span>
+                                    <AuthorityBadge authority={ev.authority} />
                                 </div>
-                                <div className="text-[13px] font-medium text-text-primary mb-2">{ev.title}</div>
-                                <pre className="text-[11.5px] text-text-secondary bg-black/30 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap font-mono ring-1 ring-white/[0.04]">
-                                    {ev.excerpt || ev.description}
-                                </pre>
-                            </motion.div>
-                        ))}
-                        {evidence.length === 0 && (
-                            <div className="text-center text-text-muted p-8 rounded-xl ring-1 ring-white/[0.06] ring-dashed">
-                                No concrete evidence items recorded yet.
+                                <span className="text-[10px] text-text-muted font-mono">{ev.source_system} | {ev.source_record_id || ev.source}</span>
                             </div>
-                        )}
-                    </div>
+                            <div className="text-[13px] font-medium text-text-primary mb-2">{ev.title}</div>
+                            <pre className="text-[11.5px] text-text-secondary bg-black/30 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap font-mono ring-1 ring-white/[0.04]">
+                                {ev.excerpt || ev.description}
+                            </pre>
+                        </motion.div>
+                    ))}
+                    {evidence.length === 0 && (
+                        <div className="text-center text-text-muted p-8 rounded-xl ring-1 ring-white/[0.06] ring-dashed">
+                            No concrete evidence items recorded yet.
+                        </div>
+                    )}
                 </div>
-            </motion.div>
-        </motion.div>
+            </div>
+        </Modal>
     );
 }

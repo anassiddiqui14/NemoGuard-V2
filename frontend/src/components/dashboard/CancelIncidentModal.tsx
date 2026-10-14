@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { XCircle, X } from 'lucide-react';
-import { modalBackdrop, modalPanel } from './shared';
+import { XCircle } from 'lucide-react';
+import { Modal } from '../../design-system/components/Modal';
+import { Button } from '../../design-system/components/Button';
 
 /**
  * In-app confirmation modal for cancelling an AWAITING_APPROVAL incident.
@@ -10,6 +11,11 @@ import { modalBackdrop, modalPanel } from './shared';
  * inaccessible to any automated UI testing/tooling, and offers no way to
  * distinguish "cancel with no reason" from the user backing out entirely
  * (both produced an empty string from window.prompt).
+ *
+ * UI MODERNIZATION (Phase 2): migrated to the shared Modal primitive --
+ * this is a drop-in visual match for the previous hand-rolled markup, but
+ * now gets Escape-to-close, a keyboard focus trap, and body-scroll lock
+ * for free, none of which the previous implementation had.
  */
 export function CancelIncidentModal({
     incidentId,
@@ -25,42 +31,15 @@ export function CancelIncidentModal({
     const [reason, setReason] = useState('');
 
     return (
-        <motion.div {...modalBackdrop} className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-            <motion.div {...modalPanel} className="glass-panel rounded-2xl shadow-2xl w-full max-w-md overflow-hidden ring-1 ring-white/[0.08]">
-                <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-critical/15 flex items-center justify-center">
-                            <XCircle className="w-4 h-4 text-critical" />
-                        </div>
-                        <h2 className="text-[15px] font-semibold text-text-primary">Cancel Incident</h2>
-                    </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white/[0.06] rounded-full transition-colors">
-                        <X className="w-4 h-4 text-text-muted hover:text-text-primary" />
-                    </button>
-                </div>
-
-                <div className="p-6 space-y-4">
-                    <p className="text-[12.5px] text-text-secondary leading-relaxed">
-                        This will stand <span className="font-mono text-[11.5px]">{incidentId}</span> down without
-                        executing its recovery plan. This action cannot be undone.
-                    </p>
-                    <div>
-                        <label className="text-[11px] font-semibold text-text-muted uppercase tracking-wide mb-1.5 block">
-                            Reason (optional)
-                        </label>
-                        <input
-                            type="text"
-                            autoFocus
-                            value={reason}
-                            onChange={(e) => setReason(e.target.value)}
-                            placeholder="e.g. Duplicate of INC-XYZ, false positive…"
-                            className="w-full rounded-xl px-4 py-2.5 text-[13px] bg-white/[0.03] ring-1 ring-white/[0.06] focus:outline-none focus:ring-critical/50 transition-all"
-                            onKeyDown={(e) => e.key === 'Enter' && onConfirm(reason)}
-                        />
-                    </div>
-                </div>
-
-                <div className="border-t border-white/[0.06] p-5 flex justify-end gap-3">
+        <Modal
+            open
+            onClose={onClose}
+            title="Cancel Incident"
+            icon={<XCircle className="w-4 h-4 text-critical" />}
+            iconClassName="bg-critical/15"
+            maxWidth="max-w-md"
+            footer={
+                <>
                     <motion.button
                         whileTap={{ scale: 0.96 }}
                         onClick={onClose}
@@ -69,16 +48,38 @@ export function CancelIncidentModal({
                     >
                         Back
                     </motion.button>
-                    <motion.button
-                        whileTap={{ scale: 0.96 }}
+                    <Button
+                        variant="danger"
+                        className="!bg-critical !text-white !ring-0 px-6 py-2.5 text-[13px]"
                         onClick={() => onConfirm(reason)}
                         disabled={submitting}
-                        className="px-6 py-2.5 rounded-xl bg-critical text-white text-[13px] font-semibold hover:brightness-110 transition-all disabled:opacity-50 flex items-center gap-2"
+                        leadingIcon={<XCircle className="w-3.5 h-3.5" />}
                     >
-                        <XCircle className="w-3.5 h-3.5" /> {submitting ? 'Cancelling…' : 'Confirm Cancellation'}
-                    </motion.button>
+                        {submitting ? 'Cancelling…' : 'Confirm Cancellation'}
+                    </Button>
+                </>
+            }
+        >
+            <div className="p-6 space-y-4">
+                <p className="text-[12.5px] text-text-secondary leading-relaxed">
+                    This will stand <span className="font-mono text-[11.5px]">{incidentId}</span> down without
+                    executing its recovery plan. This action cannot be undone.
+                </p>
+                <div>
+                    <label className="text-[11px] font-semibold text-text-muted uppercase tracking-wide mb-1.5 block">
+                        Reason (optional)
+                    </label>
+                    <input
+                        type="text"
+                        autoFocus
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        placeholder="e.g. Duplicate of INC-XYZ, false positive…"
+                        className="w-full rounded-xl px-4 py-2.5 text-[13px] bg-white/[0.03] ring-1 ring-white/[0.06] focus:outline-none focus:ring-critical/50 transition-all"
+                        onKeyDown={(e) => e.key === 'Enter' && onConfirm(reason)}
+                    />
                 </div>
-            </motion.div>
-        </motion.div>
+            </div>
+        </Modal>
     );
 }
