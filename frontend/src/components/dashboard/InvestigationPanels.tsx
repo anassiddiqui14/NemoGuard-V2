@@ -238,22 +238,11 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                                         fullMark: Math.max(impact.length, 5),
                                     },
                                 ]}>
-                                    {/*
-                                     * UI MODERNIZATION (Phase 22, spec Section 53): this chart
-                                     * previously had HARDCODED dark-mode-only colors --
-                                     * `backgroundColor: '#14141F'` (the old dark
-                                     * --color-surface-elevated hex) and
-                                     * `rgba(255,255,255,0.0X)` white-overlay values that are
-                                     * invisible/wrong on a light background. Switched to the
-                                     * app's actual CSS custom properties (same ones every other
-                                     * component reads from index.css's @theme block) so this
-                                     * chart now genuinely adapts to both themes instead of being
-                                     * permanently stuck looking like dark mode.
-                                     */}
-                                    <PolarGrid stroke="var(--panel-border)" />
-                                    <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--color-text-muted)', fontSize: 9.5 }} />
-                                    <Tooltip contentStyle={{ backgroundColor: 'var(--color-surface-elevated)', borderColor: 'var(--panel-border)', borderRadius: '10px', fontSize: '12px', color: 'var(--color-text-primary)' }} />
-                                    <Radar name="Impact" dataKey="A" stroke="var(--color-agent-active)" fill="var(--color-agent-active)" fillOpacity={0.35} />
+                                    {/* UI MODERNIZATION (spec Section 53): this chart previously had HARDCODED dark-mode-only colors (a literal #14141F hex and rgba(255,255,255,...) white-overlay values that never adapted to light mode). Now uses the dedicated chart token set in index.css instead of hand-rolled raw color values. */}
+                                    <PolarGrid stroke="var(--chart-grid)" />
+                                    <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--chart-axis-text)', fontSize: 9.5 }} />
+                                    <Tooltip contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', borderColor: 'var(--chart-tooltip-border)', borderRadius: '10px', fontSize: '12px', color: 'var(--chart-tooltip-text)' }} />
+                                    <Radar name="Impact" dataKey="A" stroke="var(--chart-secondary)" fill="var(--chart-secondary)" fillOpacity={0.35} />
                                 </RadarChart>
                             </ResponsiveContainer>
                         ) : (

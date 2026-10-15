@@ -157,9 +157,16 @@ export function AgentOperationsPage() {
 
     const selectedIncident = incidents.find((i) => i.incident_id === selectedId) ?? null;
 
+    // UI MODERNIZATION (spec Section 30/58 -- responsive width audit):
+    // this fixed w-[280px] sidebar + flex layout had no responsive
+    // handling, exactly the same real overflow risk found and fixed on
+    // the Dashboard's IncidentQueue -- at a 375px viewport, a fixed
+    // 280px sidebar leaves under 100px for the main content. Applied
+    // the same sequential-view pattern: hide the sidebar once an
+    // incident is selected (below md), with a "Back" control to return.
     return (
         <div className="h-full flex overflow-hidden">
-            <aside className="w-[280px] flex-shrink-0 border-r border-white/[0.06] overflow-y-auto p-3">
+            <aside className={`w-[280px] flex-shrink-0 border-r border-white/[0.06] overflow-y-auto p-3 ${selectedId ? 'hidden md:block' : 'block'}`}>
                 <div className="px-2 py-2 mb-1">
                     <h2 className="text-[13px] font-semibold text-text-primary">Agent Operations</h2>
                     <p className="text-[11px] text-text-muted mt-0.5">Historical agent runs by incident</p>
@@ -193,7 +200,15 @@ export function AgentOperationsPage() {
                 )}
             </aside>
 
-            <main className="flex-1 overflow-y-auto p-6">
+            <main className={`flex-1 overflow-y-auto p-6 ${selectedId ? 'block' : 'hidden md:block'}`}>
+                {selectedId && (
+                    <button
+                        onClick={() => setSelectedId(null)}
+                        className="focus-ring press-scale md:hidden mb-4 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5 rounded-lg hover:bg-white/[0.04] transition-colors"
+                    >
+                        ← Back to incidents
+                    </button>
+                )}
                 <ReadinessRow incidents={incidents} />
                 {!selectedIncident ? (
                     <EmptyState icon={<Cpu className="w-5 h-5" />} title="No incident selected" subtitle="Choose an incident from the list to review its agent activity." />

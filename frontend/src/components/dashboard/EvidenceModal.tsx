@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { motion } from 'framer-motion';
-import { Search, ShieldCheck, ShieldAlert, ShieldQuestion, Shield } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, ShieldQuestion, Shield } from 'lucide-react';
 import { Modal } from '../../design-system/components/Modal';
+import { EvidenceGlyphIcon } from '../../pages/LandingPage/NemoIcons';
 
 // Evidence authority (spec §9.2): AUTHORITATIVE/HIGH/MEDIUM/LOW is now
 // computed deterministically in code (src/domain/evidence_authority.py)
@@ -90,7 +91,7 @@ export function EvidenceModal({ hypothesis, hypotheses, evidence, onClose }: { h
             open
             onClose={onClose}
             title="Evidence & Grounding"
-            icon={<Search className="w-4 h-4 text-primary" />}
+            icon={<EvidenceGlyphIcon className="w-4 h-4 text-primary" />}
             maxWidth="max-w-4xl"
         >
             <div className="p-6 overflow-y-auto max-h-[calc(85vh-80px)] space-y-4">

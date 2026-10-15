@@ -29,6 +29,15 @@ interface Props {
     // page that provided it (e.g. the Incidents page), rather than
     // navigating the user elsewhere to view incident details.
     onBack?: () => void;
+    // UI MODERNIZATION (spec Section 30): Dashboard.tsx's queue is
+    // always visible on desktop (md+) alongside this workspace, so a
+    // "Back to incidents" control there would be redundant above md --
+    // it's only meaningful on narrow viewports where the queue is
+    // hidden in favor of showing just the detail pane. IncidentsPage.tsx
+    // (the other consumer of onBack) has no persistent sidebar at any
+    // width, so its back button should always show -- hence this is
+    // opt-in per caller rather than a blanket rule.
+    backButtonMobileOnly?: boolean;
 }
 
 /**
@@ -39,7 +48,7 @@ interface Props {
  * of forcing every "view incident" action to jump to the Command Center
  * dashboard.
  */
-export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParent, onBack }: Props) {
+export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParent, onBack, backButtonMobileOnly }: Props) {
     const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
     const [expandedAlert, setExpandedAlert] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -178,7 +187,7 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
                 {onBack && (
                     <button
                         onClick={onBack}
-                        className="focus-ring press-scale self-start flex items-center gap-1.5 text-[12.5px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5 rounded-lg hover:bg-white/[0.04] transition-colors"
+                        className={`focus-ring press-scale self-start flex items-center gap-1.5 text-[12.5px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5 rounded-lg hover:bg-white/[0.04] transition-colors ${backButtonMobileOnly ? 'md:hidden' : ''}`}
                     >
                         <ArrowLeft className="w-3.5 h-3.5" /> Back to incidents
                     </button>
@@ -195,7 +204,7 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
             {onBack && (
                 <button
                     onClick={onBack}
-                    className="focus-ring press-scale self-start flex items-center gap-1.5 text-[12.5px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5 rounded-lg hover:bg-white/[0.04] transition-colors"
+                    className={`focus-ring press-scale self-start flex items-center gap-1.5 text-[12.5px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5 rounded-lg hover:bg-white/[0.04] transition-colors ${backButtonMobileOnly ? 'md:hidden' : ''}`}
                 >
                     <ArrowLeft className="w-3.5 h-3.5" /> Back to incidents
                 </button>

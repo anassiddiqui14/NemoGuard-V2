@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ShieldCheck, MessageSquareShare, BrainCircuit, AlertOctagon, FlaskConical, Cpu } from 'lucide-react';
+import { ShieldCheck, MessageSquareShare, AlertOctagon, FlaskConical, Cpu } from 'lucide-react';
+import { MemoryGlyphIcon } from '../LandingPage/NemoIcons';
 import { CapabilityPolicyTab } from './CapabilityPolicyTab';
 import { TeamsRoutesTab } from './TeamsRoutesTab';
 import { IncidentMemoryTab } from './IncidentMemoryTab';
@@ -14,7 +15,7 @@ const TABS: { key: AdminTab; label: string; icon: React.ReactNode }[] = [
     { key: 'model-settings', label: 'Model Settings', icon: <Cpu className="w-4 h-4" /> },
     { key: 'capabilities', label: 'Capability Policy', icon: <ShieldCheck className="w-4 h-4" /> },
     { key: 'teams', label: 'Teams Routes', icon: <MessageSquareShare className="w-4 h-4" /> },
-    { key: 'memory', label: 'Incident Memory', icon: <BrainCircuit className="w-4 h-4" /> },
+    { key: 'memory', label: 'Incident Memory', icon: <MemoryGlyphIcon className="w-4 h-4" /> },
     { key: 'false-resolutions', label: 'False Resolutions', icon: <AlertOctagon className="w-4 h-4" /> },
     { key: 'model-eval', label: 'Model Evaluation', icon: <FlaskConical className="w-4 h-4" /> },
 ];

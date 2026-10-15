@@ -37,6 +37,45 @@ export function IncidentsIcon(props: SVGProps<SVGSVGElement>) {
     );
 }
 
+/*
+ * UI MODERNIZATION (spec Section 48 -- bespoke icon set for product
+ * concepts): the original 6 icons here covered top-level nav items only.
+ * The spec explicitly names Evidence, Recovery, and Memory as product
+ * concepts that should get bespoke glyphs rather than generic
+ * Lucide icons, specifically because they're NemoGuard-specific
+ * domain concepts (not generic UI actions like "search" or "close",
+ * which Lucide already handles correctly per spec Section 48's own
+ * "use Lucide for generic actions" guidance). These 3 extend the same
+ * Frame wrapper for visual consistency with the existing 6.
+ */
+export function EvidenceGlyphIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <Frame {...props}>
+            <path d="M7 6h6M7 9h6M7 12h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <circle cx="14.2" cy="13" r="2.1" stroke="currentColor" strokeWidth="1.3" />
+            <path d="M15.8 14.6l1.2 1.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        </Frame>
+    );
+}
+
+export function RecoveryGlyphIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <Frame {...props}>
+            <path d="M13.5 7.2a4 4 0 1 0 .8 4.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+            <path d="M13.1 5.6l1.1 2.4-2.5.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        </Frame>
+    );
+}
+
+export function MemoryGlyphIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <Frame {...props}>
+            <rect x="6.3" y="6.3" width="7.4" height="7.4" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
+            <circle cx="10" cy="10" r="1.3" fill="currentColor" />
+        </Frame>
+    );
+}
+
 export function AgentOpsIcon(props: SVGProps<SVGSVGElement>) {
     return (
         <Frame {...props}>

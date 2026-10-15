@@ -47,6 +47,31 @@
   --panel-border: rgba(255, 255, 255, 0.06);
   --glow-primary: rgba(99, 102, 241, 0.12);
   --glow-agent: rgba(192, 38, 211, 0.08);
+
+  /*
+   * UI MODERNIZATION (spec Section 53 -- chart theming): a dedicated,
+   * reusable token set for recharts/any future chart library, decoupled
+   * from the raw --color-* tokens so a chart's palette can be tuned
+   * independently of the rest of the UI without touching every chart
+   * call site. Mapped 1:1 onto the existing semantic colors by default
+   * (dark theme) -- see the :root.light override below for the light
+   * equivalent. This fixes the exact bug found and corrected in
+   * InvestigationPanels.tsx's radar chart (hardcoded #14141F/rgba(255,
+   * 255,255,...) values that never adapted to light mode) by giving
+   * every future chart a single, already-theme-aware source to pull
+   * from instead of hand-rolling raw rgba() values per chart.
+   */
+  --chart-primary: var(--color-primary);
+  --chart-secondary: var(--color-agent-active);
+  --chart-positive: var(--color-healthy);
+  --chart-warning: var(--color-warning);
+  --chart-critical: var(--color-critical);
+  --chart-neutral: var(--color-text-muted);
+  --chart-grid: var(--panel-border);
+  --chart-tooltip-bg: var(--color-surface-elevated);
+  --chart-tooltip-border: var(--panel-border);
+  --chart-tooltip-text: var(--color-text-primary);
+  --chart-axis-text: var(--color-text-muted);
 }
 
 :root.light {
@@ -73,6 +98,20 @@
   --panel-border: rgba(20, 20, 31, 0.08);
   --glow-primary: rgba(84, 87, 229, 0.08);
   --glow-agent: rgba(162, 28, 175, 0.06);
+
+  /* Light-mode chart tokens -- same mapping, resolves to the already-
+     light-adjusted semantic colors defined above in this same block. */
+  --chart-primary: var(--color-primary);
+  --chart-secondary: var(--color-agent-active);
+  --chart-positive: var(--color-healthy);
+  --chart-warning: var(--color-warning);
+  --chart-critical: var(--color-critical);
+  --chart-neutral: var(--color-text-muted);
+  --chart-grid: var(--panel-border);
+  --chart-tooltip-bg: var(--color-surface-elevated);
+  --chart-tooltip-border: var(--panel-border);
+  --chart-tooltip-text: var(--color-text-primary);
+  --chart-axis-text: var(--color-text-muted);
 }
 
 @layer base {
