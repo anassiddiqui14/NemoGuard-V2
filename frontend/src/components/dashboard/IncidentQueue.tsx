@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, RefreshCw, ShieldAlert, Radio, History, WifiOff } from 'lucide-react';
 import { EmptyState, needsAttention, severityPill } from './shared';
+import { IconButton } from '../../design-system/components/IconButton';
 import type { IncidentSummary } from './shared';
 
 interface Props {
@@ -81,13 +82,15 @@ export function IncidentQueue({ openIncidents, activeIncidentId, setActiveIncide
                     <h2 className="font-semibold text-[13px] text-text-primary tracking-tight">Incident Queue</h2>
                     <p className="text-[11px] text-text-muted mt-0.5">{openIncidents.length} active incident{openIncidents.length !== 1 ? 's' : ''}</p>
                 </div>
-                <button
-                    onClick={refreshQueue}
-                    className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-white/[0.05] transition-colors"
-                    title="Refresh"
-                >
+                {/*
+                 * UI MODERNIZATION (spec Section 18/73 -- genuine
+                 * accessibility gap found and fixed): had `title` but no
+                 * `aria-label`. Migrated to IconButton, which makes
+                 * `label` required.
+                 */}
+                <IconButton onClick={refreshQueue} label="Refresh incident queue" size="sm">
                     <RefreshCw className="w-3.5 h-3.5" />
-                </button>
+                </IconButton>
             </div>
 
             {connectionError && (
