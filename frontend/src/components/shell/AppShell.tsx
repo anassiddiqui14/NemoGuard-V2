@@ -6,20 +6,26 @@ import { Toaster } from 'react-hot-toast';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useClickOutside } from '../../hooks/useClickOutside';
+import { IconButton } from '../../design-system/components/IconButton';
 import { GlobalNavRail } from './GlobalNavRail';
 import { MobileNavDrawer } from './MobileNavDrawer';
 import { UserMenu } from './UserMenu';
 import { Logomark } from '../../pages/LandingPage/Brand';
 import { CommandPalette } from '../../design-system/components/CommandPalette';
 
+/*
+ * UI MODERNIZATION (spec Section 18/73 -- genuine accessibility gap
+ * found and fixed): previously a bare <button> with `title` but NO
+ * `aria-label` -- a screen reader announces nothing useful for an
+ * icon-only control missing an accessible name. Migrated to the
+ * IconButton primitive (built specifically for this, but never
+ * actually used anywhere until now), which makes `label` a required
+ * prop so this exact class of bug is impossible by construction.
+ */
 function ThemeToggle() {
     const { theme, toggleTheme } = useTheme();
     return (
-        <button
-            onClick={toggleTheme}
-            className="press-scale relative p-2 text-text-secondary hover:text-text-primary hover:bg-white/[0.04] rounded-lg transition-colors"
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
+        <IconButton onClick={toggleTheme} label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             <AnimatePresence mode="wait" initial={false}>
                 {theme === 'dark' ? (
                     <motion.span key="moon" initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} transition={{ duration: 0.2 }} className="block">
@@ -31,10 +37,17 @@ function ThemeToggle() {
                     </motion.span>
                 )}
             </AnimatePresence>
-        </button>
+        </IconButton>
     );
 }
 
+/*
+ * UI MODERNIZATION (spec Section 18/73 -- genuine accessibility gap
+ * found and fixed): the trigger button previously had NEITHER
+ * `aria-label` NOR `title` -- a screen reader announced absolutely
+ * nothing for this control. Migrated to IconButton for the same
+ * reason as ThemeToggle above.
+ */
 function NotificationBell({ onSelectIncident }: { onSelectIncident: (id: string) => void }) {
     const notifications = useNotifications();
     const [open, setOpen] = useState(false);
@@ -42,10 +55,7 @@ function NotificationBell({ onSelectIncident }: { onSelectIncident: (id: string)
 
     return (
         <div className="relative" ref={ref}>
-            <button
-                onClick={() => setOpen((o) => !o)}
-                className="press-scale relative p-2 text-text-secondary hover:text-text-primary hover:bg-white/[0.04] rounded-lg transition-colors"
-            >
+            <IconButton onClick={() => setOpen((o) => !o)} label="Notifications" active={open} className="relative">
                 <Bell className="w-4 h-4" />
                 {notifications.length > 0 && (
                     <motion.span
@@ -57,7 +67,7 @@ function NotificationBell({ onSelectIncident }: { onSelectIncident: (id: string)
                         {notifications.length}
                     </motion.span>
                 )}
-            </button>
+            </IconButton>
 
             <AnimatePresence>
                 {open && (
@@ -114,22 +124,18 @@ function TopBar({ onSelectIncident, onToggleNav, navCollapsed, onOpenMobileNav, 
                  * inverse visibility of the desktop collapse toggle below
                  * (md:hidden here, hidden md:inline-flex there) so exactly
                  * one navigation control shows at any given width.
+                 *
+                 * Both nav toggles below now use IconButton (spec Section
+                 * 18/73) -- the mobile one already had aria-label/title,
+                 * but the desktop one previously had `title` only, with no
+                 * `aria-label`.
                  */}
-                <button
-                    onClick={onOpenMobileNav}
-                    className="press-scale md:hidden p-2 -ml-1 mr-1 text-text-secondary hover:text-text-primary hover:bg-white/[0.05] rounded-lg transition-colors flex-shrink-0"
-                    aria-label="Open navigation"
-                    title="Open navigation"
-                >
+                <IconButton onClick={onOpenMobileNav} label="Open navigation" className="md:hidden -ml-1 mr-1 flex-shrink-0">
                     <Menu className="w-4.5 h-4.5" />
-                </button>
-                <button
-                    onClick={onToggleNav}
-                    className="press-scale hidden md:inline-flex p-2 -ml-1 mr-1 text-text-secondary hover:text-text-primary hover:bg-white/[0.05] rounded-lg transition-colors flex-shrink-0"
-                    title={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
-                >
+                </IconButton>
+                <IconButton onClick={onToggleNav} label={navCollapsed ? 'Expand navigation' : 'Collapse navigation'} className="hidden md:inline-flex -ml-1 mr-1 flex-shrink-0">
                     {navCollapsed ? <PanelLeftOpen className="w-4.5 h-4.5" /> : <PanelLeftClose className="w-4.5 h-4.5" />}
-                </button>
+                </IconButton>
                 <motion.div
                     whileHover={{ scale: 1.06 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 15 }}
