@@ -36,9 +36,20 @@ const STATUS_COLORS: Record<string, string> = {
  * lives here, and an admin can approve it (so future investigations use
  * it as context), reject/redact it (so they don't), or edit it directly.
  */
-function MemoryRow({ record, onChanged }: { record: MemoryRecord; onChanged: () => void }) {
+function MemoryRow({ record, onChanged, onDirtyChange }: { record: MemoryRecord; onChanged: () => void; onDirtyChange?: (dirty: boolean) => void }) {
     const [expanded, setExpanded] = useState(false);
     const [editing, setEditing] = useState(false);
+
+    // UI MODERNIZATION (spec Section 54): entering edit mode on a memory
+    // record is exactly the kind of in-progress state that was
+    // previously silently discarded on tab switch. Propagate to the
+    // AdminPage-level dirty tracker whenever this specific row's edit
+    // state changes.
+    useEffect(() => {
+        onDirtyChange?.(editing);
+        return () => onDirtyChange?.(false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editing]);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [draft, setDraft] = useState({
@@ -189,7 +200,7 @@ function MemoryRow({ record, onChanged }: { record: MemoryRecord; onChanged: () 
     );
 }
 
-export function IncidentMemoryTab() {
+export function IncidentMemoryTab({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void } = {}) {
     const [records, setRecords] = useState<MemoryRecord[] | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -252,7 +263,7 @@ export function IncidentMemoryTab() {
                         <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading incident memory...
                     </div>
                 ) : records && records.length > 0 ? (
-                    records.map((r) => <MemoryRow key={r.memory_id} record={r} onChanged={load} />)
+                    records.map((r) => <MemoryRow key={r.memory_id} record={r} onChanged={load} onDirtyChange={onDirtyChange} />)
                 ) : (
                     <div className="px-4 py-8 text-center text-[12px] text-text-muted">
                         No learned incident memory records{statusFilter ? ` with status ${statusFilter}` : ''} yet.

@@ -1,7 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, Loader2, AlertTriangle, CheckCircle2, Save, Cpu } from 'lucide-react';
+import { RefreshCw, AlertTriangle, CheckCircle2, Save, Cpu } from 'lucide-react';
 import { authFetch } from '../../contexts/AuthGateContext';
+import { Button } from '../../design-system/components/Button';
+import { Chip } from '../../design-system/components/Chip';
+import { Input } from '../../design-system/components/Input';
+import { SkeletonCard } from '../../design-system/components/Skeleton';
 
 interface KnownModel {
     model: string;
@@ -34,13 +38,19 @@ const TIER_KEYS = [
  * takes effect on the very next incident/LLM call -- zero code change,
  * zero restart.
  */
-export function ModelSettingsTab() {
+export function ModelSettingsTab({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void } = {}) {
     const [data, setData] = useState<SettingsResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [savedKey, setSavedKey] = useState<string | null>(null);
     const [savingKey, setSavingKey] = useState<string | null>(null);
     const [timeoutDraft, setTimeoutDraft] = useState<string>('');
+    // UI MODERNIZATION (spec Section 54): the timeout input is the only
+    // field on this tab that holds an edit the user could lose by
+    // switching tabs mid-type (the model-tier chips save instantly on
+    // click, with no "draft" state to lose). Tracks whether the draft
+    // currently differs from the last-saved server value.
+    const savedTimeoutRef = useRef('');
 
     const load = () => {
         setLoading(true);
@@ -55,7 +65,10 @@ export function ModelSettingsTab() {
             })
             .then((d: SettingsResponse) => {
                 setData(d);
-                setTimeoutDraft(String(d.settings['model.fallback_timeout_seconds'] ?? 45));
+                const serverValue = String(d.settings['model.fallback_timeout_seconds'] ?? 45);
+                setTimeoutDraft(serverValue);
+                savedTimeoutRef.current = serverValue;
+                onDirtyChange?.(false);
             })
             .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
             .finally(() => setLoading(false));
@@ -117,24 +130,22 @@ export function ModelSettingsTab() {
         }
     };
 
-    if (loading) {
-        return (
-            <div className="console-surface rounded-2xl px-4 py-8 text-center text-[12px] text-text-muted">
-                <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading settings...
-            </div>
-        );
-    }
-
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
                 <p className="text-[12.5px] text-text-muted">
                     Change which AI model each agent tier uses. Takes effect on the very next LLM call -- no restart required.
                 </p>
-                <button onClick={load} className="press-scale inline-flex items-center gap-2 text-[12px] font-medium px-3 py-1.5 rounded-lg ring-1 ring-white/[0.08] hover:bg-white/[0.05] transition flex-shrink-0">
-                    <RefreshCw className="w-3.5 h-3.5" /> Refresh
-                </button>
+                <Button size="sm" variant="secondary" onClick={load} loading={loading} leadingIcon={<RefreshCw className="w-3.5 h-3.5" />} className="flex-shrink-0">
+                    Refresh
+                </Button>
             </div>
+
+            {loading && (
+                <div className="space-y-4">
+                    {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} className="h-[120px]" />)}
+                </div>
+            )}
 
             {error && (
                 <div className="flex items-center gap-2 text-[12px] text-critical bg-critical/10 ring-1 ring-critical/25 rounded-lg px-3 py-2">
@@ -142,7 +153,7 @@ export function ModelSettingsTab() {
                 </div>
             )}
 
-            {data && TIER_KEYS.map(({ key, label, hint }) => {
+            {!loading && data && TIER_KEYS.map(({ key, label, hint }) => {
                 const current = data.settings[key] as ModelTierValue | undefined;
                 return (
                     <motion.div key={key} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="console-surface rounded-2xl p-4 space-y-3">
@@ -161,16 +172,16 @@ export function ModelSettingsTab() {
                             {data.known_models.map((m) => {
                                 const isActive = current?.model === m.model;
                                 return (
-                                    <button
+                                    <Chip
                                         key={m.model}
+                                        selected={isActive}
+                                        mono
                                         onClick={() => saveTier(key, m)}
                                         disabled={savingKey === key || isActive}
                                         title={m.label}
-                                        className={`press-scale text-[10.5px] font-mono px-2.5 py-1.5 rounded-lg ring-1 transition-colors disabled:cursor-not-allowed ${isActive ? 'bg-primary/20 text-primary ring-primary/35' : 'bg-white/[0.03] text-text-muted ring-white/[0.06] hover:text-text-secondary hover:bg-white/[0.05]'}`}
                                     >
-                                        {savingKey === key ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : null}
                                         {m.model}
-                                    </button>
+                                    </Chip>
                                 );
                             })}
                         </div>
@@ -178,34 +189,39 @@ export function ModelSettingsTab() {
                 );
             })}
 
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="console-surface rounded-2xl p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                    <Cpu className="w-3.5 h-3.5 text-primary" />
-                    <div className="text-[13px] font-semibold text-text-primary">Fallback timeout</div>
-                    {savedKey === 'model.fallback_timeout_seconds' && (
-                        <span className="text-[10.5px] font-semibold text-healthy flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Saved</span>
-                    )}
-                </div>
-                <p className="text-[11px] text-text-muted">Seconds to wait for the ultra-tier model before automatically retrying with the fallback tier.</p>
-                <div className="flex items-center gap-2">
-                    <input
-                        type="number"
-                        min="1"
-                        value={timeoutDraft}
-                        onChange={(e) => setTimeoutDraft(e.target.value)}
-                        className="w-28 rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary focus:outline-none focus:ring-primary/50"
-                    />
-                    <span className="text-[11px] text-text-muted">seconds</span>
-                    <button
-                        onClick={saveTimeout}
-                        disabled={savingKey === 'model.fallback_timeout_seconds'}
-                        className="press-scale inline-flex items-center gap-1.5 text-[11.5px] font-semibold px-3 py-2 rounded-lg bg-primary text-white disabled:opacity-50"
-                    >
-                        {savingKey === 'model.fallback_timeout_seconds' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                        Save
-                    </button>
-                </div>
-            </motion.div>
+            {!loading && (
+                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="console-surface rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                        <Cpu className="w-3.5 h-3.5 text-primary" />
+                        <div className="text-[13px] font-semibold text-text-primary">Fallback timeout</div>
+                        {savedKey === 'model.fallback_timeout_seconds' && (
+                            <span className="text-[10.5px] font-semibold text-healthy flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Saved</span>
+                        )}
+                    </div>
+                    <p className="text-[11px] text-text-muted">Seconds to wait for the ultra-tier model before automatically retrying with the fallback tier.</p>
+                    <div className="flex items-center gap-2">
+                        <Input
+                            type="number"
+                            min="1"
+                            value={timeoutDraft}
+                            onChange={(e) => {
+                                setTimeoutDraft(e.target.value);
+                                onDirtyChange?.(e.target.value !== savedTimeoutRef.current);
+                            }}
+                            className="!w-28"
+                        />
+                        <span className="text-[11px] text-text-muted">seconds</span>
+                        <Button
+                            size="sm"
+                            onClick={saveTimeout}
+                            loading={savingKey === 'model.fallback_timeout_seconds'}
+                            leadingIcon={<Save className="w-3.5 h-3.5" />}
+                        >
+                            Save
+                        </Button>
+                    </div>
+                </motion.div>
+            )}
         </div>
     );
 }

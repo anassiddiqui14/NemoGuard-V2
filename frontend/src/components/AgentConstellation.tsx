@@ -67,6 +67,55 @@ const STATE_STYLES: Record<AgentState, { ring: string; bg: string; text: string;
   FAILED: { ring: 'ring-critical/40', bg: 'bg-critical/[0.08]', text: 'text-critical', glow: '' },
 };
 
+/*
+ * UI MODERNIZATION (spec Section 43/44 -- "NemoGuard Investigation"
+ * branded agent loader): the grid-card AgentConstellation above already
+ * satisfies the spec's core requirement -- truthful, SSE-driven agent
+ * state with zero fabricated progress -- but Section 43's specific
+ * mockup shows a compact vertical checklist (✓/●/○ per step) rather than
+ * a card grid. Rather than duplicate the real state computation
+ * (computeAgentState) in a second component, this reuses the exact same
+ * function and just renders it in the checklist layout the spec
+ * describes, for contexts (e.g. a narrow sidebar or a modal) where the
+ * grid doesn't fit.
+ */
+export const InvestigationChecklist: React.FC<Props> = ({ status, events }) => {
+  const s = status?.toUpperCase() || '';
+  const agents = AGENT_DEFS.map((def) => {
+    const { state, lastMessage } = computeAgentState(def, events, s);
+    return { ...def, state, lastMessage: lastMessage || def.idleDesc };
+  });
+
+  return (
+    <div className="rounded-xl p-4 bg-white/[0.02] ring-1 ring-white/[0.05]">
+      <div className="text-[11px] font-bold text-text-muted uppercase tracking-wider mb-3">NemoGuard Investigation</div>
+      <div className="space-y-2">
+        {agents.map((agent) => {
+          const marker = agent.state === 'COMPLETED' ? '✓' : agent.state === 'FAILED' ? '✕' : agent.state === 'RUNNING' ? '●' : '○';
+          const markerClass =
+            agent.state === 'COMPLETED'
+              ? 'text-healthy'
+              : agent.state === 'FAILED'
+                ? 'text-critical'
+                : agent.state === 'RUNNING'
+                  ? 'text-agent-active'
+                  : 'text-text-muted';
+          return (
+            <div key={agent.key} className="flex items-start gap-2.5">
+              <span className={`font-mono text-[12px] font-bold flex-shrink-0 w-4 text-center ${markerClass} ${agent.state === 'RUNNING' ? 'animate-pulse' : ''}`}>
+                {marker}
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className={`text-[12px] ${agent.state === 'QUEUED' ? 'text-text-muted' : 'text-text-secondary'}`}>{agent.lastMessage}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 export const AgentConstellation: React.FC<Props> = ({ status, events }) => {
   const s = status?.toUpperCase() || '';
 

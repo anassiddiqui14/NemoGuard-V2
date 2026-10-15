@@ -1,5 +1,6 @@
 import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { ProgressBar } from '../design-system/components/Dropdown';
 import { RequireAuth } from './RequireAuth';
 import { AppShell } from '../components/shell/AppShell';
 import { LandingPage } from '../pages/LandingPage/LandingPage';
@@ -31,9 +32,15 @@ const AdoptionReadinessPage = lazy(() => import('../pages/AdoptionReadinessPage/
 const AdminPage = lazy(() => import('../pages/AdminPage/AdminPage').then((m) => ({ default: m.AdminPage })));
 
 function RouteFallback() {
+    // UI MODERNIZATION (spec Section 40): the spec distinguishes a
+    // top-of-page progress indicator (for route/page transitions) from a
+    // spinner (reserved for localized actions like buttons). The original
+    // Phase 16 fallback used a centered spinner; replaced with the real
+    // ProgressBar primitive at the top of the content area, matching the
+    // spec's explicit guidance ("~2-3px height... delay appearance...").
     return (
-        <div className="h-full flex items-center justify-center">
-            <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+        <div className="h-full flex flex-col">
+            <ProgressBar indeterminate />
         </div>
     );
 }

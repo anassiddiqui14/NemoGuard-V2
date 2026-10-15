@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { authFetch } from '../../contexts/AuthGateContext';
+import { Button } from '../../design-system/components/Button';
+import { SkeletonTableRows } from '../../design-system/components/Skeleton';
 
 interface Capability {
     capability_id: string;
@@ -96,22 +98,12 @@ export function CapabilityPolicyTab() {
                     Every capability an agent can invoke, with its effective risk level and autonomy mode after applying <code className="text-[11px] bg-white/[0.05] px-1 py-0.5 rounded">config/capability_policy.yaml</code> overrides.
                 </p>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                        onClick={handleReload}
-                        disabled={reloading}
-                        className="press-scale inline-flex items-center gap-2 text-[12px] font-medium px-3 py-1.5 rounded-lg ring-1 ring-white/[0.08] hover:bg-white/[0.05] transition disabled:opacity-50"
-                    >
-                        {reloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                    <Button size="sm" variant="secondary" onClick={handleReload} loading={reloading} leadingIcon={<RefreshCw className="w-3.5 h-3.5" />}>
                         Reload policy YAML
-                    </button>
-                    <button
-                        onClick={load}
-                        disabled={loading}
-                        className="press-scale inline-flex items-center gap-2 text-[12px] font-medium px-3 py-1.5 rounded-lg ring-1 ring-white/[0.08] hover:bg-white/[0.05] transition disabled:opacity-50"
-                    >
-                        <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={load} loading={loading} leadingIcon={<RefreshCw className="w-3.5 h-3.5" />}>
                         Refresh
-                    </button>
+                    </Button>
                 </div>
             </div>
 
@@ -141,11 +133,7 @@ export function CapabilityPolicyTab() {
                         </thead>
                         <tbody>
                             {loading ? (
-                                <tr>
-                                    <td colSpan={6} className="px-4 py-8 text-center text-[12px] text-text-muted">
-                                        <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading capabilities...
-                                    </td>
-                                </tr>
+                                <SkeletonTableRows columns={6} rows={5} />
                             ) : caps && caps.length > 0 ? (
                                 caps.map((c) => (
                                     <motion.tr

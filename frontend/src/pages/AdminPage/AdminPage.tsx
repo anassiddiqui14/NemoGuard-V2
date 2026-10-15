@@ -46,6 +46,22 @@ const TABS: { key: AdminTab; label: string; icon: React.ReactNode }[] = [
  */
 export function AdminPage() {
     const [tab, setTab] = useState<AdminTab>('model-settings');
+    // UI MODERNIZATION (spec Section 54 -- unsaved-change protection for
+    // high-impact Admin settings): IncidentMemoryTab's edit mode and
+    // ModelSettingsTab's fallback-timeout draft both hold in-progress
+    // edits that were previously silently discarded on tab switch with
+    // zero warning. Child tabs call this to register whether they
+    // currently have an unsaved edit in progress; switching tabs while
+    // dirty now requires explicit confirmation.
+    const [isDirty, setIsDirty] = useState(false);
+
+    const handleTabChange = (next: AdminTab) => {
+        if (isDirty && !window.confirm('You have unsaved changes on this tab. Switch tabs anyway and discard them?')) {
+            return;
+        }
+        setIsDirty(false);
+        setTab(next);
+    };
 
     return (
         <div className="h-full overflow-y-auto p-6 max-w-6xl mx-auto space-y-5">
@@ -63,7 +79,7 @@ export function AdminPage() {
                     {TABS.map((t) => (
                         <button
                             key={t.key}
-                            onClick={() => setTab(t.key)}
+                            onClick={() => handleTabChange(t.key)}
                             role="tab"
                             aria-selected={tab === t.key}
                             className={`focus-ring relative flex-1 min-w-[120px] flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[12px] font-semibold transition-colors ${tab === t.key ? 'text-text-primary' : 'text-text-muted hover:text-text-secondary hover:bg-white/[0.03]'
@@ -86,10 +102,10 @@ export function AdminPage() {
             </div>
 
             <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
-                {tab === 'model-settings' && <ModelSettingsTab />}
+                {tab === 'model-settings' && <ModelSettingsTab onDirtyChange={setIsDirty} />}
                 {tab === 'capabilities' && <CapabilityPolicyTab />}
                 {tab === 'teams' && <TeamsRoutesTab />}
-                {tab === 'memory' && <IncidentMemoryTab />}
+                {tab === 'memory' && <IncidentMemoryTab onDirtyChange={setIsDirty} />}
                 {tab === 'false-resolutions' && <FalseResolutionsTab />}
                 {tab === 'model-eval' && <ModelEvaluationTab />}
             </motion.div>

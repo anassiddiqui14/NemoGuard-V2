@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, Loader2, AlertTriangle, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { RefreshCw, AlertTriangle, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { authFetch } from '../../contexts/AuthGateContext';
+import { Button } from '../../design-system/components/Button';
+import { SkeletonCard } from '../../design-system/components/Skeleton';
 
 interface VerificationCheck {
     check_name: string;
@@ -66,10 +68,9 @@ export function FalseResolutionsTab() {
                 <p className="text-[12.5px] text-text-muted">
                     Audits every RESOLVED incident to confirm its recovery was genuinely verified. Target is 0 -- any violation here is a real safety bug, not a benchmark statistic.
                 </p>
-                <button onClick={load} disabled={loading} className="press-scale inline-flex items-center gap-2 text-[12px] font-medium px-3 py-1.5 rounded-lg ring-1 ring-white/[0.08] hover:bg-white/[0.05] transition disabled:opacity-50 flex-shrink-0">
-                    <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <Button size="sm" variant="secondary" onClick={load} loading={loading} leadingIcon={<RefreshCw className="w-3.5 h-3.5" />} className="flex-shrink-0">
                     Refresh
-                </button>
+                </Button>
             </div>
 
             {error && (
@@ -79,8 +80,8 @@ export function FalseResolutionsTab() {
             )}
 
             {loading ? (
-                <div className="console-surface rounded-2xl px-4 py-8 text-center text-[12px] text-text-muted">
-                    <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Computing false resolution audit...
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
                 </div>
             ) : data ? (
                 <>
