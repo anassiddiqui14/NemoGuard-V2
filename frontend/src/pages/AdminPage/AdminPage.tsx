@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ShieldCheck, MessageSquareShare, AlertOctagon, FlaskConical, Cpu } from 'lucide-react';
-import { MemoryGlyphIcon } from '../LandingPage/NemoIcons';
+import { MessageSquareShare, AlertOctagon, Cpu } from 'lucide-react';
+import { MemoryGlyphIcon, GuardrailGlyphIcon, ModelEvaluationGlyphIcon } from '../LandingPage/NemoIcons';
+import { Logomark } from '../LandingPage/Brand';
 import { CapabilityPolicyTab } from './CapabilityPolicyTab';
 import { TeamsRoutesTab } from './TeamsRoutesTab';
 import { IncidentMemoryTab } from './IncidentMemoryTab';
@@ -13,11 +14,17 @@ type AdminTab = 'model-settings' | 'capabilities' | 'teams' | 'memory' | 'false-
 
 const TABS: { key: AdminTab; label: string; icon: React.ReactNode }[] = [
     { key: 'model-settings', label: 'Model Settings', icon: <Cpu className="w-4 h-4" /> },
-    { key: 'capabilities', label: 'Capability Policy', icon: <ShieldCheck className="w-4 h-4" /> },
+    // UI MODERNIZATION (spec Section 48): Capability Policy -> Guardrail
+    // is one of the spec's exact named bespoke product concepts (agent
+    // safety/risk policy enforcement), swapped from the generic Lucide
+    // ShieldCheck.
+    { key: 'capabilities', label: 'Capability Policy', icon: <GuardrailGlyphIcon className="w-4 h-4" /> },
     { key: 'teams', label: 'Teams Routes', icon: <MessageSquareShare className="w-4 h-4" /> },
     { key: 'memory', label: 'Incident Memory', icon: <MemoryGlyphIcon className="w-4 h-4" /> },
     { key: 'false-resolutions', label: 'False Resolutions', icon: <AlertOctagon className="w-4 h-4" /> },
-    { key: 'model-eval', label: 'Model Evaluation', icon: <FlaskConical className="w-4 h-4" /> },
+    // UI MODERNIZATION (spec Section 48): Model Evaluation is itself one
+    // of the spec's exact named bespoke icon concepts.
+    { key: 'model-eval', label: 'Model Evaluation', icon: <ModelEvaluationGlyphIcon className="w-4 h-4" /> },
 ];
 
 /**
@@ -68,7 +75,7 @@ export function AdminPage() {
         <div className="h-full overflow-y-auto p-6 max-w-6xl mx-auto space-y-5">
             <div>
                 <h1 className="text-xl font-semibold text-text-primary tracking-tight flex items-center gap-2">
-                    <ShieldCheck className="w-5 h-5 text-primary" /> Admin
+                    <Logomark className="w-5 h-5 text-primary" /> Admin
                 </h1>
                 <p className="text-[13px] text-text-muted mt-1">
                     Real controls over NemoGuard's behavior -- capability policy, notification routing, learned incident memory, and safety audits.

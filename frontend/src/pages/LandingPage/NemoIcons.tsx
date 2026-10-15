@@ -76,6 +76,52 @@ export function MemoryGlyphIcon(props: SVGProps<SVGSVGElement>) {
     );
 }
 
+/*
+ * UI MODERNIZATION (spec Section 48 completion): the spec's exact named
+ * bespoke icon set is: "NemoGuard mark, Agent, Guardrail, Incident,
+ * Investigation, Recovery, Scenario, Intelligence, Evidence,
+ * Automation, Memory, Model Evaluation." Of these, Guardrail,
+ * Investigation, Automation, and Model Evaluation were still missing --
+ * these 4 close that gap, completing the full named set.
+ */
+export function GuardrailGlyphIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <Frame {...props}>
+            <path d="M10 5.4 13.6 6.8v2.9c0 2.3-1.5 3.9-3.6 4.5-2.1-.6-3.6-2.2-3.6-4.5V6.8L10 5.4Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+            <path d="M10 8.1v2.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <circle cx="10" cy="12" r="0.55" fill="currentColor" />
+        </Frame>
+    );
+}
+
+export function InvestigationGlyphIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <Frame {...props}>
+            <circle cx="8.9" cy="9" r="2.9" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M8.9 7.4v1.6l1.1 1.1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            <path d="M11 11.1l2.9 2.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </Frame>
+    );
+}
+
+export function AutomationGlyphIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <Frame {...props}>
+            <circle cx="10" cy="10" r="2" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M10 5.6v1.5M10 12.9v1.5M14.4 10h-1.5M7.1 10H5.6M13.1 6.9l-1.1 1.1M7.9 12l-1.1 1.1M13.1 13.1l-1.1-1.1M7.9 8l-1.1-1.1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeOpacity="0.65" />
+        </Frame>
+    );
+}
+
+export function ModelEvaluationGlyphIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <Frame {...props}>
+            <path d="M6.4 13.4V9.1M10 13.4V6.6M13.6 13.4v-4.9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M5.8 13.9h8.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeOpacity="0.5" />
+        </Frame>
+    );
+}
+
 export function AgentOpsIcon(props: SVGProps<SVGSVGElement>) {
     return (
         <Frame {...props}>

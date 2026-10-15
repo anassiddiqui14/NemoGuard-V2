@@ -4,6 +4,7 @@ import { RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { authFetch } from '../../contexts/AuthGateContext';
 import { Button } from '../../design-system/components/Button';
 import { SkeletonTableRows } from '../../design-system/components/Skeleton';
+import { AutomationGlyphIcon } from '../LandingPage/NemoIcons';
 
 interface Capability {
     capability_id: string;
@@ -94,8 +95,9 @@ export function CapabilityPolicyTab() {
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
-                <p className="text-[12.5px] text-text-muted">
-                    Every capability an agent can invoke, with its effective risk level and autonomy mode after applying <code className="text-[11px] bg-white/[0.05] px-1 py-0.5 rounded">config/capability_policy.yaml</code> overrides.
+                <p className="text-[12.5px] text-text-muted flex items-start gap-2">
+                    <AutomationGlyphIcon className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+                    <span>Every capability an agent can invoke, with its effective risk level and autonomy mode after applying <code className="text-[11px] bg-white/[0.05] px-1 py-0.5 rounded">config/capability_policy.yaml</code> overrides.</span>
                 </p>
                 <div className="flex items-center gap-2 flex-shrink-0">
                     <Button size="sm" variant="secondary" onClick={handleReload} loading={reloading} leadingIcon={<RefreshCw className="w-3.5 h-3.5" />}>

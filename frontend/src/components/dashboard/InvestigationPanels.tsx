@@ -3,10 +3,11 @@ import { ResponsiveContainer, Radar, RadarChart, PolarGrid, PolarAngleAxis, Tool
 import { AgentConstellation, InvestigationChecklist } from '../AgentConstellation';
 import { LiveOperationsConsole } from '../LiveOperationsConsole';
 import { EmptyState, severityPill } from './shared';
+import { InvestigationGlyphIcon } from '../../pages/LandingPage/NemoIcons';
 import { Search, Activity, TrendingUp, ChevronDown, Lightbulb } from 'lucide-react';
 import type { AgentEvent } from '../../hooks/useIncidentEvents';
 
-function Card({ title, subtitle, right, children, className = '' }: { title: string; subtitle?: string; right?: React.ReactNode; children: React.ReactNode; className?: string }) {
+function Card({ title, subtitle, right, children, className = '', titleIcon }: { title: string; subtitle?: string; right?: React.ReactNode; children: React.ReactNode; className?: string; titleIcon?: React.ReactNode }) {
     return (
         <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -16,7 +17,10 @@ function Card({ title, subtitle, right, children, className = '' }: { title: str
         >
             <div className="px-4 py-3.5 flex items-center justify-between border-b border-white/[0.05]">
                 <div>
-                    <div className="font-semibold text-[13px] text-text-primary">{title}</div>
+                    <div className="font-semibold text-[13px] text-text-primary flex items-center gap-1.5">
+                        {titleIcon}
+                        {title}
+                    </div>
                     {subtitle && <div className="text-[11px] text-text-muted mt-0.5">{subtitle}</div>}
                 </div>
                 {right}
@@ -127,6 +131,7 @@ export function AgentAndHypothesisRow({
             <Card
                 title="Root-Cause Hypothesis"
                 subtitle="Ranked and evidence-grounded"
+                titleIcon={<InvestigationGlyphIcon className="w-3.5 h-3.5 text-agent-active" />}
                 right={
                     <button onClick={onViewEvidence} className="focus-ring press-scale text-[11px] font-medium px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] ring-1 ring-white/[0.06] transition flex items-center gap-1.5 text-text-secondary">
                         <Search className="w-3 h-3" /> Evidence
