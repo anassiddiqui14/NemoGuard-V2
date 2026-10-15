@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import toast from 'react-hot-toast';
+import { ngToast } from '../../design-system/toast';
 import {
     Rocket, Cloud, Sparkles, RotateCcw, Database, Mail, GitBranch,
     AlertTriangle, CheckCircle2, XCircle, Loader2, PlayCircle, BellRing, Network,
@@ -161,9 +161,9 @@ export function ScenarioCockpitPage() {
         setLoadingKey(key);
         try {
             await postJson(path, body);
-            toast.success(successLabel);
+            ngToast.success(successLabel);
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : 'Request failed');
+            ngToast.error(e instanceof Error ? e.message : 'Request failed');
         } finally {
             setLoadingKey(null);
         }
@@ -185,7 +185,7 @@ export function ScenarioCockpitPage() {
             setCorrelationRunning(job.check);
             setCorrelationLog(job.logs ?? []);
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : 'Correlation check failed to start.');
+            ngToast.error(e instanceof Error ? e.message : 'Correlation check failed to start.');
         }
     };
 
@@ -211,12 +211,12 @@ export function ScenarioCockpitPage() {
                     }
                 }
                 setPrompt('');
-                toast.success('Custom scenario injected into NemoGuard.');
+                ngToast.success('Custom scenario injected into NemoGuard.');
             } else {
-                toast.error('Failed to generate custom scenario.');
+                ngToast.error('Failed to generate custom scenario.');
             }
         } catch {
-            toast.error('Network error reaching the simulator.');
+            ngToast.error('Network error reaching the simulator.');
         } finally {
             setAiRunning(false);
             setTimeout(() => setAiStreamStatus(null), 4000);

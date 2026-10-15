@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, RefreshCw, Loader2, AlertTriangle, Play, X, BarChart3 } from 'lucide-react';
 import { authFetch } from '../../contexts/AuthGateContext';
+import { Chip } from '../../design-system/components/Chip';
+import { SkeletonTableRows } from '../../design-system/components/Skeleton';
 
 interface EvalRun {
     run_id: string;
@@ -94,9 +96,9 @@ function CreateRunForm({ historicalIncidents, availableModels, onCreated, onCanc
                 <div className="text-[11px] text-text-muted mb-1.5">Models to compare *</div>
                 <div className="flex flex-wrap gap-1.5">
                     {availableModels.map((m) => (
-                        <button key={m} onClick={() => toggleModel(m)} className={`text-[11px] font-mono px-2.5 py-1 rounded-full ring-1 transition-colors ${selectedModels.includes(m) ? 'bg-primary/20 text-primary ring-primary/35' : 'bg-white/[0.03] text-text-muted ring-white/[0.06] hover:text-text-secondary'}`}>
+                        <Chip key={m} selected={selectedModels.includes(m)} mono onClick={() => toggleModel(m)}>
                             {m}
-                        </button>
+                        </Chip>
                     ))}
                 </div>
             </div>
@@ -314,11 +316,7 @@ export function ModelEvaluationTab() {
                         </thead>
                         <tbody>
                             {loading ? (
-                                <tr>
-                                    <td colSpan={5} className="px-4 py-8 text-center text-[12px] text-text-muted">
-                                        <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading runs...
-                                    </td>
-                                </tr>
+                                <SkeletonTableRows columns={5} rows={4} />
                             ) : runs && runs.length > 0 ? (
                                 runs.map((r) => (
                                     <motion.tr key={r.run_id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-b border-white/[0.04] last:border-b-0 hover:bg-white/[0.02] transition-colors">

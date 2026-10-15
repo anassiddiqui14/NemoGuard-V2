@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, RefreshCw, Loader2, AlertTriangle, CheckCircle2, X } from 'lucide-react';
 import { authFetch } from '../../contexts/AuthGateContext';
+import { Chip } from '../../design-system/components/Chip';
+import { SkeletonTableRows } from '../../design-system/components/Skeleton';
 
 interface TeamsRoute {
     route_id: string;
@@ -118,13 +120,9 @@ function CreateRouteForm({ onCreated, onCancel }: { onCreated: () => void; onCan
                 <div className="text-[11px] text-text-muted mb-1.5">Notify on these events</div>
                 <div className="flex flex-wrap gap-1.5">
                     {NOTIFY_OPTIONS.map((opt) => (
-                        <button
-                            key={opt}
-                            onClick={() => toggleNotify(opt)}
-                            className={`text-[10.5px] font-semibold px-2.5 py-1 rounded-full ring-1 transition-colors ${notifyOn.includes(opt) ? 'bg-primary/20 text-primary ring-primary/35' : 'bg-white/[0.03] text-text-muted ring-white/[0.06] hover:text-text-secondary'}`}
-                        >
+                        <Chip key={opt} selected={notifyOn.includes(opt)} onClick={() => toggleNotify(opt)}>
                             {opt.replace(/_/g, ' ')}
-                        </button>
+                        </Chip>
                     ))}
                 </div>
             </div>
@@ -218,11 +216,7 @@ export function TeamsRoutesTab() {
                         </thead>
                         <tbody>
                             {loading ? (
-                                <tr>
-                                    <td colSpan={5} className="px-4 py-8 text-center text-[12px] text-text-muted">
-                                        <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading routes...
-                                    </td>
-                                </tr>
+                                <SkeletonTableRows columns={5} rows={4} />
                             ) : routes && routes.length > 0 ? (
                                 routes.map((r) => (
                                     <motion.tr

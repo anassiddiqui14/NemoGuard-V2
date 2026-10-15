@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { PlayCircle, ShieldAlert, Clock, Users, Briefcase, Layers, AlarmClock, XCircle } from 'lucide-react';
 import { LifecycleStepper, formatElapsedSeconds, severityPill, statusBadge } from './shared';
+import { Button } from '../../design-system/components/Button';
 import type { IncidentSummary } from './shared';
 
 interface Props {
@@ -152,27 +153,38 @@ export function SituationHeader({ selectedIncident, alerts, impact, hypothesis, 
                     )}
 
                     <div className="flex items-center gap-2.5 flex-wrap">
+                        {/*
+                         * UI MODERNIZATION (Phase 9, spec Section 42): these
+                         * two buttons previously swapped their label text
+                         * on loading ("Start Triage Now" -> "Starting
+                         * investigation…") with NO visual spinner at all --
+                         * easy to miss, especially on a slow network. The
+                         * shared Button primitive's `loading` prop swaps in
+                         * a real animated spinner while preserving layout
+                         * width, consistent with every other migrated
+                         * loading button in the app.
+                         */}
                         {canTriage && (
-                            <button
+                            <Button
                                 onClick={handleStartTriage}
-                                disabled={triageStarting}
-                                className="focus-ring press-scale inline-flex items-center gap-2 text-[13px] px-4 py-2 rounded-xl bg-gradient-to-r from-primary to-agent-active text-white hover:brightness-110 transition font-semibold disabled:opacity-60 shadow-lg shadow-primary/20"
+                                loading={triageStarting}
+                                leadingIcon={<PlayCircle className="w-4 h-4" />}
+                                className="!bg-gradient-to-r !from-primary !to-agent-active shadow-lg shadow-primary/20"
                             >
-                                <PlayCircle className="w-4 h-4" />
                                 {triageStarting ? 'Starting investigation…' : 'Start Triage Now'}
-                            </button>
+                            </Button>
                         )}
 
                         {canCancel && (
-                            <button
+                            <Button
+                                variant="danger"
                                 onClick={onCancelIncident}
-                                disabled={cancelling}
+                                loading={cancelling}
+                                leadingIcon={<XCircle className="w-4 h-4" />}
                                 title="Stand this incident down without executing a recovery plan."
-                                className="focus-ring press-scale inline-flex items-center gap-2 text-[13px] px-4 py-2 rounded-xl ring-1 ring-critical/35 text-critical hover:bg-critical/10 transition font-semibold disabled:opacity-60"
                             >
-                                <XCircle className="w-4 h-4" />
                                 {cancelling ? 'Cancelling…' : 'Cancel Incident'}
-                            </button>
+                            </Button>
                         )}
                     </div>
                 </div>

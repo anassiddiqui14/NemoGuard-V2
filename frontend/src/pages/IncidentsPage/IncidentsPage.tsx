@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, ListChecks, AlertTriangle, RefreshCw } from 'lucide-react';
 import { severityPill, statusBadge, formatElapsedSeconds, EmptyState } from '../../components/dashboard/shared';
+import { SkeletonTableRows } from '../../design-system/components/Skeleton';
 import { IncidentWorkspace } from '../../components/dashboard/IncidentWorkspace';
 import type { IncidentSummary } from '../../components/dashboard/shared';
 import { authFetch } from '../../contexts/AuthGateContext';
@@ -137,8 +138,30 @@ export function IncidentsPage() {
                     <button onClick={() => void fetchAll()} className="text-[11px] font-medium text-warning hover:underline flex-shrink-0">Retry</button>
                 </div>
             )}
+            {/*
+             * UI MODERNIZATION (Phase 12, spec Section 38/63): replaced
+             * a plain "Loading incidents…" text row with a structural
+             * skeleton that approximates the real table shape (5 columns
+             * matching the actual header below), per spec guidance to
+             * use skeletons for predictable structures like tables.
+             */}
             {loading ? (
-                <div className="text-[13px] text-text-muted py-10 text-center">Loading incidents…</div>
+                <div className="glass-panel rounded-2xl overflow-hidden ring-1 ring-white/[0.06]">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="border-b border-white/[0.06] text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+                                <th className="px-4 py-3">Severity</th>
+                                <th className="px-4 py-3">Incident</th>
+                                <th className="px-4 py-3">Status</th>
+                                <th className="px-4 py-3">Owner</th>
+                                <th className="px-4 py-3">Elapsed</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <SkeletonTableRows columns={5} rows={6} />
+                        </tbody>
+                    </table>
+                </div>
             ) : error && incidents.length === 0 ? (
                 <div className="mt-10">
                     <EmptyState

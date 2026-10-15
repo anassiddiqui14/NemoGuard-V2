@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { CheckSquare, FileText, AlertTriangle, ShieldCheck, Send, X, CheckCircle, ListOrdered } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { ngToast } from '../design-system/toast';
 import { modalBackdrop, modalPanel } from './dashboard/shared';
 import { authFetch } from '../contexts/AuthGateContext';
 
@@ -42,14 +42,14 @@ export function PlanApprovalModal({ incidentId, plan, onClose, onRefreshPlan }: 
         } catch {
           // response wasn't JSON; fall back to the status code above
         }
-        toast.error(`Failed to approve plan: ${detail}`);
+        ngToast.error(`Failed to approve plan: ${detail}`);
         return;
       }
-      toast.success('Plan approved — executing recovery actions.');
+      ngToast.success('Plan approved — executing recovery actions.');
       onRefreshPlan();
       onClose();
     } catch (e) {
-      toast.error(`Failed to approve plan: ${e instanceof Error ? e.message : 'network error'}`);
+      ngToast.error(`Failed to approve plan: ${e instanceof Error ? e.message : 'network error'}`);
     } finally {
       setSubmitting(false);
     }
@@ -72,14 +72,14 @@ export function PlanApprovalModal({ incidentId, plan, onClose, onRefreshPlan }: 
         } catch {
           // response wasn't JSON; fall back to the status code above
         }
-        toast.error(`Failed to submit feedback: ${detail}`);
+        ngToast.error(`Failed to submit feedback: ${detail}`);
         return;
       }
-      toast.success('Feedback submitted — plan is being revised.');
+      ngToast.success('Feedback submitted — plan is being revised.');
       onRefreshPlan();
       onClose();
     } catch (e) {
-      toast.error(`Failed to submit feedback: ${e instanceof Error ? e.message : 'network error'}`);
+      ngToast.error(`Failed to submit feedback: ${e instanceof Error ? e.message : 'network error'}`);
     } finally {
       setSubmitting(false);
     }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import toast from 'react-hot-toast';
+import { ngToast } from '../../design-system/toast';
 import { ArrowLeft, AlertTriangle } from 'lucide-react';
 import { useIncidentData } from '../../hooks/useIncidentData';
 import { useIncidentEvents } from '../../hooks/useIncidentEvents';
@@ -71,11 +71,11 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
                 } catch {
                     // response wasn't JSON; fall back to the status code above
                 }
-                toast.error(`Failed to execute plan: ${detail}`);
+                ngToast.error(`Failed to execute plan: ${detail}`);
                 return;
             }
 
-            toast.success('Plan approved — executing recovery actions.');
+            ngToast.success('Plan approved — executing recovery actions.');
             onRefreshParent();
 
             // Approval is asynchronous when Temporal owns the workflow. Poll
@@ -90,13 +90,13 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
                 const status = String(updatedIncident.status || '').toUpperCase();
 
                 if (status === 'RESOLVED') {
-                    toast.success('Recovery verified — incident resolved.');
+                    ngToast.success('Recovery verified — incident resolved.');
                     onRefreshParent();
                     return;
                 }
 
                 if (status === 'FAILED') {
-                    toast.error('Recovery completed but verification failed — incident escalated for follow-up.', { duration: 7000 });
+                    ngToast.error('Recovery completed but verification failed — incident escalated for follow-up.', { duration: 7000 });
                     onRefreshParent();
                     return;
                 }
@@ -105,9 +105,9 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
             // The plan is still running or the workflow is taking longer than
             // the short UI polling window. Its latest state continues to be
             // refreshed by useIncidentData.
-            toast('Recovery execution is still in progress. Live status will update automatically.', { icon: '⏳' });
+            ngToast.info('Recovery execution is still in progress. Live status will update automatically.');
         } catch (e) {
-            toast.error(`Failed to execute plan: ${e instanceof Error ? e.message : 'network error'}`);
+            ngToast.error(`Failed to execute plan: ${e instanceof Error ? e.message : 'network error'}`);
         }
     };
 
@@ -126,12 +126,12 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
                 } catch {
                     // response wasn't JSON; fall back to the status code above
                 }
-                toast.error(`Failed to start triage: ${detail}`);
+                ngToast.error(`Failed to start triage: ${detail}`);
                 return;
             }
             onRefreshParent();
         } catch (e) {
-            toast.error(`Failed to start triage: ${e instanceof Error ? e.message : 'network error'}`);
+            ngToast.error(`Failed to start triage: ${e instanceof Error ? e.message : 'network error'}`);
         } finally {
             setTriageStarting(false);
         }
@@ -154,14 +154,14 @@ export function IncidentWorkspace({ incidentId, selectedIncident, onRefreshParen
                 } catch {
                     // response wasn't JSON; fall back to the status code above
                 }
-                toast.error(`Failed to cancel incident: ${detail}`);
+                ngToast.error(`Failed to cancel incident: ${detail}`);
                 return;
             }
-            toast.success('Incident cancelled.');
+            ngToast.success('Incident cancelled.');
             setIsCancelModalOpen(false);
             onRefreshParent();
         } catch (e) {
-            toast.error(`Failed to cancel incident: ${e instanceof Error ? e.message : 'network error'}`);
+            ngToast.error(`Failed to cancel incident: ${e instanceof Error ? e.message : 'network error'}`);
         } finally {
             setCancelling(false);
         }
