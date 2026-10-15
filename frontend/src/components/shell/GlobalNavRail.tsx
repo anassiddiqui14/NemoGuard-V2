@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useNavItems } from '../../hooks/useNavItems';
+import { Tooltip } from '../../design-system/components/Tooltip';
 
 interface Props {
     collapsed: boolean;
@@ -29,33 +30,48 @@ export function GlobalNavRail({ collapsed }: Props) {
             className="hidden md:flex flex-col flex-shrink-0 h-full border-r border-white/[0.06] bg-black/20 overflow-hidden"
         >
             <nav className={`flex-1 py-3 space-y-1 overflow-y-auto ${collapsed ? 'px-2' : 'px-2.5'}`}>
-                {items.map((item) => (
-                    <NavLink
-                        key={item.to}
-                        to={item.to}
-                        end={item.end}
-                        title={collapsed ? item.label : undefined}
-                        className={({ isActive }) =>
-                            `relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${collapsed ? 'justify-center' : ''} ${isActive
-                                ? 'bg-primary/[0.12] text-primary ring-1 ring-primary/25'
-                                : 'text-text-secondary hover:bg-white/[0.04] hover:text-text-primary'
-                            }`
-                        }
-                    >
-                        {({ isActive }) => (
-                            <>
-                                {isActive && (
-                                    <motion.div
-                                        layoutId="nav-active-rail"
-                                        className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-gradient-to-b from-primary to-agent-active"
-                                    />
-                                )}
-                                <span className="flex-shrink-0">{item.icon}</span>
-                                {!collapsed && <span className="text-[13px] font-medium whitespace-nowrap">{item.label}</span>}
-                            </>
-                        )}
-                    </NavLink>
-                ))}
+                {items.map((item) => {
+                    const link = (
+                        <NavLink
+                            key={item.to}
+                            to={item.to}
+                            end={item.end}
+                            className={({ isActive }) =>
+                                `relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors w-full ${collapsed ? 'justify-center' : ''} ${isActive
+                                    ? 'bg-primary/[0.12] text-primary ring-1 ring-primary/25'
+                                    : 'text-text-secondary hover:bg-white/[0.04] hover:text-text-primary'
+                                }`
+                            }
+                        >
+                            {({ isActive }) => (
+                                <>
+                                    {isActive && (
+                                        <motion.div
+                                            layoutId="nav-active-rail"
+                                            className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-gradient-to-b from-primary to-agent-active"
+                                        />
+                                    )}
+                                    <span className="flex-shrink-0">{item.icon}</span>
+                                    {!collapsed && <span className="text-[13px] font-medium whitespace-nowrap">{item.label}</span>}
+                                </>
+                            )}
+                        </NavLink>
+                    );
+                    // UI MODERNIZATION (Phase 18, spec Section 73): collapsed
+                    // rail icons previously relied solely on the native HTML
+                    // `title` attribute -- the browser's own slow (~1s delay),
+                    // unstyled, cross-browser-inconsistent tooltip. Wrapped in
+                    // the themed Tooltip primitive instead, only when
+                    // collapsed (expanded state already shows the label
+                    // inline, so a tooltip there would be redundant).
+                    return collapsed ? (
+                        <Tooltip key={item.to} label={item.label} side="right">
+                            {link}
+                        </Tooltip>
+                    ) : (
+                        link
+                    );
+                })}
             </nav>
         </motion.aside>
     );

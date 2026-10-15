@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Sun, Moon, ShieldCheck, ShieldOff, Bell } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuthGate } from '../../contexts/AuthGateContext';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { getSlaNotificationsEnabled, setSlaNotificationsEnabled } from '../../hooks/useNotifications';
 
 function SettingRow({ icon, title, subtitle, control }: { icon: React.ReactNode; title: string; subtitle: string; control: React.ReactNode }) {
     return (
@@ -43,6 +45,12 @@ export function SettingsPage() {
     const { theme, toggleTheme } = useTheme();
     const { devLoginEnabled, credentialLoginEnabled } = useAuthGate();
     const user = useCurrentUser();
+    // UI MODERNIZATION (Phase 19): this toggle used to be entirely fake --
+    // `checked={true} onChange={() => {}}` -- it looked interactive but
+    // silently did nothing. Now genuinely persisted to localStorage and
+    // actually filters sla_risk entries out of useNotifications() (see
+    // hooks/useNotifications.ts) when disabled.
+    const [slaNotifications, setSlaNotifications] = useState(getSlaNotificationsEnabled);
 
     return (
         <div className="h-full overflow-y-auto p-6 max-w-xl mx-auto">
@@ -103,7 +111,15 @@ export function SettingsPage() {
                     icon={<Bell className="w-4 h-4" />}
                     title="SLA breach notifications"
                     subtitle="Notify when an incident is close to breaching its SLA."
-                    control={<Toggle checked={true} onChange={() => { }} />}
+                    control={
+                        <Toggle
+                            checked={slaNotifications}
+                            onChange={(v) => {
+                                setSlaNotifications(v);
+                                setSlaNotificationsEnabled(v);
+                            }}
+                        />
+                    }
                 />
             </div>
         </div>

@@ -26,6 +26,17 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
 );
 Input.displayName = 'Input';
 
+export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
+    ({ className = '', ...rest }, ref) => (
+        <textarea
+            ref={ref}
+            className={`w-full rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50 transition-all resize-vertical ${className}`}
+            {...rest}
+        />
+    ),
+);
+Textarea.displayName = 'Textarea';
+
 export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(
     ({ className = '', children, ...rest }, ref) => (
         <select

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, Loader2, AlertTriangle, CheckCircle2, XCircle, Trash2, Edit3, ChevronDown } from 'lucide-react';
 import { authFetch } from '../../contexts/AuthGateContext';
+import { Input, Textarea, Select, FormField } from '../../design-system/components/Input';
+import { Button } from '../../design-system/components/Button';
 
 interface MemoryRecord {
     memory_id: string;
@@ -128,25 +130,21 @@ function MemoryRow({ record, onChanged }: { record: MemoryRecord; onChanged: () 
 
                             {editing ? (
                                 <div className="space-y-2.5">
-                                    <label className="block text-[11px] text-text-muted">
-                                        Root cause
-                                        <textarea value={draft.root_cause} onChange={(e) => setDraft((d) => ({ ...d, root_cause: e.target.value }))} rows={2} className="mt-1 w-full rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary focus:outline-none focus:ring-primary/50" />
-                                    </label>
-                                    <label className="block text-[11px] text-text-muted">
-                                        Cause type
-                                        <input value={draft.cause_type} onChange={(e) => setDraft((d) => ({ ...d, cause_type: e.target.value }))} className="mt-1 w-full rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary focus:outline-none focus:ring-primary/50" />
-                                    </label>
-                                    <label className="block text-[11px] text-text-muted">
-                                        Successful recovery
-                                        <textarea value={draft.successful_recovery} onChange={(e) => setDraft((d) => ({ ...d, successful_recovery: e.target.value }))} rows={2} className="mt-1 w-full rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary focus:outline-none focus:ring-primary/50" />
-                                    </label>
-                                    <label className="block text-[11px] text-text-muted">
-                                        Human feedback
-                                        <textarea value={draft.human_feedback} onChange={(e) => setDraft((d) => ({ ...d, human_feedback: e.target.value }))} rows={2} className="mt-1 w-full rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary focus:outline-none focus:ring-primary/50" />
-                                    </label>
+                                    <FormField label="Root cause">
+                                        <Textarea value={draft.root_cause} onChange={(e) => setDraft((d) => ({ ...d, root_cause: e.target.value }))} rows={2} />
+                                    </FormField>
+                                    <FormField label="Cause type">
+                                        <Input value={draft.cause_type} onChange={(e) => setDraft((d) => ({ ...d, cause_type: e.target.value }))} />
+                                    </FormField>
+                                    <FormField label="Successful recovery">
+                                        <Textarea value={draft.successful_recovery} onChange={(e) => setDraft((d) => ({ ...d, successful_recovery: e.target.value }))} rows={2} />
+                                    </FormField>
+                                    <FormField label="Human feedback">
+                                        <Textarea value={draft.human_feedback} onChange={(e) => setDraft((d) => ({ ...d, human_feedback: e.target.value }))} rows={2} />
+                                    </FormField>
                                     <div className="flex gap-2">
-                                        <button onClick={saveEdit} disabled={busy} className="press-scale text-[11.5px] font-semibold px-3 py-1.5 rounded-lg bg-primary text-white disabled:opacity-50">Save</button>
-                                        <button onClick={() => setEditing(false)} className="press-scale text-[11.5px] font-medium px-3 py-1.5 rounded-lg ring-1 ring-white/[0.08] text-text-secondary">Cancel</button>
+                                        <Button size="sm" onClick={saveEdit} loading={busy}>Save</Button>
+                                        <Button size="sm" variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
                                     </div>
                                 </div>
                             ) : (
@@ -226,16 +224,16 @@ export function IncidentMemoryTab() {
                     Learned patterns from past incidents. Approve a record so future investigations use it as context, or reject/redact it so they don't.
                 </p>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    <select
+                    <Select
                         value={statusFilter}
                         onChange={(e) => setStatusFilter(e.target.value)}
-                        className="text-[12px] rounded-lg px-2.5 py-1.5 bg-white/[0.03] ring-1 ring-white/[0.06] text-text-secondary focus:outline-none focus:ring-primary/50"
+                        className="!text-[12px] !py-1.5"
                     >
                         <option value="">All statuses</option>
                         {STATUSES.map((s) => (
                             <option key={s} value={s}>{s}</option>
                         ))}
-                    </select>
+                    </Select>
                     <button onClick={load} disabled={loading} className="press-scale inline-flex items-center gap-2 text-[12px] font-medium px-3 py-1.5 rounded-lg ring-1 ring-white/[0.08] hover:bg-white/[0.05] transition disabled:opacity-50">
                         <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                     </button>
