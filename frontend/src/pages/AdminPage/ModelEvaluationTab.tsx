@@ -5,6 +5,8 @@ import { authFetch } from '../../contexts/AuthGateContext';
 import { Chip } from '../../design-system/components/Chip';
 import { SkeletonTableRows } from '../../design-system/components/Skeleton';
 import { Input, FormField } from '../../design-system/components/Input';
+import { IconButton } from '../../design-system/components/IconButton';
+import { Button } from '../../design-system/components/Button';
 
 interface EvalRun {
     run_id: string;
@@ -81,9 +83,10 @@ function CreateRunForm({ historicalIncidents, availableModels, onCreated, onCanc
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="console-surface rounded-2xl p-4 space-y-3 overflow-hidden">
             <div className="flex items-center justify-between">
                 <div className="text-[13px] font-semibold text-text-primary">New model evaluation run</div>
-                <button onClick={onCancel} className="focus-ring press-scale w-6 h-6 rounded-md flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-white/[0.05]">
+                {/* UI MODERNIZATION (spec Section 18/73): icon-only close button had no accessible name. */}
+                <IconButton onClick={onCancel} label="Cancel" size="sm">
                     <X className="w-3.5 h-3.5" />
-                </button>
+                </IconButton>
             </div>
 
             {error && <div className="text-[11.5px] text-critical bg-critical/10 ring-1 ring-critical/25 rounded-lg px-3 py-2">{error}</div>}
@@ -152,9 +155,10 @@ function ScorecardView({ runId, onClose }: { runId: string; onClose: () => void 
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="console-surface rounded-2xl p-4 space-y-3 overflow-hidden">
             <div className="flex items-center justify-between">
                 <div className="text-[13px] font-semibold text-text-primary">Scorecard — {runId}</div>
-                <button onClick={onClose} className="focus-ring press-scale w-6 h-6 rounded-md flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-white/[0.05]">
+                {/* UI MODERNIZATION (spec Section 18/73): icon-only close button had no accessible name. */}
+                <IconButton onClick={onClose} label="Close scorecard" size="sm">
                     <X className="w-3.5 h-3.5" />
-                </button>
+                </IconButton>
             </div>
             {loading ? (
                 <div className="text-[12px] text-text-muted py-4 text-center"><Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading scorecard...</div>
@@ -269,12 +273,13 @@ export function ModelEvaluationTab() {
                     Compare AI model performance (RCA accuracy, evidence citation, latency) across the same real historical incidents replayed through the full investigation graph.
                 </p>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    <button onClick={() => setShowForm((s) => !s)} className="press-scale inline-flex items-center gap-2 text-[12px] font-medium px-3 py-1.5 rounded-lg bg-primary/15 text-primary ring-1 ring-primary/30 hover:bg-primary/20 transition">
-                        <Plus className="w-3.5 h-3.5" /> New run
-                    </button>
-                    <button onClick={load} disabled={loading} className="press-scale inline-flex items-center gap-2 text-[12px] font-medium px-3 py-1.5 rounded-lg ring-1 ring-white/[0.08] hover:bg-white/[0.05] transition disabled:opacity-50">
+                    <Button size="sm" variant="secondary" onClick={() => setShowForm((s) => !s)} leadingIcon={<Plus className="w-3.5 h-3.5" />}>
+                        New run
+                    </Button>
+                    {/* UI MODERNIZATION (spec Section 18/73): icon-only refresh button had no accessible name. */}
+                    <IconButton onClick={load} label="Refresh evaluation runs" size="sm">
                         <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                    </button>
+                    </IconButton>
                 </div>
             </div>
 

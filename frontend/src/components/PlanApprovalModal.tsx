@@ -4,6 +4,7 @@ import { CheckSquare, FileText, AlertTriangle, ShieldCheck, Send, X, CheckCircle
 import { ngToast } from '../design-system/toast';
 import { modalBackdrop, modalPanel } from './dashboard/shared';
 import { authFetch } from '../contexts/AuthGateContext';
+import { IconButton } from '../design-system/components/IconButton';
 
 const RISK_STYLES: Record<string, string> = {
   LOW: 'border-l-healthy',
@@ -98,9 +99,17 @@ export function PlanApprovalModal({ incidentId, plan, onClose, onRefreshPlan }: 
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-agent-active/15 text-agent-active">v{plan.plan_version}</span>
             )}
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/[0.06] rounded-full transition-colors">
-            <X className="w-4 h-4 text-text-muted hover:text-text-primary" />
-          </button>
+          {/*
+           * UI MODERNIZATION (spec Section 18/73 -- genuine accessibility
+           * gap found and fixed): this close button had NO accessible
+           * name at all -- icon-only, no aria-label, no title. For the
+           * plan-approval workflow specifically (a critical, high-stakes
+           * action), this is a particularly significant gap to leave
+           * unfixed. Migrated to IconButton, which makes `label` required.
+           */}
+          <IconButton onClick={onClose} label="Close">
+            <X className="w-4 h-4" />
+          </IconButton>
         </div>
 
         <div className="p-6 overflow-y-auto space-y-4 flex-1">

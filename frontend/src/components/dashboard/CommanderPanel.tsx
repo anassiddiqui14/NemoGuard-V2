@@ -4,6 +4,7 @@ import { ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck, X, Bot, Spark
 import { useCommander } from '../../hooks/useCommander';
 import { EmptyState } from './shared';
 import { BrandMark } from '../../design-system/components/BrandMark';
+import { IconButton } from '../../design-system/components/IconButton';
 
 const SEVERITY_DOT: Record<string, string> = { critical: 'bg-critical', warning: 'bg-warning' };
 
@@ -186,9 +187,10 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                                     </span>
                                 )}
                             </div>
-                            <button onClick={() => setOpen(false)} className="focus-ring press-scale w-7 h-7 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-white/[0.05] transition-colors">
+                            {/* UI MODERNIZATION (spec Section 18/73): icon-only close button had no accessible name. */}
+                            <IconButton onClick={() => setOpen(false)} label="Close Commander">
                                 <X className="w-4 h-4" />
-                            </button>
+                            </IconButton>
                         </div>
 
                         <div className="flex gap-1 px-3 pt-2.5 flex-shrink-0">
@@ -296,9 +298,12 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                 so the operator has a persistent, ambient signal even with
                 the panel collapsed, without ever taking up page real
                 estate the way the earlier permanent-panel design did. */}
+            {/* UI MODERNIZATION (spec Section 18/73): icon-only launcher button had no accessible name. */}
             <motion.button
                 onClick={() => setOpen((o) => !o)}
                 whileTap={{ scale: 0.92 }}
+                aria-label={open ? 'Close Commander' : 'Open Commander'}
+                title={open ? 'Close Commander' : 'Open Commander'}
                 className="focus-ring relative w-14 h-14 rounded-full bg-primary text-white shadow-2xl shadow-primary/30 flex items-center justify-center"
             >
                 <AnimatePresence mode="wait">
