@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck, Sparkles, X, Bot } from 'lucide-react';
+import { ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck, X, Bot, Sparkles } from 'lucide-react';
 import { useCommander } from '../../hooks/useCommander';
 import { EmptyState } from './shared';
+import { BrandMark } from '../../design-system/components/BrandMark';
 
 const SEVERITY_DOT: Record<string, string> = { critical: 'bg-critical', warning: 'bg-warning' };
 
@@ -43,13 +44,19 @@ function ConversationBubble({ role, intent, content, created_at }: { role: strin
 
 const THINKING_LABELS: Record<string, string> = { ASK: 'Thinking', GUIDE: 'Weighing guidance', ADD_FACT: 'Reconciling fact' };
 
+/*
+ * UI MODERNIZATION (spec Section 75 -- signature brand animation):
+ * previously a generic spinning Lucide Sparkles icon. Swapped for the
+ * consolidated BrandMark primitive in its "active" state, so the
+ * actual NemoGuard mark -- not a borrowed icon-library glyph -- is
+ * what an operator sees whenever Commander is genuinely processing a
+ * request.
+ */
 function ThinkingBubble({ mode }: { mode: 'ASK' | 'GUIDE' | 'ADD_FACT' }) {
     return (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex justify-start mb-2.5">
             <div className="max-w-[85%] rounded-2xl px-3.5 py-2.5 bg-white/[0.03] ring-1 ring-white/[0.06] flex items-center gap-2">
-                <motion.span animate={{ rotate: 360 }} transition={{ duration: 2.2, repeat: Infinity, ease: 'linear' }} className="flex-shrink-0">
-                    <Sparkles className="w-3 h-3 text-agent-active" />
-                </motion.span>
+                <BrandMark state="active" size="sm" />
                 <span className="text-[11.5px] text-text-muted font-medium">{THINKING_LABELS[mode]}</span>
                 <span className="flex items-center gap-0.5">
                     {[0, 1, 2].map((i) => (
