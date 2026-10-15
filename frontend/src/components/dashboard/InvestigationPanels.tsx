@@ -238,10 +238,22 @@ export function ActivityAndImpactRow({ activeIncidentId, liveEvents, sseStatus, 
                                         fullMark: Math.max(impact.length, 5),
                                     },
                                 ]}>
-                                    <PolarGrid stroke="rgba(255,255,255,0.06)" />
-                                    <PolarAngleAxis dataKey="subject" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9.5 }} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#14141F', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '10px', fontSize: '12px' }} />
-                                    <Radar name="Impact" dataKey="A" stroke="#C026D3" fill="#C026D3" fillOpacity={0.35} />
+                                    {/*
+                                     * UI MODERNIZATION (Phase 22, spec Section 53): this chart
+                                     * previously had HARDCODED dark-mode-only colors --
+                                     * `backgroundColor: '#14141F'` (the old dark
+                                     * --color-surface-elevated hex) and
+                                     * `rgba(255,255,255,0.0X)` white-overlay values that are
+                                     * invisible/wrong on a light background. Switched to the
+                                     * app's actual CSS custom properties (same ones every other
+                                     * component reads from index.css's @theme block) so this
+                                     * chart now genuinely adapts to both themes instead of being
+                                     * permanently stuck looking like dark mode.
+                                     */}
+                                    <PolarGrid stroke="var(--panel-border)" />
+                                    <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--color-text-muted)', fontSize: 9.5 }} />
+                                    <Tooltip contentStyle={{ backgroundColor: 'var(--color-surface-elevated)', borderColor: 'var(--panel-border)', borderRadius: '10px', fontSize: '12px', color: 'var(--color-text-primary)' }} />
+                                    <Radar name="Impact" dataKey="A" stroke="var(--color-agent-active)" fill="var(--color-agent-active)" fillOpacity={0.35} />
                                 </RadarChart>
                             </ResponsiveContainer>
                         ) : (

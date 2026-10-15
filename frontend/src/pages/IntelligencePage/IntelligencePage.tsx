@@ -4,6 +4,7 @@ import { Layers, AlertOctagon, FileSearch, Clock3, ShieldCheck, TrendingUp } fro
 import { fadeInUp, severityPill, needsAttention, EmptyState } from '../../components/dashboard/shared';
 import type { IncidentSummary } from '../../components/dashboard/shared';
 import { authFetch } from '../../contexts/AuthGateContext';
+import { SkeletonCard } from '../../design-system/components/Skeleton';
 
 // The "Intelligence" page — a decision-ready, at-a-glance risk overview
 // across the whole incident response system, distinct from the per-
@@ -93,6 +94,17 @@ export function IntelligencePage() {
     const [openIncidents, setOpenIncidents] = useState<IncidentSummary[]>([]);
     const [resolvedToday, setResolvedToday] = useState(0);
     const [loading, setLoading] = useState(true);
+    // UI MODERNIZATION (Phase 21, spec Section 62): this page explicitly
+    // bills itself as a "decision-ready, at-a-glance risk overview" --
+    // but a failed fetch previously silently reset openIncidents to []
+    // in the catch block, which then rendered every stat card as a
+    // reassuring "0" and the "No active incidents, the queue is clear"
+    // empty state. A manager glancing at this page during an actual API
+    // outage would see the exact opposite of reality: a false "all
+    // clear" at the worst possible moment. Added a real error state,
+    // and (consistent with every other polling surface fixed so far)
+    // kept whatever last-known-good data existed rather than wiping it.
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -102,6 +114,7 @@ export function IntelligencePage() {
                     authFetch('/api/v2/incidents?state=open'),
                     authFetch('/api/v2/incidents?state=all'),
                 ]);
+                if (!openRes.ok || !allRes.ok) throw new Error(`HTTP ${openRes.status}/${allRes.status}`);
                 const openData = (await openRes.json()) as IncidentSummary[];
                 const allData = (await allRes.json()) as IncidentSummary[];
                 if (cancelled) return;
@@ -113,8 +126,9 @@ export function IntelligencePage() {
                     ).length
                     : 0;
                 setResolvedToday(resolvedTodayCount);
-            } catch {
-                setOpenIncidents([]);
+                setError(null);
+            } catch (e) {
+                if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load risk data');
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -158,40 +172,53 @@ export function IntelligencePage() {
                 </p>
             </motion.div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <StatCard
-                    icon={<Layers className="w-4.5 h-4.5" />}
-                    value={metrics.activeIncidents}
-                    label="Active incidents"
-                    sublabel="in the response queue"
-                    tone="default"
-                    delay={0}
-                />
-                <StatCard
-                    icon={<AlertOctagon className="w-4.5 h-4.5" />}
-                    value={metrics.criticalRisk}
-                    label="Critical risk"
-                    sublabel="SEV-1 incidents"
-                    tone="critical"
-                    delay={0.05}
-                />
-                <StatCard
-                    icon={<FileSearch className="w-4.5 h-4.5" />}
-                    value={metrics.reviewRequired}
-                    label="Review required"
-                    sublabel="plans awaiting human sign-off"
-                    tone="warning"
-                    delay={0.1}
-                />
-                <StatCard
-                    icon={<ShieldCheck className="w-4.5 h-4.5" />}
-                    value={metrics.resolvedToday}
-                    label="Resolved today"
-                    sublabel="verified recoveries"
-                    tone="healthy"
-                    delay={0.15}
-                />
-            </div>
+            {error && (
+                <div className="mb-4 px-3 py-2 rounded-lg bg-critical/10 ring-1 ring-critical/25 flex items-center gap-2 text-[12px] text-critical">
+                    <AlertOctagon className="w-3.5 h-3.5 flex-shrink-0" />
+                    Couldn't refresh risk data -- figures below may be stale. {error}
+                </div>
+            )}
+
+            {loading && openIncidents.length === 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <StatCard
+                        icon={<Layers className="w-4.5 h-4.5" />}
+                        value={metrics.activeIncidents}
+                        label="Active incidents"
+                        sublabel="in the response queue"
+                        tone="default"
+                        delay={0}
+                    />
+                    <StatCard
+                        icon={<AlertOctagon className="w-4.5 h-4.5" />}
+                        value={metrics.criticalRisk}
+                        label="Critical risk"
+                        sublabel="SEV-1 incidents"
+                        tone="critical"
+                        delay={0.05}
+                    />
+                    <StatCard
+                        icon={<FileSearch className="w-4.5 h-4.5" />}
+                        value={metrics.reviewRequired}
+                        label="Review required"
+                        sublabel="plans awaiting human sign-off"
+                        tone="warning"
+                        delay={0.1}
+                    />
+                    <StatCard
+                        icon={<ShieldCheck className="w-4.5 h-4.5" />}
+                        value={metrics.resolvedToday}
+                        label="Resolved today"
+                        sublabel="verified recoveries"
+                        tone="healthy"
+                        delay={0.15}
+                    />
+                </div>
+            )}
 
             <motion.div
                 initial={{ opacity: 0, y: 12 }}

@@ -7,6 +7,8 @@ import { severityPill, EmptyState, needsAttention, isActiveIncident } from '../.
 import type { IncidentSummary } from '../../components/dashboard/shared';
 import type { AgentEvent } from '../../hooks/useIncidentEvents';
 import { authFetch } from '../../contexts/AuthGateContext';
+import { SkeletonBlock } from '../../design-system/components/Skeleton';
+import { AlertTriangle } from 'lucide-react';
 
 // Operational readiness row — inspired by a UI exploration on the
 // `darshan-dev` branch (an "Operations" page summarizing service
@@ -81,19 +83,32 @@ export function AgentOperationsPage() {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [events, setEvents] = useState<AgentEvent[]>([]);
     const [loadingEvents, setLoadingEvents] = useState(false);
+    // UI MODERNIZATION (Phase 20, spec Section 62): previously both
+    // fetches here had `.catch(() => {})` -- a failure was completely
+    // silent, leaving incidents/events empty with no indication to the
+    // operator that anything had gone wrong (vs. there genuinely being no
+    // events yet). Added real error surfaces for both.
+    const [incidentsError, setIncidentsError] = useState<string | null>(null);
+    const [eventsError, setEventsError] = useState<string | null>(null);
 
     useEffect(() => {
         let cancelled = false;
         const load = () => {
             authFetch('/api/v2/incidents?state=all')
-                .then((r) => r.json())
+                .then((r) => {
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    return r.json();
+                })
                 .then((data) => {
                     if (!cancelled && Array.isArray(data)) {
                         setIncidents(data);
                         setSelectedId((prev) => prev ?? (data.length > 0 ? data[0].incident_id : null));
+                        setIncidentsError(null);
                     }
                 })
-                .catch(() => { });
+                .catch((e) => {
+                    if (!cancelled) setIncidentsError(e instanceof Error ? e.message : 'Failed to load incidents');
+                });
         };
         load();
         const interval = setInterval(load, 5000);
@@ -111,7 +126,10 @@ export function AgentOperationsPage() {
         let cancelled = false;
         setLoadingEvents(true);
         authFetch(`/api/v2/incidents/${selectedId}/events`)
-            .then((r) => r.json())
+            .then((r) => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+            })
             .then((data) => {
                 if (!cancelled && Array.isArray(data)) {
                     setEvents(
@@ -123,9 +141,12 @@ export function AgentOperationsPage() {
                             message: e.message || '',
                         })),
                     );
+                    setEventsError(null);
                 }
             })
-            .catch(() => { })
+            .catch((e) => {
+                if (!cancelled) setEventsError(e instanceof Error ? e.message : 'Failed to load events');
+            })
             .finally(() => {
                 if (!cancelled) setLoadingEvents(false);
             });
@@ -143,7 +164,11 @@ export function AgentOperationsPage() {
                     <h2 className="text-[13px] font-semibold text-text-primary">Agent Operations</h2>
                     <p className="text-[11px] text-text-muted mt-0.5">Historical agent runs by incident</p>
                 </div>
-                {incidents.length === 0 ? (
+                {incidentsError && incidents.length === 0 ? (
+                    <div className="px-3 py-3 flex items-start gap-2 text-[11.5px] text-critical bg-critical/10 ring-1 ring-critical/25 rounded-lg mx-1">
+                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" /> {incidentsError}
+                    </div>
+                ) : incidents.length === 0 ? (
                     <div className="px-2 py-8 text-center text-[12px] text-text-muted">No incidents yet.</div>
                 ) : (
                     incidents.map((inc) => (
@@ -192,7 +217,15 @@ export function AgentOperationsPage() {
                                 Full Event History
                             </div>
                             {loadingEvents ? (
-                                <div className="p-6 text-[12.5px] text-text-muted">Loading events…</div>
+                                <div className="p-5 space-y-2.5">
+                                    {Array.from({ length: 5 }).map((_, i) => (
+                                        <SkeletonBlock key={i} className="h-4 w-full" />
+                                    ))}
+                                </div>
+                            ) : eventsError ? (
+                                <div className="p-5 flex items-start gap-2 text-[12px] text-critical">
+                                    <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" /> {eventsError}
+                                </div>
                             ) : (
                                 <LiveOperationsConsole events={events} status="connected" />
                             )}
