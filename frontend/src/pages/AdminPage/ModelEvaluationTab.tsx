@@ -4,6 +4,7 @@ import { Plus, RefreshCw, Loader2, AlertTriangle, Play, X, BarChart3 } from 'luc
 import { authFetch } from '../../contexts/AuthGateContext';
 import { Chip } from '../../design-system/components/Chip';
 import { SkeletonTableRows } from '../../design-system/components/Skeleton';
+import { Input, FormField } from '../../design-system/components/Input';
 
 interface EvalRun {
     run_id: string;
@@ -87,10 +88,9 @@ function CreateRunForm({ historicalIncidents, availableModels, onCreated, onCanc
 
             {error && <div className="text-[11.5px] text-critical bg-critical/10 ring-1 ring-critical/25 rounded-lg px-3 py-2">{error}</div>}
 
-            <label className="block text-[11px] text-text-muted">
-                Run name *
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ultra vs Super Q3 benchmark" className="mt-1 w-full rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50" />
-            </label>
+            <FormField label="Run name *">
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ultra vs Super Q3 benchmark" />
+            </FormField>
 
             <div>
                 <div className="text-[11px] text-text-muted mb-1.5">Models to compare *</div>

@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Search, Bell, Sun, Moon, Clock, FileCheck2, PanelLeftClose, PanelLeftOpen, Menu } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster } from 'react-hot-toast';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNotifications } from '../../hooks/useNotifications';
+import { useClickOutside } from '../../hooks/useClickOutside';
 import { GlobalNavRail } from './GlobalNavRail';
 import { MobileNavDrawer } from './MobileNavDrawer';
 import { UserMenu } from './UserMenu';
@@ -37,15 +38,7 @@ function ThemeToggle() {
 function NotificationBell({ onSelectIncident }: { onSelectIncident: (id: string) => void }) {
     const notifications = useNotifications();
     const [open, setOpen] = useState(false);
-    const ref = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const onClick = (e: MouseEvent) => {
-            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-        };
-        document.addEventListener('mousedown', onClick);
-        return () => document.removeEventListener('mousedown', onClick);
-    }, []);
+    const ref = useClickOutside<HTMLDivElement>(() => setOpen(false));
 
     return (
         <div className="relative" ref={ref}>

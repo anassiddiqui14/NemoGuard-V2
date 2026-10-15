@@ -1,22 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LogOut, Settings, ShieldCheck } from 'lucide-react';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { useClickOutside } from '../../hooks/useClickOutside';
 
 export function UserMenu() {
     const user = useCurrentUser();
     const [open, setOpen] = useState(false);
-    const ref = useRef<HTMLDivElement>(null);
+    const ref = useClickOutside<HTMLDivElement>(() => setOpen(false));
     const navigate = useNavigate();
-
-    useEffect(() => {
-        const onClick = (e: MouseEvent) => {
-            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-        };
-        document.addEventListener('mousedown', onClick);
-        return () => document.removeEventListener('mousedown', onClick);
-    }, []);
 
     const handleSignOut = () => {
         localStorage.removeItem('nemoguard_token');

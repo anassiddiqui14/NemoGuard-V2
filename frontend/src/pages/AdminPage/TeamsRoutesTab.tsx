@@ -4,6 +4,7 @@ import { Plus, RefreshCw, Loader2, AlertTriangle, CheckCircle2, X } from 'lucide
 import { authFetch } from '../../contexts/AuthGateContext';
 import { Chip } from '../../design-system/components/Chip';
 import { SkeletonTableRows } from '../../design-system/components/Skeleton';
+import { Input, Select, FormField } from '../../design-system/components/Input';
 
 interface TeamsRoute {
     route_id: string;
@@ -84,36 +85,30 @@ function CreateRouteForm({ onCreated, onCancel }: { onCreated: () => void; onCan
             {error && <div className="text-[11.5px] text-critical bg-critical/10 ring-1 ring-critical/25 rounded-lg px-3 py-2">{error}</div>}
 
             <div className="grid grid-cols-2 gap-3">
-                <label className="text-[11px] text-text-muted">
-                    Route name *
-                    <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Prod Data Eng" className="mt-1 w-full rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50" />
-                </label>
-                <label className="text-[11px] text-text-muted">
-                    Environment filter
-                    <input value={environment} onChange={(e) => setEnvironment(e.target.value)} placeholder="production (blank = all)" className="mt-1 w-full rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50" />
-                </label>
-                <label className="text-[11px] text-text-muted">
-                    Service pattern
-                    <input value={servicePattern} onChange={(e) => setServicePattern(e.target.value)} placeholder="e.g. data-eng-* (blank = all)" className="mt-1 w-full rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50" />
-                </label>
-                <label className="text-[11px] text-text-muted">
-                    Minimum severity
-                    <select value={severityThreshold} onChange={(e) => setSeverityThreshold(e.target.value)} className="mt-1 w-full rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary focus:outline-none focus:ring-primary/50">
+                <FormField label="Route name *">
+                    <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Prod Data Eng" />
+                </FormField>
+                <FormField label="Environment filter">
+                    <Input value={environment} onChange={(e) => setEnvironment(e.target.value)} placeholder="production (blank = all)" />
+                </FormField>
+                <FormField label="Service pattern">
+                    <Input value={servicePattern} onChange={(e) => setServicePattern(e.target.value)} placeholder="e.g. data-eng-* (blank = all)" />
+                </FormField>
+                <FormField label="Minimum severity">
+                    <Select value={severityThreshold} onChange={(e) => setSeverityThreshold(e.target.value)}>
                         <option value="">Any severity</option>
                         <option value="low">Low+</option>
                         <option value="medium">Medium+</option>
                         <option value="high">High+</option>
                         <option value="critical">Critical only</option>
-                    </select>
-                </label>
-                <label className="text-[11px] text-text-muted">
-                    MS Teams Team ID
-                    <input value={teamId} onChange={(e) => setTeamId(e.target.value)} placeholder="optional" className="mt-1 w-full rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50" />
-                </label>
-                <label className="text-[11px] text-text-muted">
-                    MS Teams Channel ID
-                    <input value={channelId} onChange={(e) => setChannelId(e.target.value)} placeholder="optional" className="mt-1 w-full rounded-lg px-3 py-2 text-[12.5px] bg-white/[0.03] ring-1 ring-white/[0.06] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-primary/50" />
-                </label>
+                    </Select>
+                </FormField>
+                <FormField label="MS Teams Team ID">
+                    <Input value={teamId} onChange={(e) => setTeamId(e.target.value)} placeholder="optional" />
+                </FormField>
+                <FormField label="MS Teams Channel ID">
+                    <Input value={channelId} onChange={(e) => setChannelId(e.target.value)} placeholder="optional" />
+                </FormField>
             </div>
 
             <div>
