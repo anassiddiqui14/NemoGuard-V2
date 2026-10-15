@@ -19,13 +19,42 @@ export interface DropdownItem {
     disabled?: boolean;
 }
 
-export function Dropdown({ trigger, items, align = 'right' }: { trigger: ReactNode; items: DropdownItem[]; align?: 'left' | 'right' }) {
-    const [open, setOpen] = useState(false);
+export function Dropdown({
+    trigger,
+    items,
+    align = 'right',
+    header,
+    width = 'min-w-[180px]',
+    open: controlledOpen,
+    onOpenChange,
+}: {
+    trigger: ReactNode;
+    items: DropdownItem[];
+    align?: 'left' | 'right';
+    // Optional rich content rendered above the item list (e.g. a user
+    // info block) -- added so callers like UserMenu, whose panel isn't
+    // JUST a flat list of label+icon actions, can still use this
+    // primitive instead of hand-rolling their own positioning/animation.
+    header?: ReactNode;
+    width?: string;
+    // Allows a caller to drive open/close externally (e.g. so a
+    // "Sign out" action can close the menu AND navigate in one go)
+    // while still falling back to fully self-contained internal state
+    // when uncontrolled.
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+}) {
+    const [internalOpen, setInternalOpen] = useState(false);
+    const open = controlledOpen ?? internalOpen;
+    const setOpen = (next: boolean) => {
+        setInternalOpen(next);
+        onOpenChange?.(next);
+    };
     const ref = useClickOutside<HTMLDivElement>(() => setOpen(false));
 
     return (
         <div className="relative inline-block" ref={ref}>
-            <div onClick={() => setOpen((o) => !o)}>{trigger}</div>
+            <div onClick={() => setOpen(!open)}>{trigger}</div>
             <AnimatePresence>
                 {open && (
                     <motion.div
@@ -33,23 +62,26 @@ export function Dropdown({ trigger, items, align = 'right' }: { trigger: ReactNo
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -8, scale: 0.97 }}
                         transition={{ duration: 0.15 }}
-                        className={`absolute top-full mt-2 min-w-[180px] menu-panel rounded-xl overflow-hidden z-50 py-1.5 ${align === 'right' ? 'right-0' : 'left-0'}`}
+                        className={`absolute top-full mt-2 ${width} menu-panel rounded-xl overflow-hidden z-50 ${header ? '' : 'py-1.5'} ${align === 'right' ? 'right-0' : 'left-0'}`}
                     >
-                        {items.map((item, idx) => (
-                            <button
-                                key={idx}
-                                onClick={() => {
-                                    if (item.disabled) return;
-                                    item.onClick();
-                                    setOpen(false);
-                                }}
-                                disabled={item.disabled}
-                                className={`w-full text-left px-4 py-2.5 transition-colors flex items-center gap-2.5 text-[12.5px] disabled:opacity-40 disabled:cursor-not-allowed ${item.destructive ? 'text-critical hover:bg-critical/10' : 'text-text-secondary hover:bg-white/[0.04] hover:text-text-primary'}`}
-                            >
-                                {item.icon}
-                                {item.label}
-                            </button>
-                        ))}
+                        {header}
+                        <div className="py-1.5">
+                            {items.map((item, idx) => (
+                                <button
+                                    key={idx}
+                                    onClick={() => {
+                                        if (item.disabled) return;
+                                        item.onClick();
+                                        setOpen(false);
+                                    }}
+                                    disabled={item.disabled}
+                                    className={`w-full text-left px-4 py-2.5 transition-colors flex items-center gap-2.5 text-[12.5px] disabled:opacity-40 disabled:cursor-not-allowed ${item.destructive ? 'text-critical hover:bg-critical/10' : 'text-text-secondary hover:bg-white/[0.04] hover:text-text-primary'}`}
+                                >
+                                    {item.icon}
+                                    {item.label}
+                                </button>
+                            ))}
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>

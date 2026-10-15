@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { ResponsiveContainer, Radar, RadarChart, PolarGrid, PolarAngleAxis, Tooltip } from 'recharts';
-import { AgentConstellation } from '../AgentConstellation';
+import { AgentConstellation, InvestigationChecklist } from '../AgentConstellation';
 import { LiveOperationsConsole } from '../LiveOperationsConsole';
 import { EmptyState, severityPill } from './shared';
 import { Search, Activity, TrendingUp, ChevronDown, Lightbulb } from 'lucide-react';
@@ -136,11 +136,24 @@ export function AgentAndHypothesisRow({
             >
                 <div className="p-4 h-full overflow-y-auto">
                     {!hypothesis ? (
-                        <EmptyState
-                            icon={<TrendingUp className="w-5 h-5" />}
-                            title={progress ? progress.title : 'No hypothesis formulated yet'}
-                            subtitle={progress ? progress.subtitle : 'Start triage to begin root-cause analysis.'}
-                        />
+                        activeIncidentId && liveEvents.length > 0 ? (
+                            // UI MODERNIZATION (spec Section 43 -- "NemoGuard
+                            // Investigation" branded checklist loader): while
+                            // waiting on a hypothesis, show real per-agent
+                            // progress (reusing AgentConstellation's exact
+                            // state computation, so this can never say
+                            // something different than the grid view does)
+                            // instead of a generic "no hypothesis yet" empty
+                            // state with zero indication of what's actually
+                            // happening.
+                            <InvestigationChecklist status={incidentStatus} events={liveEvents} />
+                        ) : (
+                            <EmptyState
+                                icon={<TrendingUp className="w-5 h-5" />}
+                                title={progress ? progress.title : 'No hypothesis formulated yet'}
+                                subtitle={progress ? progress.subtitle : 'Start triage to begin root-cause analysis.'}
+                            />
+                        )
                     ) : (
                         <div className="space-y-4">
                             <div className="relative rounded-xl p-4 bg-gradient-to-br from-agent-active/10 to-transparent ring-1 ring-agent-active/20">
