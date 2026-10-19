@@ -146,21 +146,32 @@ export function IncidentsPage() {
              * use skeletons for predictable structures like tables.
              */}
             {loading ? (
+                // UI MODERNIZATION (spec Section 58 -- responsive audit):
+                // this table previously had no overflow-x-auto wrapper at
+                // all (unlike every correctly-built Admin table), so at
+                // narrow viewports its 5 fixed columns had no horizontal
+                // scroll affordance -- real risk of either clipped
+                // content (overflow-hidden on the parent) or page-level
+                // horizontal overflow, both explicitly flagged by the
+                // spec. Added the same overflow-x-auto wrapper pattern
+                // already used correctly elsewhere.
                 <div className="glass-panel rounded-2xl overflow-hidden ring-1 ring-white/[0.06]">
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="border-b border-white/[0.06] text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-                                <th className="px-4 py-3">Severity</th>
-                                <th className="px-4 py-3">Incident</th>
-                                <th className="px-4 py-3">Status</th>
-                                <th className="px-4 py-3">Owner</th>
-                                <th className="px-4 py-3">Elapsed</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <SkeletonTableRows columns={5} rows={6} />
-                        </tbody>
-                    </table>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="border-b border-white/[0.06] text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+                                    <th className="px-4 py-3">Severity</th>
+                                    <th className="px-4 py-3">Incident</th>
+                                    <th className="px-4 py-3">Status</th>
+                                    <th className="px-4 py-3">Owner</th>
+                                    <th className="px-4 py-3">Elapsed</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <SkeletonTableRows columns={5} rows={6} />
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             ) : error && incidents.length === 0 ? (
                 <div className="mt-10">
@@ -187,40 +198,42 @@ export function IncidentsPage() {
                 </div>
             ) : (
                 <div className="glass-panel rounded-2xl overflow-hidden ring-1 ring-white/[0.06]">
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="border-b border-white/[0.06] text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-                                <th className="px-4 py-3">Severity</th>
-                                <th className="px-4 py-3">Incident</th>
-                                <th className="px-4 py-3">Status</th>
-                                <th className="px-4 py-3">Owner</th>
-                                <th className="px-4 py-3">Elapsed</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.map((inc, idx) => (
-                                <motion.tr
-                                    key={inc.incident_id}
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    transition={{ delay: idx * 0.02 }}
-                                    onClick={() => setSelectedId(inc.incident_id)}
-                                    className="border-b border-white/[0.04] last:border-b-0 hover:bg-white/[0.02] cursor-pointer transition-colors"
-                                >
-                                    <td className="px-4 py-3">{severityPill(inc.severity)}</td>
-                                    <td className="px-4 py-3 min-w-0">
-                                        <div className="text-[13px] font-medium text-text-primary truncate max-w-[360px]">{inc.title}</div>
-                                        <div className="text-[10.5px] font-mono text-text-muted mt-0.5">{inc.incident_id}</div>
-                                    </td>
-                                    <td className="px-4 py-3">{statusBadge(inc.status)}</td>
-                                    <td className="px-4 py-3 text-[12.5px] text-text-secondary">{inc.owner_team || '—'}</td>
-                                    <td className="px-4 py-3 text-[12.5px] font-mono text-text-secondary">
-                                        {formatElapsedSeconds(inc.detected_at, inc.resolved_at)}
-                                    </td>
-                                </motion.tr>
-                            ))}
-                        </tbody>
-                    </table>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="border-b border-white/[0.06] text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+                                    <th className="px-4 py-3">Severity</th>
+                                    <th className="px-4 py-3">Incident</th>
+                                    <th className="px-4 py-3">Status</th>
+                                    <th className="px-4 py-3">Owner</th>
+                                    <th className="px-4 py-3">Elapsed</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filtered.map((inc, idx) => (
+                                    <motion.tr
+                                        key={inc.incident_id}
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        transition={{ delay: idx * 0.02 }}
+                                        onClick={() => setSelectedId(inc.incident_id)}
+                                        className="border-b border-white/[0.04] last:border-b-0 hover:bg-white/[0.02] cursor-pointer transition-colors"
+                                    >
+                                        <td className="px-4 py-3">{severityPill(inc.severity)}</td>
+                                        <td className="px-4 py-3 min-w-0">
+                                            <div className="text-[13px] font-medium text-text-primary truncate max-w-[360px]">{inc.title}</div>
+                                            <div className="text-[10.5px] font-mono text-text-muted mt-0.5">{inc.incident_id}</div>
+                                        </td>
+                                        <td className="px-4 py-3">{statusBadge(inc.status)}</td>
+                                        <td className="px-4 py-3 text-[12.5px] text-text-secondary">{inc.owner_team || '—'}</td>
+                                        <td className="px-4 py-3 text-[12.5px] font-mono text-text-secondary">
+                                            {formatElapsedSeconds(inc.detected_at, inc.resolved_at)}
+                                        </td>
+                                    </motion.tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             )}
         </div>
