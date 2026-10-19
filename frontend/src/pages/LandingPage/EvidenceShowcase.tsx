@@ -46,7 +46,7 @@ export function EvidenceShowcase() {
                                         {h.status}
                                     </div>
                                 </div>
-                                <div className="text-[15px] font-bold tabular-nums flex-shrink-0" style={{ color: h.rank === 1 ? '#C026D3' : h.rank === 2 ? '#FBBF24' : undefined }}>
+                                <div className="text-[15px] font-bold tabular-nums flex-shrink-0" style={{ color: h.rank === 1 ? '#D6499B' : h.rank === 2 ? '#F2B84B' : undefined }}>
                                     {h.confidence}%
                                 </div>
                             </div>

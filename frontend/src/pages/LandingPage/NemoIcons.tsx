@@ -1,19 +1,20 @@
 /**
- * NemoGuard glyph set — a small family of custom nav/section icons that
- * share the perimeter-watch frame used in the primary Logomark (four
- * corner brackets) so the product's top-level navigation carries the
- * same identity as the marketing surface, instead of borrowing generic
- * icon-library glyphs for every section.
+ * NemoGuard glyph set — rebuilt around the sonar-ring brand motif (see
+ * Brand.tsx) instead of the previous generic "four corner brackets"
+ * frame every icon shared. That frame made every custom icon in the app
+ * read as near-identical variations of the same shape, undermining the
+ * point of having bespoke icons at all. Each icon below now has its own
+ * distinct silhouette, with only a thin outer ring (echoing the
+ * Logomark's sonar aperture, not literally repeating it) as the shared
+ * family cue -- the way a real icon system works: a family resemblance
+ * in weight/proportion, not an identical stamped-out container.
  */
 import type { SVGProps } from 'react';
 
-function Frame({ children, ...props }: SVGProps<SVGSVGElement> & { children: React.ReactNode }) {
+function Ring({ children, ...props }: SVGProps<SVGSVGElement> & { children: React.ReactNode }) {
     return (
         <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" {...props}>
-            <path d="M2.5 6.5V4.2A1.2 1.2 0 0 1 3.7 3h2.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeOpacity="0.45" />
-            <path d="M17.5 6.5V4.2A1.2 1.2 0 0 0 16.3 3h-2.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeOpacity="0.45" />
-            <path d="M2.5 13.5v2.3A1.2 1.2 0 0 0 3.7 17h2.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeOpacity="0.45" />
-            <path d="M17.5 13.5v2.3a1.2 1.2 0 0 1-1.2 1.2h-2.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeOpacity="0.45" />
+            <circle cx="10" cy="10" r="8.6" stroke="currentColor" strokeWidth="1.1" strokeOpacity="0.22" />
             {children}
         </svg>
     );
@@ -21,140 +22,128 @@ function Frame({ children, ...props }: SVGProps<SVGSVGElement> & { children: Rea
 
 export function CommandCenterIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <circle cx="10" cy="10" r="2.1" fill="currentColor" />
-            <circle cx="10" cy="10" r="4.6" stroke="currentColor" strokeWidth="1.3" strokeOpacity="0.5" />
-        </Frame>
+        <Ring {...props}>
+            <circle cx="10" cy="10" r="2" fill="currentColor" />
+            <circle cx="10" cy="10" r="5.2" stroke="currentColor" strokeWidth="1.3" strokeOpacity="0.55" />
+            <path d="M10 1.4a8.6 8.6 0 0 1 7.2 3.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </Ring>
     );
 }
 
 export function IncidentsIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <path d="M10 6.6v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-            <circle cx="10" cy="13.1" r="0.95" fill="currentColor" />
-        </Frame>
+        <Ring {...props}>
+            <path d="M10 5c2.4 0 4.3 2 4.3 4.5 0 3-4.3 6.6-4.3 6.6S5.7 12.5 5.7 9.5C5.7 7 7.6 5 10 5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+            <circle cx="10" cy="9.3" r="1.3" fill="currentColor" />
+        </Ring>
     );
 }
 
-/*
- * UI MODERNIZATION (spec Section 48 -- bespoke icon set for product
- * concepts): the original 6 icons here covered top-level nav items only.
- * The spec explicitly names Evidence, Recovery, and Memory as product
- * concepts that should get bespoke glyphs rather than generic
- * Lucide icons, specifically because they're NemoGuard-specific
- * domain concepts (not generic UI actions like "search" or "close",
- * which Lucide already handles correctly per spec Section 48's own
- * "use Lucide for generic actions" guidance). These 3 extend the same
- * Frame wrapper for visual consistency with the existing 6.
- */
 export function EvidenceGlyphIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <path d="M7 6h6M7 9h6M7 12h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-            <circle cx="14.2" cy="13" r="2.1" stroke="currentColor" strokeWidth="1.3" />
-            <path d="M15.8 14.6l1.2 1.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-        </Frame>
+        <Ring {...props}>
+            <path d="M6 6.5h5.4M6 9.3h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <circle cx="12.4" cy="12.2" r="2.6" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M14.3 14.1l1.6 1.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </Ring>
     );
 }
 
 export function RecoveryGlyphIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <path d="M13.5 7.2a4 4 0 1 0 .8 4.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
-            <path d="M13.1 5.6l1.1 2.4-2.5.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-        </Frame>
+        <Ring {...props}>
+            <path d="M14.5 7.3a4.6 4.6 0 1 0 .7 5.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none" />
+            <path d="M14.1 5.6l1.2 2.6-2.7.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        </Ring>
     );
 }
 
 export function MemoryGlyphIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <rect x="6.3" y="6.3" width="7.4" height="7.4" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
-            <circle cx="10" cy="10" r="1.3" fill="currentColor" />
-        </Frame>
+        <Ring {...props}>
+            <path d="M10 5.4 15 7.8 10 10.2 5 7.8 10 5.4Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            <path d="M5 11.2 10 13.6l5-2.4M5 14.6l5 2.4 5-2.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.75" />
+        </Ring>
     );
 }
 
-/*
- * UI MODERNIZATION (spec Section 48 completion): the spec's exact named
- * bespoke icon set is: "NemoGuard mark, Agent, Guardrail, Incident,
- * Investigation, Recovery, Scenario, Intelligence, Evidence,
- * Automation, Memory, Model Evaluation." Of these, Guardrail,
- * Investigation, Automation, and Model Evaluation were still missing --
- * these 4 close that gap, completing the full named set.
- */
 export function GuardrailGlyphIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <path d="M10 5.4 13.6 6.8v2.9c0 2.3-1.5 3.9-3.6 4.5-2.1-.6-3.6-2.2-3.6-4.5V6.8L10 5.4Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-            <path d="M10 8.1v2.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-            <circle cx="10" cy="12" r="0.55" fill="currentColor" />
-        </Frame>
+        <Ring {...props}>
+            <path d="M10 4.8c2.6 1 4.3 1 4.3 1v4.6c0 3-2 5.2-4.3 5.8-2.3-.6-4.3-2.8-4.3-5.8V5.8s1.7 0 4.3-1Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+            <path d="M10 8.2v3.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            <circle cx="10" cy="13.4" r="0.5" fill="currentColor" />
+        </Ring>
     );
 }
 
 export function InvestigationGlyphIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <circle cx="8.9" cy="9" r="2.9" stroke="currentColor" strokeWidth="1.4" />
-            <path d="M8.9 7.4v1.6l1.1 1.1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-            <path d="M11 11.1l2.9 2.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </Frame>
+        <Ring {...props}>
+            <circle cx="7.4" cy="7.4" r="1" fill="currentColor" opacity="0.4" />
+            <circle cx="12" cy="6.2" r="1" fill="currentColor" opacity="0.6" />
+            <circle cx="14.2" cy="10.6" r="1" fill="currentColor" opacity="0.8" />
+            <circle cx="10.8" cy="13.4" r="1.6" fill="currentColor" />
+            <path d="M7.4 7.4 12 6.2M12 6.2l2.2 4.4M14.2 10.6l-3.4 2.8" stroke="currentColor" strokeWidth="1" strokeOpacity="0.45" />
+        </Ring>
     );
 }
 
 export function AutomationGlyphIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <circle cx="10" cy="10" r="2" stroke="currentColor" strokeWidth="1.4" />
-            <path d="M10 5.6v1.5M10 12.9v1.5M14.4 10h-1.5M7.1 10H5.6M13.1 6.9l-1.1 1.1M7.9 12l-1.1 1.1M13.1 13.1l-1.1-1.1M7.9 8l-1.1-1.1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeOpacity="0.65" />
-        </Frame>
+        <Ring {...props}>
+            <circle cx="10" cy="10" r="2.3" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M10 5v1.6M10 13.4V15M15 10h-1.6M6.6 10H5M13.2 6.8l-1.1 1.1M7.9 12.1l-1.1 1.1M13.2 13.2l-1.1-1.1M7.9 7.9 6.8 6.8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeOpacity="0.7" />
+        </Ring>
     );
 }
 
 export function ModelEvaluationGlyphIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <path d="M6.4 13.4V9.1M10 13.4V6.6M13.6 13.4v-4.9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-            <path d="M5.8 13.9h8.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeOpacity="0.5" />
-        </Frame>
+        <Ring {...props}>
+            <path d="M6.2 14V9.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.5" />
+            <path d="M10 14V6.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            <path d="M13.8 14v-6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.5" />
+            <path d="M5.6 14.5h8.8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeOpacity="0.4" />
+        </Ring>
     );
 }
 
 export function AgentOpsIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <circle cx="10" cy="6.6" r="1.3" fill="currentColor" />
-            <circle cx="6.6" cy="13.2" r="1.3" fill="currentColor" />
-            <circle cx="13.4" cy="13.2" r="1.3" fill="currentColor" />
-            <path d="M10 7.9 6.9 12M10 7.9l3.1 4.1M7.6 13.5h4.8" stroke="currentColor" strokeWidth="1.15" strokeOpacity="0.6" strokeLinecap="round" />
-        </Frame>
+        <Ring {...props}>
+            <circle cx="10" cy="6.3" r="1.5" fill="currentColor" />
+            <circle cx="6.1" cy="13.2" r="1.5" fill="currentColor" />
+            <circle cx="13.9" cy="13.2" r="1.5" fill="currentColor" />
+            <path d="M10 7.8 6.9 12M10 7.8l3.1 4.2M7.6 13.2h4.8" stroke="currentColor" strokeWidth="1" strokeOpacity="0.45" strokeLinecap="round" />
+        </Ring>
     );
 }
 
 export function IntelligenceIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <circle cx="8.6" cy="9.4" r="3.05" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M11 11.8l2.6 2.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-        </Frame>
+        <Ring {...props}>
+            <path d="M4.6 10h2.5l1.3-3.2 2.1 6.4 1.4-3.2h3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </Ring>
     );
 }
 
 export function ScenarioIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <path d="M8.3 6.3v7.4l5.1-3.7-5.1-3.7Z" fill="currentColor" />
-        </Frame>
+        <Ring {...props}>
+            <circle cx="6.2" cy="6.4" r="1.3" fill="currentColor" />
+            <circle cx="6.2" cy="13.6" r="1.3" fill="currentColor" />
+            <circle cx="14" cy="10" r="1.6" fill="currentColor" />
+            <path d="M6.2 7.7v4.6M6.2 6.4h3.4l4.4 2.6M6.2 13.6h3.4l4.4-2.6" stroke="currentColor" strokeWidth="1.1" strokeOpacity="0.6" strokeLinecap="round" />
+        </Ring>
     );
 }
 
 export function AdoptionIcon(props: SVGProps<SVGSVGElement>) {
     return (
-        <Frame {...props}>
-            <path d="M10 5.6 14 7v3.3c0 2.5-1.7 4.2-4 4.9-2.3-.7-4-2.4-4-4.9V7l4-1.4Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-            <path d="M8.3 9.9l1.3 1.3 2.1-2.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-        </Frame>
+        <Ring {...props}>
+            <path d="M5.4 13.6h2v-2.4h-2v2.4Zm3.4 0h2V9.2h-2v4.4Zm3.4 0h2V6.4h-2v7.2Z" fill="currentColor" opacity="0.85" />
+            <path d="M5.4 6.4l3.8 2.4 2.6-3.2 3 1.8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.5" />
+        </Ring>
     );
 }

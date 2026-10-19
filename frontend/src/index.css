@@ -21,32 +21,44 @@
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  /* Default (dark) theme tokens */
-  --color-app-bg: #030308;
-  --color-surface: #0D0D16;
-  --color-surface-secondary: #14141F;
-  --color-surface-elevated: #191926;
-  --color-border-color: #24243380;
-  --color-border-strong: #34344a;
-  --color-text-primary: #F5F5FA;
-  --color-text-secondary: #A0A0B8;
-  --color-text-muted: #6B6B82;
+  /*
+   * BRAND IDENTITY OVERHAUL: previously indigo (#6366F1) + magenta
+   * (#C026D3) -- a palette near-indistinguishable from most generic
+   * "AI SaaS" dashboard templates. NemoGuard's own name point to a
+   * genuine, ownable concept: a vessel watching from the deep. The
+   * primary accent is now a deep sonar teal/cyan (not a desaturated
+   * "safe" teal -- a real, saturated signal color) instead of indigo,
+   * which reads as distinctly NemoGuard rather than interchangeable
+   * with any other product. Magenta is kept ONLY as the secondary
+   * "agent" accent (now shifted slightly warmer/pinker to contrast
+   * more clearly against the new teal primary) rather than being one
+   * of two near-equal primary brand colors.
+   */
+  --color-app-bg: #040B0D;
+  --color-surface: #0A1619;
+  --color-surface-secondary: #0F1E22;
+  --color-surface-elevated: #13262B;
+  --color-border-color: #1D373D80;
+  --color-border-strong: #2A4A50;
+  --color-text-primary: #F2FAFA;
+  --color-text-secondary: #9DBAC0;
+  --color-text-muted: #5E7F85;
 
-  --color-primary: #6366F1;
-  --color-primary-glow: rgba(99, 102, 241, 0.45);
+  --color-primary: #0EA5A8;
+  --color-primary-glow: rgba(14, 165, 168, 0.45);
 
-  --color-agent-active: #C026D3;
-  --color-healthy: #22D3A0;
-  --color-warning: #FBBF24;
-  --color-critical: #FB4570;
-  --color-info: #38BDF8;
+  --color-agent-active: #D6499B;
+  --color-healthy: #2DD4A8;
+  --color-warning: #F2B84B;
+  --color-critical: #F35B6B;
+  --color-info: #3FB8E0;
 }
 
 :root {
-  --panel-bg: rgba(20, 20, 31, 0.55);
+  --panel-bg: rgba(10, 22, 25, 0.55);
   --panel-border: rgba(255, 255, 255, 0.06);
-  --glow-primary: rgba(99, 102, 241, 0.12);
-  --glow-agent: rgba(192, 38, 211, 0.08);
+  --glow-primary: rgba(14, 165, 168, 0.14);
+  --glow-agent: rgba(214, 73, 155, 0.08);
 
   /*
    * UI MODERNIZATION (spec Section 53 -- chart theming): a dedicated,
@@ -75,29 +87,36 @@
 }
 
 :root.light {
-  --color-app-bg: #F4F5FA;
+  /*
+   * BRAND IDENTITY OVERHAUL (light mode): the dark theme's deep-teal
+   * surfaces are rebalanced here to a cool slate-cyan tint rather than
+   * the previous neutral gray -- light mode should still clearly feel
+   * like the same product, not a palette-swapped "default Tailwind
+   * light theme" fallback.
+   */
+  --color-app-bg: #F2F8F8;
   --color-surface: #FFFFFF;
-  --color-surface-secondary: #F0F1F7;
+  --color-surface-secondary: #ECF5F5;
   --color-surface-elevated: #FFFFFF;
-  --color-border-color: #E2E4EE;
-  --color-border-strong: #C7CBDD;
-  --color-text-primary: #14141F;
-  --color-text-secondary: #4B4D63;
-  --color-text-muted: #7A7C93;
+  --color-border-color: #D6E6E6;
+  --color-border-strong: #B8D2D2;
+  --color-text-primary: #0F2426;
+  --color-text-secondary: #3F5E61;
+  --color-text-muted: #6E8C8F;
 
-  --color-primary: #5457E5;
-  --color-primary-glow: rgba(84, 87, 229, 0.25);
+  --color-primary: #0A8D8F;
+  --color-primary-glow: rgba(10, 141, 143, 0.25);
 
-  --color-agent-active: #A21CAF;
+  --color-agent-active: #B32E7E;
   --color-healthy: #0D9C74;
   --color-warning: #B45309;
   --color-critical: #DC2650;
   --color-info: #0284C7;
 
   --panel-bg: rgba(255, 255, 255, 0.75);
-  --panel-border: rgba(20, 20, 31, 0.08);
-  --glow-primary: rgba(84, 87, 229, 0.08);
-  --glow-agent: rgba(162, 28, 175, 0.06);
+  --panel-border: rgba(15, 36, 38, 0.08);
+  --glow-primary: rgba(10, 141, 143, 0.08);
+  --glow-agent: rgba(179, 46, 126, 0.06);
 
   /* Light-mode chart tokens -- same mapping, resolves to the already-
      light-adjusted semantic colors defined above in this same block. */
@@ -191,7 +210,7 @@
   .interactive-surface:hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--color-primary) 30%, var(--panel-border));
-    box-shadow: 0 18px 36px -25px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(99, 102, 241, 0.06);
+    box-shadow: 0 18px 36px -25px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(14, 165, 168, 0.08);
   }
 
   .focus-ring {
@@ -247,7 +266,7 @@
     inset: 0;
     border-radius: inherit;
     padding: 1px;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.6), rgba(192, 38, 211, 0.4), transparent 70%);
+    background: linear-gradient(135deg, rgba(14, 165, 168, 0.65), rgba(214, 73, 155, 0.4), transparent 70%);
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
@@ -255,18 +274,18 @@
   }
 
   .text-gradient {
-    background: linear-gradient(90deg, #A5B4FC, #F0ABFC);
+    background: linear-gradient(90deg, #5EEAD4, #F2A8CE);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
   }
 
   .glow-primary {
-    box-shadow: 0 0 24px 0 rgba(99, 102, 241, 0.25);
+    box-shadow: 0 0 24px 0 rgba(14, 165, 168, 0.3);
   }
 
   .glow-agent {
-    box-shadow: 0 0 24px 0 rgba(192, 38, 211, 0.25);
+    box-shadow: 0 0 24px 0 rgba(214, 73, 155, 0.25);
   }
 
   /* Micro-interaction helpers */
@@ -321,8 +340,8 @@
    */
   .signal-grid {
     background-image:
-      linear-gradient(rgba(129, 140, 248, 0.08) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(129, 140, 248, 0.08) 1px, transparent 1px);
+      linear-gradient(rgba(94, 234, 212, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(94, 234, 212, 0.08) 1px, transparent 1px);
     background-size: 36px 36px;
     mask-image: radial-gradient(ellipse 75% 65% at 50% 50%, black 25%, transparent 78%);
   }
@@ -337,7 +356,7 @@
   }
 
   .signal-scan {
-    background: linear-gradient(90deg, transparent, rgba(165, 180, 252, 0.72), rgba(240, 171, 252, 0.55), transparent);
+    background: linear-gradient(90deg, transparent, rgba(94, 234, 212, 0.75), rgba(242, 168, 206, 0.55), transparent);
     background-size: 45% 100%;
     background-repeat: no-repeat;
     animation: signalScan 3.6s ease-in-out infinite;

@@ -20,7 +20,7 @@ export function CtaBand() {
             >
                 <div
                     className="absolute inset-0 opacity-30"
-                    style={{ backgroundImage: 'radial-gradient(ellipse 60% 60% at 50% 0%, rgba(99,102,241,0.3), transparent)' }}
+                    style={{ backgroundImage: 'radial-gradient(ellipse 60% 60% at 50% 0%, rgba(14,165,168,0.3), transparent)' }}
                 />
                 <div className="relative z-10">
                     <h2 className="text-2xl sm:text-3xl font-semibold text-text-primary tracking-tight mb-4">
