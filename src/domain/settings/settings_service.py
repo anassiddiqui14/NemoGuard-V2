@@ -37,18 +37,22 @@ _DEFAULTS: Dict[str, Any] = {
 
 # Models known to work against the same integrate.api.nvidia.com endpoint
 # this deployment already calls, for the admin UI's model picker.
-# Verified live (2026-09-09): moonshotai/kimi-k3 requires reasoning_effort
-# in extra_body and a generous max_tokens budget -- without it, it can
-# exhaust its entire token budget on internal reasoning and return an
-# EMPTY content string (confirmed live: a 20-token budget produced
-# content=None; raising to 500 tokens + reasoning_effort="low" produced
-# real content). This is why extra_body is part of each model's config,
-# not a single global constant -- different model families need
-# different invocation parameters.
+# This is why extra_body is part of each model's config, not a single
+# global constant -- different model families need different
+# invocation parameters.
+#
+# REMOVED moonshotai/kimi-k3 (user-reported live bug, 2026-10-19): NVIDIA
+# retired this model (confirmed via a live HTTP 410 "has reached its end
+# of life on 2026-10-15" response) while it was still selected as the
+# live ultra_tier model via the admin console -- every Commander Live
+# chat call failed outright until this was caught. Removed from the
+# picker entirely so it can't be re-selected and reintroduce the same
+# failure; the corresponding stale admin-configured ultra_tier/
+# fallback_tier DB rows were also corrected back to working Nemotron
+# models as part of this same fix.
 KNOWN_MODELS = [
     {"model": "nvidia/nemotron-3-ultra-550b-a55b", "label": "Nemotron 3 Ultra 550B (highest reasoning, slowest)", "extra_body": {"chat_template_kwargs": {"enable_thinking": True}, "reasoning_budget": 16384}},
     {"model": "nvidia/nemotron-3-super-120b-a12b", "label": "Nemotron 3 Super 120B (fast, lower reasoning)", "extra_body": {}},
-    {"model": "moonshotai/kimi-k3", "label": "Kimi K3 (Moonshot AI, via NVIDIA endpoint)", "extra_body": {"reasoning_effort": "low"}},
 ]
 
 

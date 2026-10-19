@@ -146,7 +146,28 @@ class CommanderLiveAgent(BaseAgent):
     ) -> str:
         """Like call_llm_with_tools, but returns plain text rather than
         requiring JSON -- ASK answers are conversational prose, not a
-        structured record."""
+        structured record.
+
+        BUG FIX (user-reported 2026-10-19): this previously called
+        self.client.chat.completions.create directly, bypassing the
+        model-tier fallback mechanism BaseAgent already provides to every
+        other agent (RCA, Grounding Critic, Runbook) -- so when the
+        hardcoded ultra_tier model goes end-of-life or errors (observed
+        live: NVIDIA returned HTTP 410 "moonshotai/kimi-k3 has reached
+        its end of life"), Commander Live had no path to retry against
+        the working fallback_tier model; it just failed outright. It also
+        interpolated the raw exception object straight into the
+        user-visible chat response, leaking an internal API error payload
+        (full JSON body, model identifiers, etc.) directly to the
+        operator -- a real information-disclosure/UX bug independent of
+        the fallback gap. Both are fixed here: the active model now
+        retries against the configured fallback tier on ANY primary-model
+        failure (matching the exact pattern already used in
+        BaseAgent.call_llm_with_tools), and the user-facing message is
+        now always a generic, friendly string -- the real exception is
+        still fully logged server-side via print(), just never echoed
+        back to the operator.
+        """
         messages = [
             {"role": "system", "content": self.system_prompt},
             *self._history_to_messages(history),
@@ -154,16 +175,37 @@ class CommanderLiveAgent(BaseAgent):
         ]
         tools = _get_read_only_tools_schema()
         max_iterations = 6
+        fallback_cfg = self._fallback_config()
+        active_model = self.model
+        fell_back = False
+
+        async def _make_call(model_name: str):
+            return await self.client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                tools=tools,
+                temperature=0.3,
+                top_p=0.95,
+                max_tokens=1024,
+            )
+
         try:
             for _ in range(max_iterations):
-                completion = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    tools=tools,
-                    temperature=0.3,
-                    top_p=0.95,
-                    max_tokens=1024,
-                )
+                if fallback_cfg and not fell_back:
+                    try:
+                        import asyncio as _asyncio
+                        completion = await _asyncio.wait_for(_make_call(active_model), timeout=fallback_cfg["timeout"])
+                    except Exception as primary_exc:
+                        print(
+                            f"[{self.agent_name}] Primary model {active_model} errored/timed out "
+                            f"({primary_exc}) -- falling back to {fallback_cfg['model']} for this conversation."
+                        )
+                        active_model = fallback_cfg["model"]
+                        fell_back = True
+                        completion = await _make_call(active_model)
+                else:
+                    completion = await _make_call(active_model)
+
                 message = completion.choices[0].message
                 if getattr(message, "tool_calls", None):
                     tool_calls_dict = [
@@ -180,12 +222,16 @@ class CommanderLiveAgent(BaseAgent):
             # Budget exhausted -- force a final answer-only turn.
             messages.append({"role": "user", "content": "Please give your final answer now, in plain text, based on the evidence gathered so far."})
             completion = await self.client.chat.completions.create(
-                model=self.model, messages=messages, temperature=0.3, top_p=0.95, max_tokens=1024,
+                model=active_model, messages=messages, temperature=0.3, top_p=0.95, max_tokens=1024,
             )
             return (completion.choices[0].message.content or "").strip()
         except Exception as e:
+            # Never echo the raw exception to the operator -- it can
+            # contain internal API error payloads (as seen live: a raw
+            # HTTP 410 JSON body naming the exact model string). Full
+            # detail stays server-side in logs only.
             print(f"{self.agent_name} ASK error: {e}")
-            return f"I wasn't able to complete that request due to an internal error ({e}). Please try rephrasing your question."
+            return "I wasn't able to complete that request right now -- there was a temporary issue reaching the AI service. Please try again in a moment."
 
     async def react_to_guidance(
         self, incident_id: str, context: Dict[str, Any], text: str, is_fact: bool, is_material: bool,
