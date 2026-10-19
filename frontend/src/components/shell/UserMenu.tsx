@@ -28,7 +28,19 @@ export function UserMenu() {
         <Dropdown
             width="w-72"
             trigger={
-                <button className="w-8 h-8 rounded-full bg-gradient-to-br from-agent-active to-primary flex items-center justify-center text-[11px] font-semibold text-white cursor-pointer shadow-md press-scale">
+                // UI MODERNIZATION (spec Section 18/73 -- genuine
+                // accessibility gap found during continued audit):
+                // the visible content is just 1-2 letter initials
+                // (e.g. "T"), which is not a meaningful accessible
+                // name for a screen reader -- it gives no indication
+                // this is the account/user menu. aria-label makes the
+                // actual purpose explicit regardless of the user's
+                // initials.
+                <button
+                    aria-label={`Account menu for ${user.displayName}`}
+                    title={user.displayName}
+                    className="w-8 h-8 rounded-full bg-gradient-to-br from-agent-active to-primary flex items-center justify-center text-[11px] font-semibold text-white cursor-pointer shadow-md press-scale"
+                >
                     {user.initials}
                 </button>
             }
