@@ -414,6 +414,24 @@
       box-shadow: 0 0 0 5px rgba(34, 211, 160, 0);
     }
   }
+
+  /*
+   * Commander's "thinking" status line (see CommanderPanel.tsx
+   * ShimmerText) -- a slow, subtle light sweep across text, the same
+   * restrained device Claude/Perplexity use to signal active
+   * processing without resorting to spinners or bouncing dots. A
+   * production-grade, professional treatment rather than a playful
+   * loading animation.
+   */
+  @keyframes commanderShimmer {
+    0% {
+      background-position: 200% 0;
+    }
+
+    100% {
+      background-position: -200% 0;
+    }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

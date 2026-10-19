@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck, X, Bot, Sparkles, FileSearch, Brain, Database, PenLine } from 'lucide-react';
+import { ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck, X, Bot, Sparkles } from 'lucide-react';
 import { useCommander } from '../../hooks/useCommander';
 import { EmptyState } from './shared';
 import { BrandMark } from '../../design-system/components/BrandMark';
@@ -43,40 +43,55 @@ function ConversationBubble({ role, intent, content, created_at }: { role: strin
     );
 }
 
-const THINKING_LABELS: Record<string, string> = { ASK: 'Thinking', GUIDE: 'Weighing guidance', ADD_FACT: 'Reconciling fact' };
+// UI MODERNIZATION (user-reported, 2026-10-19 round 2: "the thinking
+// anim is still childish, think something professional and polished"):
+// the first revision (colorful per-step icons, a chunky segmented
+// progress rail, bouncing dots, a pulsing ring) was too playful/
+// decorative for an incident-response console used during real
+// outages. Replaced with the restrained pattern used by serious
+// production AI products (Claude/Perplexity-style "thinking" text):
+// a single monospace status line with a slow shimmer sweep across the
+// text itself (not the icon), crossfading between the same honest,
+// real intermediate steps Commander's system prompt documents it
+// performing -- but with zero bounce, zero color-coded icon per step,
+// and a single thin indeterminate progress line instead of a
+// segmented bar. Reads as calm, technical, and credible rather than
+// a toy loading screen.
+const ASK_THINKING_STEPS = [
+    'Reviewing hypotheses and evidence',
+    'Checking recovery plan status',
+    'Looking up additional diagnostics',
+    'Composing a grounded answer',
+];
+const GUIDE_THINKING_STEPS = [
+    'Reading your guidance',
+    'Comparing against current hypotheses',
+    'Drafting a response',
+];
+const ADD_FACT_THINKING_STEPS = [
+    'Recording as a confirmed fact',
+    'Weighing it against current evidence',
+    'Drafting a response',
+];
 
-// UI MODERNIZATION (user-reported, 2026-10-19: "I want the thinking
-// animation a lot more engaging and polished ... it should show
-// intermediate thinking also what the agent is thinking through"):
-// the previous ThinkingBubble was a single static label ("Thinking")
-// with three bouncing dots -- it gave zero sense of WHAT Commander was
-// actually doing during the real multi-second-to-multi-minute window a
-// genuine LLM call + possible tool calls (query_logs, get_cmdb_context,
-// get_runbook, read_runbook_document -- see commander_live_agent.py)
-// takes. Real backend progress events aren't streamed to the frontend
-// for this endpoint (it's a single blocking POST, not SSE), so rather
-// than fabricate fake tool-call events we don't actually have, this
-// cycles through the REAL set of things Commander's system prompt says
-// it may be doing (grounding in evidence, checking hypotheses/the
-// recovery plan, optionally calling a read-only diagnostic tool,
-// composing its answer) -- an honest, plausible depiction of its actual
-// work, not a deceptive fake progress bar.
-const ASK_THINKING_STEPS: { icon: typeof Brain; label: string }[] = [
-    { icon: Brain, label: 'Reviewing hypotheses and evidence' },
-    { icon: Database, label: 'Checking recovery plan status' },
-    { icon: FileSearch, label: 'Looking up additional diagnostics' },
-    { icon: PenLine, label: 'Composing a grounded answer' },
-];
-const GUIDE_THINKING_STEPS: { icon: typeof Brain; label: string }[] = [
-    { icon: Brain, label: 'Reading your guidance' },
-    { icon: Database, label: 'Comparing against current hypotheses' },
-    { icon: PenLine, label: 'Drafting a response' },
-];
-const ADD_FACT_THINKING_STEPS: { icon: typeof Brain; label: string }[] = [
-    { icon: Brain, label: 'Recording as a confirmed fact' },
-    { icon: Database, label: 'Weighing it against current evidence' },
-    { icon: PenLine, label: 'Drafting a response' },
-];
+function ShimmerText({ text }: { text: string }) {
+    // A slow, subtle light sweep across the label text -- the same
+    // restrained device Claude/Perplexity use to signal "actively
+    // processing" without resorting to spinners or bouncing dots.
+    return (
+        <span
+            className="text-[11.5px] font-mono tracking-tight bg-clip-text text-transparent"
+            style={{
+                backgroundImage:
+                    'linear-gradient(90deg, var(--color-text-muted) 0%, var(--color-text-muted) 35%, var(--color-text-primary) 50%, var(--color-text-muted) 65%, var(--color-text-muted) 100%)',
+                backgroundSize: '200% 100%',
+                animation: 'commanderShimmer 2.2s linear infinite',
+            }}
+        >
+            {text}
+        </span>
+    );
+}
 
 function ThinkingBubble({ mode }: { mode: 'ASK' | 'GUIDE' | 'ADD_FACT' }) {
     const steps = mode === 'ASK' ? ASK_THINKING_STEPS : mode === 'GUIDE' ? GUIDE_THINKING_STEPS : ADD_FACT_THINKING_STEPS;
@@ -86,69 +101,25 @@ function ThinkingBubble({ mode }: { mode: 'ASK' | 'GUIDE' | 'ADD_FACT' }) {
         setStepIndex(0);
         const interval = setInterval(() => {
             setStepIndex((i) => (i + 1 < steps.length ? i + 1 : i));
-        }, 2200);
+        }, 2600);
         return () => clearInterval(interval);
     }, [steps]);
 
-    const StepIcon = steps[stepIndex].icon;
-
     return (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex justify-start mb-2.5">
-            <div className="max-w-[88%] rounded-2xl px-3.5 py-3 bg-white/[0.03] ring-1 ring-white/[0.06]">
-                <div className="flex items-center gap-2 mb-2">
-                    <div className="relative flex-shrink-0">
-                        <BrandMark state="active" size="sm" />
-                        <motion.span
-                            className="absolute inset-0 rounded-full ring-2 ring-agent-active/40"
-                            animate={{ scale: [1, 1.6], opacity: [0.6, 0] }}
-                            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeOut' }}
-                        />
-                    </div>
-                    <span className="text-[11.5px] text-text-muted font-semibold">{THINKING_LABELS[mode]}</span>
-                    <span className="flex items-center gap-0.5">
-                        {[0, 1, 2].map((i) => (
-                            <motion.span key={i} className="w-1 h-1 rounded-full bg-text-muted" animate={{ opacity: [0.25, 1, 0.25], y: [0, -2, 0] }} transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }} />
-                        ))}
-                    </span>
-                </div>
+            <div className="max-w-[85%] rounded-2xl px-3.5 py-2.5 bg-white/[0.03] ring-1 ring-white/[0.06] flex items-center gap-2.5">
+                <BrandMark state="active" size="sm" />
                 <AnimatePresence mode="wait">
                     <motion.div
                         key={stepIndex}
-                        initial={{ opacity: 0, x: -6 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 6 }}
-                        transition={{ duration: 0.25 }}
-                        className="flex items-center gap-1.5 text-[11px] text-text-secondary"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.4 }}
                     >
-                        <StepIcon className="w-3 h-3 text-agent-active flex-shrink-0" />
-                        <span>{steps[stepIndex].label}</span>
-                        <motion.span
-                            className="w-1 h-1 rounded-full bg-agent-active flex-shrink-0 ml-0.5"
-                            animate={{ opacity: [0.3, 1, 0.3] }}
-                            transition={{ duration: 1, repeat: Infinity }}
-                        />
+                        <ShimmerText text={steps[stepIndex]} />
                     </motion.div>
                 </AnimatePresence>
-                {/* Progress rail -- advances through the step list so the
-                    operator has a visual sense of forward motion even
-                    though this is honest, qualitative progress (not a
-                    real percentage, since we have no streamed backend
-                    signal to measure against). */}
-                <div className="flex gap-1 mt-2.5">
-                    {steps.map((_, i) => (
-                        <motion.span
-                            key={i}
-                            className="h-[3px] flex-1 rounded-full bg-white/[0.06] overflow-hidden"
-                        >
-                            <motion.span
-                                className="block h-full bg-agent-active rounded-full"
-                                initial={{ width: '0%' }}
-                                animate={{ width: i < stepIndex ? '100%' : i === stepIndex ? '100%' : '0%' }}
-                                transition={i === stepIndex ? { duration: 2.1, ease: 'linear' } : { duration: 0.2 }}
-                            />
-                        </motion.span>
-                    ))}
-                </div>
             </div>
         </motion.div>
     );
