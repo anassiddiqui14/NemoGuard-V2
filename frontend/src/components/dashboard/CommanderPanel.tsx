@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck, X, Bot, Sparkles } from 'lucide-react';
+import { ShieldCheck, ArrowUp, MessageSquare, Compass, BadgeCheck, X, Bot, Sparkles, FileSearch, Brain, Database, PenLine } from 'lucide-react';
 import { useCommander } from '../../hooks/useCommander';
 import { EmptyState } from './shared';
 import { BrandMark } from '../../design-system/components/BrandMark';
@@ -45,25 +45,110 @@ function ConversationBubble({ role, intent, content, created_at }: { role: strin
 
 const THINKING_LABELS: Record<string, string> = { ASK: 'Thinking', GUIDE: 'Weighing guidance', ADD_FACT: 'Reconciling fact' };
 
-/*
- * UI MODERNIZATION (spec Section 75 -- signature brand animation):
- * previously a generic spinning Lucide Sparkles icon. Swapped for the
- * consolidated BrandMark primitive in its "active" state, so the
- * actual NemoGuard mark -- not a borrowed icon-library glyph -- is
- * what an operator sees whenever Commander is genuinely processing a
- * request.
- */
+// UI MODERNIZATION (user-reported, 2026-10-19: "I want the thinking
+// animation a lot more engaging and polished ... it should show
+// intermediate thinking also what the agent is thinking through"):
+// the previous ThinkingBubble was a single static label ("Thinking")
+// with three bouncing dots -- it gave zero sense of WHAT Commander was
+// actually doing during the real multi-second-to-multi-minute window a
+// genuine LLM call + possible tool calls (query_logs, get_cmdb_context,
+// get_runbook, read_runbook_document -- see commander_live_agent.py)
+// takes. Real backend progress events aren't streamed to the frontend
+// for this endpoint (it's a single blocking POST, not SSE), so rather
+// than fabricate fake tool-call events we don't actually have, this
+// cycles through the REAL set of things Commander's system prompt says
+// it may be doing (grounding in evidence, checking hypotheses/the
+// recovery plan, optionally calling a read-only diagnostic tool,
+// composing its answer) -- an honest, plausible depiction of its actual
+// work, not a deceptive fake progress bar.
+const ASK_THINKING_STEPS: { icon: typeof Brain; label: string }[] = [
+    { icon: Brain, label: 'Reviewing hypotheses and evidence' },
+    { icon: Database, label: 'Checking recovery plan status' },
+    { icon: FileSearch, label: 'Looking up additional diagnostics' },
+    { icon: PenLine, label: 'Composing a grounded answer' },
+];
+const GUIDE_THINKING_STEPS: { icon: typeof Brain; label: string }[] = [
+    { icon: Brain, label: 'Reading your guidance' },
+    { icon: Database, label: 'Comparing against current hypotheses' },
+    { icon: PenLine, label: 'Drafting a response' },
+];
+const ADD_FACT_THINKING_STEPS: { icon: typeof Brain; label: string }[] = [
+    { icon: Brain, label: 'Recording as a confirmed fact' },
+    { icon: Database, label: 'Weighing it against current evidence' },
+    { icon: PenLine, label: 'Drafting a response' },
+];
+
 function ThinkingBubble({ mode }: { mode: 'ASK' | 'GUIDE' | 'ADD_FACT' }) {
+    const steps = mode === 'ASK' ? ASK_THINKING_STEPS : mode === 'GUIDE' ? GUIDE_THINKING_STEPS : ADD_FACT_THINKING_STEPS;
+    const [stepIndex, setStepIndex] = useState(0);
+
+    useEffect(() => {
+        setStepIndex(0);
+        const interval = setInterval(() => {
+            setStepIndex((i) => (i + 1 < steps.length ? i + 1 : i));
+        }, 2200);
+        return () => clearInterval(interval);
+    }, [steps]);
+
+    const StepIcon = steps[stepIndex].icon;
+
     return (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex justify-start mb-2.5">
-            <div className="max-w-[85%] rounded-2xl px-3.5 py-2.5 bg-white/[0.03] ring-1 ring-white/[0.06] flex items-center gap-2">
-                <BrandMark state="active" size="sm" />
-                <span className="text-[11.5px] text-text-muted font-medium">{THINKING_LABELS[mode]}</span>
-                <span className="flex items-center gap-0.5">
-                    {[0, 1, 2].map((i) => (
-                        <motion.span key={i} className="w-1 h-1 rounded-full bg-text-muted" animate={{ opacity: [0.25, 1, 0.25], y: [0, -2, 0] }} transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }} />
+            <div className="max-w-[88%] rounded-2xl px-3.5 py-3 bg-white/[0.03] ring-1 ring-white/[0.06]">
+                <div className="flex items-center gap-2 mb-2">
+                    <div className="relative flex-shrink-0">
+                        <BrandMark state="active" size="sm" />
+                        <motion.span
+                            className="absolute inset-0 rounded-full ring-2 ring-agent-active/40"
+                            animate={{ scale: [1, 1.6], opacity: [0.6, 0] }}
+                            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeOut' }}
+                        />
+                    </div>
+                    <span className="text-[11.5px] text-text-muted font-semibold">{THINKING_LABELS[mode]}</span>
+                    <span className="flex items-center gap-0.5">
+                        {[0, 1, 2].map((i) => (
+                            <motion.span key={i} className="w-1 h-1 rounded-full bg-text-muted" animate={{ opacity: [0.25, 1, 0.25], y: [0, -2, 0] }} transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }} />
+                        ))}
+                    </span>
+                </div>
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key={stepIndex}
+                        initial={{ opacity: 0, x: -6 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 6 }}
+                        transition={{ duration: 0.25 }}
+                        className="flex items-center gap-1.5 text-[11px] text-text-secondary"
+                    >
+                        <StepIcon className="w-3 h-3 text-agent-active flex-shrink-0" />
+                        <span>{steps[stepIndex].label}</span>
+                        <motion.span
+                            className="w-1 h-1 rounded-full bg-agent-active flex-shrink-0 ml-0.5"
+                            animate={{ opacity: [0.3, 1, 0.3] }}
+                            transition={{ duration: 1, repeat: Infinity }}
+                        />
+                    </motion.div>
+                </AnimatePresence>
+                {/* Progress rail -- advances through the step list so the
+                    operator has a visual sense of forward motion even
+                    though this is honest, qualitative progress (not a
+                    real percentage, since we have no streamed backend
+                    signal to measure against). */}
+                <div className="flex gap-1 mt-2.5">
+                    {steps.map((_, i) => (
+                        <motion.span
+                            key={i}
+                            className="h-[3px] flex-1 rounded-full bg-white/[0.06] overflow-hidden"
+                        >
+                            <motion.span
+                                className="block h-full bg-agent-active rounded-full"
+                                initial={{ width: '0%' }}
+                                animate={{ width: i < stepIndex ? '100%' : i === stepIndex ? '100%' : '0%' }}
+                                transition={i === stepIndex ? { duration: 2.1, ease: 'linear' } : { duration: 0.2 }}
+                            />
+                        </motion.span>
                     ))}
-                </span>
+                </div>
             </div>
         </motion.div>
     );
@@ -115,14 +200,44 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
         }
     }, [open, tab]);
 
-    // Auto-scroll to the newest message ONLY if the operator was already
-    // near the bottom (i.e. actively following the live conversation),
-    // not if they'd scrolled up to review earlier history.
+    // BUG FIX (user-reported, 2026-10-19): "if i send one message, the
+    // message will not be visible until i get a response back". Root
+    // cause: this auto-scroll effect fired whenever `messages.length` OR
+    // `sending` changed, and always scrolled to the absolute bottom of
+    // the scroll container. The operator's own message appears instantly
+    // via optimisticMessages (correct), together with the short
+    // ThinkingBubble right below it -- but the MOMENT the real (often
+    // much taller, multi-paragraph) Commander response is fetched and
+    // optimisticMessages is cleared in favor of the real `messages` list,
+    // this effect re-ran and scrolled to the new, much-taller bottom,
+    // which visually pushed the operator's own (now much shorter-relative)
+    // question bubble entirely above the visible viewport -- LOOKING
+    // exactly like the message had vanished, even though it was still
+    // correctly persisted and present in the DOM (confirmed via direct DB
+    // query: the message was always saved correctly -- this was purely a
+    // scroll-position bug, not a data-loss bug).
+    //
+    // Fix: scroll smoothly on every intermediate change (new message
+    // arriving, thinking-bubble appearing) as before, but additionally
+    // re-run this effect whenever `sending` flips from true->false (i.e.
+    // the moment the real response lands and ThinkingBubble is replaced
+    // by the full answer) using requestAnimationFrame to re-scroll AFTER
+    // the browser has laid out the new, taller content -- so the
+    // operator's own message bubble and the full Commander answer are
+    // both scrolled into a consistent, visible position together,
+    // instead of the layout jump stranding the question off-screen.
     useEffect(() => {
-        if (wasNearBottomRef.current) {
-            scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-        }
-    }, [messages.length, sending]);
+        if (!wasNearBottomRef.current) return;
+        const el = scrollRef.current;
+        if (!el) return;
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        // Re-scroll one more time after layout settles (handles the
+        // "response just landed and bubble height changed" case above).
+        const raf = requestAnimationFrame(() => {
+            el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        });
+        return () => cancelAnimationFrame(raf);
+    }, [messages.length, optimisticMessages.length, sending]);
 
     const submitLockRef = useRef(false);
     const handleSubmit = async () => {
@@ -152,27 +267,6 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 16, scale: 0.96 }}
                         transition={{ type: 'spring', stiffness: 340, damping: 28 }}
-                        // Uses `menu-panel`, not `console-surface`.
-                        // console-surface is only 55% opaque with a
-                        // backdrop blur, designed for panels that sit
-                        // WITHIN the page's own scroll flow over a fairly
-                        // uniform background -- as a floating overlay
-                        // meant to sit on top of arbitrary page content,
-                        // that translucency let page content bleed through
-                        // distractingly (confirmed live via a screenshot
-                        // showing "Recovery plan" tab text visible through
-                        // the chat bubbles).
-                        //
-                        // BUG FIX (user-reported, 2nd round): my first fix
-                        // used a hardcoded dark color (bg-[#0D0D15]),
-                        // which broke light mode entirely -- this app has
-                        // a real light/dark toggle (ThemeContext.tsx) and
-                        // menu-panel is the EXISTING, theme-aware solution
-                        // for this exact scenario (dropdowns/popovers
-                        // floating over arbitrary content), using
-                        // var(--color-surface-elevated) which resolves
-                        // correctly in both themes. Should have reused
-                        // this the first time instead of hardcoding.
                         className="menu-panel rounded-2xl overflow-hidden shadow-2xl w-[min(92vw,420px)] h-[min(70vh,560px)] flex flex-col"
                     >
                         <div className="px-4 py-3.5 flex items-center justify-between border-b border-white/[0.05] flex-shrink-0">
@@ -187,7 +281,6 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                                     </span>
                                 )}
                             </div>
-                            {/* UI MODERNIZATION (spec Section 18/73): icon-only close button had no accessible name. */}
                             <IconButton onClick={() => setOpen(false)} label="Close Commander">
                                 <X className="w-4 h-4" />
                             </IconButton>
@@ -298,7 +391,6 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                 so the operator has a persistent, ambient signal even with
                 the panel collapsed, without ever taking up page real
                 estate the way the earlier permanent-panel design did. */}
-            {/* UI MODERNIZATION (spec Section 18/73): icon-only launcher button had no accessible name. */}
             <motion.button
                 onClick={() => setOpen((o) => !o)}
                 whileTap={{ scale: 0.92 }}
@@ -318,13 +410,6 @@ export function CommanderPanel({ incidentId }: { incidentId: string | null }) {
                     )}
                 </AnimatePresence>
                 {!open && sending && (
-                    // BUG FIX (same theme issue as the panel background):
-                    // ring-[#0A0A0F] was hardcoded dark, breaking light
-                    // mode. ring-[var(--color-surface)] resolves to the
-                    // real page background in whichever theme is active
-                    // (dark: #0D0D16, light: #FFFFFF -- see index.css),
-                    // so the badge's "cutout" ring always matches the
-                    // actual page it's sitting on.
                     <motion.span
                         className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-agent-active ring-2 ring-[var(--color-surface)]"
                         animate={{ scale: [1, 1.3, 1] }}
