@@ -160,17 +160,25 @@ export function IntelligencePage() {
 
     return (
         <div className="h-full overflow-y-auto p-6">
-            <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="rounded-2xl p-6 mb-6 bg-gradient-to-br from-primary/[0.08] via-agent-active/[0.05] to-transparent ring-1 ring-white/[0.06]"
-            >
-                <div className="text-[11px] font-bold text-primary uppercase tracking-wider mb-2">Intelligence</div>
-                <h1 className="text-[22px] font-bold text-text-primary leading-tight">Understand risk across your response system.</h1>
-                <p className="text-[13px] text-text-secondary mt-1.5 max-w-xl">
+            {/*
+             * UI MODERNIZATION (spec Section 70 -- page header system):
+             * previously a decorative gradient hero panel with a 22px
+             * bold marketing-style tagline ("Understand risk across your
+             * response system.") -- precisely the anti-pattern the spec
+             * explicitly names: "Do not repeat giant marketing-style
+             * headings inside /app." Replaced with the same restrained
+             * page-header pattern already used consistently on
+             * AdminPage/IncidentsPage/SettingsPage/ScenarioCockpitPage
+             * (title + one-line description, no decorative gradient
+             * panel), for a page that otherwise behaves and reads like
+             * any other operational dashboard view.
+             */}
+            <div className="mb-5">
+                <h1 className="text-xl font-semibold text-text-primary tracking-tight">Intelligence</h1>
+                <p className="text-[13px] text-text-muted mt-1">
                     A decision-ready snapshot of incident pressure, safety controls, and investigation coverage.
                 </p>
-            </motion.div>
+            </div>
 
             {error && (
                 <div className="mb-4 px-3 py-2 rounded-lg bg-critical/10 ring-1 ring-critical/25 flex items-center gap-2 text-[12px] text-critical">
