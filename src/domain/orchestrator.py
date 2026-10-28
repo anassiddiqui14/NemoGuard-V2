@@ -819,12 +819,28 @@ class IncidentOrchestrator:
         import json as _json
         from src.capabilities import plan_compiler, execution_engine
         from src.capabilities.intent_mapper import action_steps_to_intents
-        from src.capabilities.models import VerificationStatus
         from src.capabilities.plan_compiler import UnsupportedCapabilityError
 
         now = datetime.now(timezone.utc).isoformat()
 
         with self.db.get_connection() as conn:
+            # The plan ID is not independently sufficient authority. Bind it
+            # to the incident at this domain boundary as well as the API
+            # boundary so a future caller cannot combine one incident's URL
+            # with a different incident's plan ID.
+            cursor = conn.execute(
+                "SELECT plan_version FROM action_plan WHERE action_plan_id = %s AND incident_id = %s",
+                (plan_id, incident_id),
+            )
+            plan_row = cursor.fetchone()
+            if not plan_row:
+                return {
+                    "status": "PLAN_NOT_FOUND_FOR_INCIDENT",
+                    "plan_id": plan_id,
+                    "incident_id": incident_id,
+                }
+            plan_version = plan_row[0] or 1
+
             cursor = conn.execute(
                 "SELECT action_step_id, sequence_no, action_type, tool_name, parameters_json FROM action_step "
                 "WHERE action_plan_id = %s ORDER BY sequence_no ASC",
@@ -838,13 +854,44 @@ class IncidentOrchestrator:
                 for r in cursor.fetchall()
             ]
 
-            cursor = conn.execute("SELECT plan_version FROM action_plan WHERE action_plan_id = %s", (plan_id,))
-            row = cursor.fetchone()
-            plan_version = row[0] if row else 1
-
             cursor = conn.execute("SELECT primary_run_id FROM incident WHERE incident_id = %s", (incident_id,))
             row = cursor.fetchone()
             incident_run_id = row[0] if row and row[0] else ""
+
+        # A plan with no executable steps has no recovery outcome to verify.
+        # Fail closed instead of letting Python's `all([])`-style logic
+        # resolve an incident without any action having taken place.
+        if not steps:
+            manual_instruction = (
+                f"Plan {plan_id} has no executable action steps. "
+                "Manual investigation and recovery are required."
+            )
+            with self.db.get_connection() as conn:
+                conn.execute(
+                    "UPDATE action_plan SET status = 'MANUAL_ACTION_REQUIRED' WHERE action_plan_id = %s",
+                    (plan_id,),
+                )
+
+            current_state = self.state_service.get_current_state(incident_id)
+            if current_state != IncidentState.MANUAL_ACTION_REQUIRED:
+                self.state_service.transition(
+                    incident_id=incident_id,
+                    to=IncidentState.MANUAL_ACTION_REQUIRED,
+                    actor="Capability Gateway",
+                    reason=manual_instruction,
+                )
+            self._log_audit(
+                incident_id,
+                "Capability Gateway",
+                "EMPTY_PLAN_MANUAL_ACTION_REQUIRED",
+                manual_instruction,
+            )
+            return {
+                "status": "MANUAL_ACTION_REQUIRED",
+                "plan_id": plan_id,
+                "reason": "empty_plan",
+                "manual_instruction": manual_instruction,
+            }
 
         intents = action_steps_to_intents(steps, incident_run_id=incident_run_id)
         try:
@@ -926,11 +973,11 @@ class IncidentOrchestrator:
                 record = execution_engine.execute_compiled_action(action)
 
                 exec_now = datetime.now(timezone.utc).isoformat()
-                verified = record.verification.status == VerificationStatus.PASSED
-                if record.verification.status in (VerificationStatus.FAILED, VerificationStatus.INCONCLUSIVE):
+                verified = execution_engine.is_resolution_verified(record)
+                if not verified:
                     all_verified = False
 
-                step_status = "SUCCEEDED" if record.result.status.value == "SUCCESS" and verified else "FAILED"
+                step_status = "SUCCEEDED" if verified else "FAILED"
                 conn.execute("UPDATE action_step SET status = %s WHERE action_step_id = %s", (step_status, step["action_step_id"]))
 
                 conn.execute("""

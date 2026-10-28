@@ -40,6 +40,21 @@ class ActionExecutionRecord(BaseModel):
     verification: VerificationOutcome
 
 
+def is_resolution_verified(record: ActionExecutionRecord) -> bool:
+    """Return whether one required action may contribute to incident resolution.
+
+    Resolution is intentionally fail-closed: an action must have completed
+    successfully *and* an independent verifier must have returned PASSED.
+    A policy denial, failed precondition, dry run, skipped verification, or
+    inconclusive verifier result therefore cannot accidentally resolve an
+    incident.
+    """
+    return (
+        record.result.status == ActionResultStatus.SUCCESS
+        and record.verification.status == VerificationStatus.PASSED
+    )
+
+
 def execute_compiled_action(action: CompiledAction, dry_run_first: bool = True) -> ActionExecutionRecord:
     """
     Executes a single compiled action through its registered capability's

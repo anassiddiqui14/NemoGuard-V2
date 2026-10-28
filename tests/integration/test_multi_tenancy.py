@@ -64,8 +64,9 @@ def db():
 
 @pytest.fixture
 def tenant_a_incident(db):
-    """A real incident row belonging to tenant_a_isolation_test, with a real evidence row attached."""
+    """A real tenant-A incident with attached evidence and alert context."""
     incident_id = f"TEST-INC-A-{uuid.uuid4().hex[:8].upper()}"
+    alert_id = f"TEST-ALERT-A-{uuid.uuid4().hex[:8].upper()}"
     now = datetime.now(timezone.utc).isoformat()
     with db.get_connection() as conn:
         conn.execute(
@@ -74,6 +75,30 @@ def tenant_a_incident(db):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (incident_id, "Tenant A test incident", "INVESTIGATING", "SEV_3", now, now, now, 1, "tenant_a_isolation_test"),
+        )
+        conn.execute(
+            """
+            INSERT INTO alert (alert_id, opened_ts, severity, alert_type, source_system, message, status, tenant_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                alert_id,
+                now,
+                "high",
+                "TEST_ALERT",
+                "Tenant Isolation Test",
+                "Secret Tenant A Alert",
+                "acknowledged",
+                "tenant_a_isolation_test",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO incident_alert (
+                incident_id, alert_id, correlation_score, correlation_reasons_json, added_at
+            ) VALUES (%s, %s, %s, %s, %s)
+            """,
+            (incident_id, alert_id, 1.0, "[]", now),
         )
         conn.execute(
             """
@@ -92,9 +117,11 @@ def tenant_a_incident(db):
         )
     yield incident_id
     with db.get_connection() as conn:
+        conn.execute("DELETE FROM incident_alert WHERE incident_id = %s", (incident_id,))
         conn.execute("DELETE FROM evidence WHERE incident_id = %s", (incident_id,))
         conn.execute("DELETE FROM audit_event WHERE incident_id = %s", (incident_id,))
         conn.execute("DELETE FROM incident WHERE incident_id = %s", (incident_id,))
+        conn.execute("DELETE FROM alert WHERE alert_id = %s", (alert_id,))
 
 
 def _token_for_tenant(tenant_id: str) -> str:
@@ -118,6 +145,58 @@ def _token_for_tenant(tenant_id: str) -> str:
         },
         expires_delta=timedelta(hours=1),
     )
+
+
+@pytest.fixture
+def same_tenant_plan_for_other_incident(db):
+    """Create two incidents in one tenant and attach a plan only to the second.
+
+    This guards against a different class of resource-ownership bug than
+    cross-tenant access: a caller may legitimately access both incidents,
+    but must never execute or approve incident B's plan under incident A's
+    URL.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    tenant_id = "tenant_plan_binding_test"
+    incident_a = f"TEST-INC-PLAN-A-{uuid.uuid4().hex[:8].upper()}"
+    incident_b = f"TEST-INC-PLAN-B-{uuid.uuid4().hex[:8].upper()}"
+    plan_id = f"TEST-PLAN-B-{uuid.uuid4().hex[:8].upper()}"
+    agent_run_id = f"TEST-AGENT-B-{uuid.uuid4().hex[:8].upper()}"
+
+    with db.get_connection() as conn:
+        for incident_id in (incident_a, incident_b):
+            conn.execute(
+                """
+                INSERT INTO incident (incident_id, title, status, severity, detected_at, created_at, updated_at, version, tenant_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (incident_id, f"Plan binding test {incident_id}", "PLAN_READY", "SEV_3", now, now, now, 1, tenant_id),
+            )
+        conn.execute(
+            """
+            INSERT INTO agent_run (agent_run_id, incident_id, agent_name, objective, status)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (agent_run_id, incident_b, "Test Agent", "Plan binding test", "COMPLETED"),
+        )
+        conn.execute(
+            """
+            INSERT INTO action_plan (
+                action_plan_id, incident_id, agent_run_id, plan_version, status, overall_risk,
+                rationale, expected_outcome, rollback_summary, created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (plan_id, incident_b, agent_run_id, 1, "PENDING_APPROVAL", "LOW", "test", "test", "test", now),
+        )
+
+    yield {"tenant_id": tenant_id, "incident_a": incident_a, "incident_b": incident_b, "plan_id": plan_id}
+
+    with db.get_connection() as conn:
+        conn.execute("DELETE FROM approval WHERE action_plan_id = %s", (plan_id,))
+        conn.execute("DELETE FROM action_plan WHERE action_plan_id = %s", (plan_id,))
+        conn.execute("DELETE FROM agent_run WHERE agent_run_id = %s", (agent_run_id,))
+        conn.execute("DELETE FROM audit_event WHERE incident_id IN (%s, %s)", (incident_a, incident_b))
+        conn.execute("DELETE FROM incident WHERE incident_id IN (%s, %s)", (incident_a, incident_b))
 
 
 class TestCrossTenantIsolation:
@@ -173,6 +252,53 @@ class TestCrossTenantIsolation:
         assert len(resp.json()) == 1
         assert resp.json()[0]["title"] == "Secret Tenant A Evidence"
 
+    def test_tenant_b_cannot_list_tenant_a_global_alert(self, tenant_a_incident):
+        tenant_b_token = _token_for_tenant("tenant_b_isolation_test")
+        resp = requests.get(
+            f"{API_BASE_URL}/api/v2/alerts",
+            headers={"Authorization": f"Bearer {tenant_b_token}"},
+        )
+        assert resp.status_code == 200
+        assert all(alert["message"] != "Secret Tenant A Alert" for alert in resp.json())
+
+    def test_overview_metrics_are_scoped_to_the_authenticated_tenant(self, tenant_a_incident):
+        tenant_a_token = _token_for_tenant("tenant_a_isolation_test")
+        tenant_b_token = _token_for_tenant("tenant_b_isolation_test")
+
+        own_overview = requests.get(
+            f"{API_BASE_URL}/api/v2/overview",
+            headers={"Authorization": f"Bearer {tenant_a_token}"},
+        )
+        other_overview = requests.get(
+            f"{API_BASE_URL}/api/v2/overview",
+            headers={"Authorization": f"Bearer {tenant_b_token}"},
+        )
+
+        assert own_overview.status_code == 200
+        assert other_overview.status_code == 200
+        assert own_overview.json()["open_incidents"] >= 1
+        assert own_overview.json()["alerts_correlated_today"] >= 1
+        assert other_overview.json()["open_incidents"] == 0
+        assert other_overview.json()["alerts_correlated_today"] == 0
+
+    @pytest.mark.parametrize(
+        "path_suffix",
+        (
+            "context/alerts/{incident_id}",
+            "context/logs/{incident_id}",
+            "incidents/{incident_id}/agent-logs",
+        ),
+    )
+    def test_tenant_b_cannot_read_tenant_a_incident_context(
+        self, tenant_a_incident, path_suffix
+    ):
+        tenant_b_token = _token_for_tenant("tenant_b_isolation_test")
+        resp = requests.get(
+            f"{API_BASE_URL}/api/v2/{path_suffix.format(incident_id=tenant_a_incident)}",
+            headers={"Authorization": f"Bearer {tenant_b_token}"},
+        )
+        assert resp.status_code == 404
+
     def test_tenant_b_cannot_read_tenant_a_plans(self, tenant_a_incident):
         tenant_b_token = _token_for_tenant("tenant_b_isolation_test")
         resp = requests.get(
@@ -204,5 +330,30 @@ class TestCrossTenantIsolation:
         resp = requests.get(
             f"{API_BASE_URL}/api/v2/incidents/{tenant_a_incident}/events/stream?token={tenant_b_token}",
             timeout=3,
+        )
+        assert resp.status_code == 404
+
+
+class TestPlanIncidentBinding:
+    def test_cannot_execute_another_incidents_plan_under_same_tenant(
+        self, same_tenant_plan_for_other_incident
+    ):
+        resource = same_tenant_plan_for_other_incident
+        token = _token_for_tenant(resource["tenant_id"])
+        resp = requests.post(
+            f"{API_BASE_URL}/api/v2/incidents/{resource['incident_a']}/plans/{resource['plan_id']}/execute",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    def test_cannot_approve_another_incidents_plan_under_same_tenant(
+        self, same_tenant_plan_for_other_incident
+    ):
+        resource = same_tenant_plan_for_other_incident
+        token = _token_for_tenant(resource["tenant_id"])
+        resp = requests.post(
+            f"{API_BASE_URL}/api/v2/incidents/{resource['incident_a']}/plans/{resource['plan_id']}/approve",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"decision": "APPROVED", "plan_hash": "irrelevant-because-parent-does-not-match"},
         )
         assert resp.status_code == 404

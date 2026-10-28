@@ -202,11 +202,18 @@ def get_status():
     }
 
 @app.get("/api/v2/overview")
-def get_overview():
+def get_overview(current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     try:
         with db.get_connection() as conn:
-            cur = conn.execute("SELECT COUNT(*) FROM incident WHERE status != 'RESOLVED'")
+            # Overview counters are tenant-owned operational data. Without
+            # both authentication and tenant predicates here, an otherwise
+            # unprivileged caller could infer every tenant's active incident
+            # volume and acknowledged-alert activity.
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM incident WHERE tenant_id = %s AND status != 'RESOLVED'",
+                (current_user.tenant_id,),
+            )
             open_incidents = cur.fetchone()[0]
             # Canonical severity values are stored with underscores (SEV_1,
             # SEV_2, ...) per the Severity enum (src/domain/enums.py) and the
@@ -216,11 +223,20 @@ def get_overview():
             # which never matches any stored row, silently zeroing out these
             # two KPIs. The frontend is responsible for rendering the
             # underscore form as hyphenated ("SEV-1") for display only.
-            cur = conn.execute("SELECT COUNT(*) FROM incident WHERE status != 'RESOLVED' AND severity = 'SEV_1'")
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM incident WHERE tenant_id = %s AND status != 'RESOLVED' AND severity = 'SEV_1'",
+                (current_user.tenant_id,),
+            )
             critical = cur.fetchone()[0]
-            cur = conn.execute("SELECT COUNT(*) FROM incident WHERE status != 'RESOLVED' AND severity = 'SEV_2'")
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM incident WHERE tenant_id = %s AND status != 'RESOLVED' AND severity = 'SEV_2'",
+                (current_user.tenant_id,),
+            )
             high = cur.fetchone()[0]
-            cur = conn.execute("SELECT COUNT(*) FROM alert WHERE status = 'acknowledged'")
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM alert WHERE tenant_id = %s AND status = 'acknowledged'",
+                (current_user.tenant_id,),
+            )
             correlated = cur.fetchone()[0]
             
             return {
@@ -296,6 +312,24 @@ def _require_incident_in_tenant(db: PostgresDatabase, incident_id: str, tenant_i
         )
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Incident not found")
+
+
+def _require_plan_for_incident(db: PostgresDatabase, incident_id: str, plan_id: str) -> None:
+    """Ensure a plan belongs to the incident named by the URL.
+
+    `action_plan_id` is globally addressable, but it is not authority to
+    operate on that plan under an arbitrary incident URL. This guard is
+    intentionally separate from tenant validation: callers must satisfy
+    both the parent incident's tenant boundary and the plan-to-incident
+    relationship.
+    """
+    with db.get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT 1 FROM action_plan WHERE action_plan_id = %s AND incident_id = %s",
+            (plan_id, incident_id),
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Plan not found for incident")
 
 
 @app.get("/api/v2/incidents/{incident_id}")
@@ -469,7 +503,10 @@ def get_incident_alerts(incident_id: str, current_user: User = Depends(get_curre
 def get_all_alerts(current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     with db.get_connection() as conn:
-        cursor = conn.execute("SELECT * FROM alert ORDER BY opened_ts DESC")
+        cursor = conn.execute(
+            "SELECT * FROM alert WHERE tenant_id = %s ORDER BY opened_ts DESC",
+            (current_user.tenant_id,),
+        )
         cols = [col[0] for col in cursor.description]
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
@@ -478,6 +515,7 @@ def get_all_alerts(current_user: User = Depends(get_current_user)):
 @app.get("/api/v2/context/alerts/{incident_id}")
 def get_incident_alerts_context(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     with db.get_connection() as conn:
         cursor = conn.execute("""
             SELECT a.alert_id, a.alert_type, a.source_system, a.message, a.opened_ts 
@@ -491,6 +529,7 @@ def get_incident_alerts_context(incident_id: str, current_user: User = Depends(g
 @app.get("/api/v2/context/logs/{incident_id}")
 def get_incident_logs_context(incident_id: str, current_user: User = Depends(get_current_user)):
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT primary_run_id FROM incident WHERE incident_id = %s", (incident_id,))
         run_id_row = cursor.fetchone()
@@ -632,12 +671,17 @@ def agent_findings(incident_id: str, payload: dict, current_user: User = Depends
 
 @app.get("/api/v2/incidents/{incident_id}/agent-logs")
 def agent_logs(incident_id: str, current_user: User = Depends(get_current_user)):
+    # Authorize the parent before reading any incident-derived legacy file.
+    # This endpoint is not used by the current UI, but external callers may
+    # still poll it and must receive the same 404 tenant-isolation behavior
+    # as all other incident sub-resources.
+    db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
+    _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     # Legacy endpoint, not called by the current React frontend (which
     # renders live agent activity from /events and the audit trail
     # instead). Left in place for backward compatibility with any external
     # tooling that may still poll it, but the branding of its filename/
     # placeholder text should stay consistent with the product name.
-    import os
     log_file = f"logs/{incident_id}_agent.log"
     if os.path.exists(log_file):
         with open(log_file, "r") as f:
@@ -671,7 +715,10 @@ async def approve_plan(incident_id: str, plan_id: str, req: ApprovalRequest, cur
     _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
     from src.domain.plan_hash import compute_plan_hash
     with db.get_connection() as conn:
-        cursor = conn.execute("SELECT * FROM action_plan WHERE action_plan_id = %s", (plan_id,))
+        cursor = conn.execute(
+            "SELECT * FROM action_plan WHERE action_plan_id = %s AND incident_id = %s",
+            (plan_id, incident_id),
+        )
         plan_row = cursor.fetchone()
         if not plan_row:
             raise HTTPException(status_code=404, detail="Plan not found")
@@ -732,6 +779,7 @@ async def execute_plan(incident_id: str, plan_id: str, current_user: User = Depe
     # Manual override / direct execution path (also used as fallback by /approve).
     db = PostgresDatabase(os.environ.get("POSTGRES_URL", "postgresql://nemoguard:nemoguard_password@postgres:5432/nemoguard_db"))
     _require_incident_in_tenant(db, incident_id, current_user.tenant_id)
+    _require_plan_for_incident(db, incident_id, plan_id)
     result = IncidentOrchestrator().execute_plan(incident_id, plan_id)
     if result.get("status") == "MANUAL_ACTION_REQUIRED":
         raise HTTPException(status_code=409, detail=result)
